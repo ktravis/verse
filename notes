@@ -1,0 +1,11 @@
+function declarations should create unique labels to be called from, and if they use local variables, the "instance" of the function includes their values at the time of creation
+
+fn thing(x:int): fn<int->int> {
+    return fn (y:int) {
+        return {x} + y;
+    };
+}
+
+.thing:
+
+    
