@@ -26,13 +26,27 @@ enum {
     TOK_ELSE
 };
 
+enum {
+    OP_PLUS,
+    OP_MINUS,
+    OP_MUL,
+    OP_DIV,
+    OP_XOR,
+    OP_BINAND,
+    OP_BINOR,
+    OP_ASSIGN,
+    OP_AND,
+    OP_OR,
+    OP_EQUALS
+};
+
 typedef struct Tok {
     int type;
     union {
         int ival;
         int tval;
         char *sval;
-        char c;
+        int op;
     };
 } Tok;
 
@@ -54,7 +68,8 @@ Tok *read_identifier(char c);
 Tok *check_reserved(char *buf);
 
 int priority_of(Tok *t);
-char *to_string(Tok *t);
+const char *to_string(Tok *t);
 const char *token_type(int type);
+const char *op_to_str(int op);
 
 #endif

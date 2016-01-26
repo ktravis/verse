@@ -48,7 +48,7 @@ typedef struct Ast {
         Var *var;
         // binop
         struct {
-            char op;
+            int op;
             struct Ast *left;
             struct Ast *right;
         };

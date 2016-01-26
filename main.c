@@ -73,7 +73,7 @@ void print_ast(Ast *ast) {
         print_quoted_string(ast->sval);
         break;
     case AST_BINOP:
-        printf("(%c ", ast->op); 
+        printf("(%s ", op_to_str(ast->op));
         print_ast(ast->left);
         printf(" ");
         print_ast(ast->right);
@@ -140,7 +140,7 @@ Ast *find_or_make_string(char *sval) {
     return str;
 }
 
-Ast *make_ast_binop(char op, Ast *left, Ast *right) {
+Ast *make_ast_binop(int op, Ast *left, Ast *right) {
     if (op == '=' && left->type != AST_IDENTIFIER) {
         error("LHS of assignment is not an identifier.");
     }
@@ -205,8 +205,8 @@ Ast *parse_declaration(Tok *t, Ast *scope) {
     next = next_token();
     if (next == NULL) {
         error("Unexpected end of input while parsing declaration.");
-    } else if (next->type == TOK_OP && next->c == '=') {
-        return make_ast_binop('=', lhs, parse_expression(next_token(), 0, scope));
+    } else if (next->type == TOK_OP && next->op == OP_ASSIGN) {
+        return make_ast_binop(OP_ASSIGN, lhs, parse_expression(next_token(), 0, scope));
     } else if (next->type != TOK_SEMI) {
         error("Unexpected token '%s' while parsing declaration.", to_string(next));
     }
@@ -229,7 +229,7 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope) {
             unget_token(t);
             return ast;
         } else if (t->type == TOK_OP) {
-            ast = make_ast_binop(t->c, ast, parse_expression(next_token(), next_priority + 1, scope));
+            ast = make_ast_binop(t->op, ast, parse_expression(next_token(), next_priority + 1, scope));
         } else {
             error("Unexpected token '%s'.", to_string(t));
             return NULL;
@@ -323,7 +323,7 @@ void emit_data_section() {
 }
 
 void emit_binop(Ast *ast) {
-    if (ast->op == '=') {
+    if (ast->op == OP_ASSIGN) {
         compile(ast->right);
         char *reg = "rax";
         if (ast->left->var->type == INT_T) {
@@ -339,17 +339,17 @@ void emit_binop(Ast *ast) {
     }
     char *asm_op = "";
     switch (ast->op) {
-    case '+': asm_op = "add"; break;
-    case '-': asm_op = "sub"; break;
-    case '*': asm_op = "imul"; break;
-    case '/': break;
+    case OP_PLUS: asm_op = "add"; break;
+    case OP_MINUS: asm_op = "sub"; break;
+    case OP_MUL: asm_op = "imul"; break;
+    case OP_DIV: break;
     default:
-        error("Unknown operator '%c'.", ast->op);
+        error("Unknown operator '%s'.", op_to_str(ast->op));
     }
     compile(ast->left);
     printf("push %%rax\n\t");
     compile(ast->right);
-    if (ast->op == '/') {
+    if (ast->op == OP_DIV) {
         printf("mov %%rax, %%rbx\n\t");
         printf("pop %%rax\n\t");
         printf("mov $0, %%rdx\n\t");

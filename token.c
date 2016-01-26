@@ -51,10 +51,38 @@ Tok *next_token() {
         return make_token(TOK_SEMI);
     } else if (c == ':') {
         return make_token(TOK_COLON);
-    } else if (c == '+' || c == '-' || c == '*' || c == '/' || c == '^'
-            || c == '&' || c == '|' || c == '=') {
+    } else if (c == '+') {
         Tok *t = make_token(TOK_OP);
-        t->c = c;
+        t->op = OP_PLUS;
+        return t;
+    } else if (c == '-') {
+        Tok *t = make_token(TOK_OP);
+        t->op = OP_MINUS;
+        return t;
+    } else if (c == '*') {
+        Tok *t = make_token(TOK_OP);
+        t->op = OP_MUL;
+        return t;
+    } else if (c == '/') {
+        Tok *t = make_token(TOK_OP);
+        t->op = OP_DIV;
+        return t;
+    } else if (c == '^') {
+        Tok *t = make_token(TOK_OP);
+        t->op = OP_XOR;
+        return t;
+    } else if (c == '&' || c == '|' || c == '=') {
+        int d = getc(stdin);
+        int same = (d == c);
+        if (!same) {
+            ungetc(d, stdin);
+        }
+        Tok *t = make_token(TOK_OP);
+        switch (c) {
+        case '&': t->op = same ? OP_AND : OP_BINAND; break;
+        case '|': t->op = same ? OP_OR : OP_BINOR; break;
+        case '=': t->op = same ? OP_EQUALS : OP_ASSIGN; break;
+        }
         return t;
     }
     error("Unexpected character '%c'.", c);
@@ -174,12 +202,12 @@ int type_id(char *buf) {
 
 int priority_of(Tok *t) {
     if (t->type == TOK_OP) {
-        switch (t->c) {
-        case '=':
+        switch (t->op) {
+        case OP_ASSIGN:
             return 1;
-        case '+': case '-':
+        case OP_PLUS: case OP_MINUS:
             return 2;
-        case '*': case '/':
+        case OP_MUL: case OP_DIV:
             return 3;
         default:
             return -1;
@@ -188,7 +216,7 @@ int priority_of(Tok *t) {
     return -1;
 }
 
-char *to_string(Tok *t) {
+const char *to_string(Tok *t) {
     if (t == NULL) {
         return "NULL";
     }
@@ -220,10 +248,7 @@ char *to_string(Tok *t) {
     case TOK_RBRACE:
         return "}";
     case TOK_OP: {
-        char *c = malloc(2);
-        c[0] = t->c;
-        c[1] = '\0';
-        return c;
+        return op_to_str(t->op);
     }
     default:
         return NULL;
@@ -252,5 +277,23 @@ const char *token_type(int type) {
         return "OP";
     default:
         return "BAD TOKEN";
+    }
+}
+
+const char *op_to_str(int op) {
+    switch (op) {
+    case OP_PLUS: return "+";
+    case OP_MINUS: return "-";
+    case OP_MUL: return "*";
+    case OP_DIV: return "/";
+    case OP_XOR: return "^";
+    case OP_BINAND: return "&";
+    case OP_BINOR: return "|";
+    case OP_ASSIGN: return "=";
+    case OP_AND: return "&&";
+    case OP_OR: return "||";
+    case OP_EQUALS: return "==";
+    default:
+        return "BAD OP";
     }
 }
