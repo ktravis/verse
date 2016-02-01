@@ -37,7 +37,8 @@ enum {
     OP_ASSIGN,
     OP_AND,
     OP_OR,
-    OP_EQUALS
+    OP_EQUALS,
+    OP_NEQUALS
 };
 
 typedef struct Tok {

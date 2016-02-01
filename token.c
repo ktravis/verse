@@ -71,6 +71,16 @@ Tok *next_token() {
         Tok *t = make_token(TOK_OP);
         t->op = OP_XOR;
         return t;
+    } else if (c == '!') {
+        int d = getc(stdin);
+        if (d != '=') {
+            ungetc(d, stdin);
+            // TODO UNARY NOT
+        } else {
+            Tok *t = make_token(TOK_OP);
+            t->op = OP_NEQUALS;
+            return t;
+        }
     } else if (c == '&' || c == '|' || c == '=') {
         int d = getc(stdin);
         int same = (d == c);
@@ -205,10 +215,22 @@ int priority_of(Tok *t) {
         switch (t->op) {
         case OP_ASSIGN:
             return 1;
-        case OP_PLUS: case OP_MINUS:
+        case OP_OR:
             return 2;
-        case OP_MUL: case OP_DIV:
+        case OP_AND:
             return 3;
+        case OP_BINOR:
+            return 4;
+        case OP_XOR:
+            return 5;
+        case OP_BINAND:
+            return 6;
+        case OP_EQUALS: case OP_NEQUALS:
+            return 7;
+        case OP_PLUS: case OP_MINUS:
+            return 8;
+        case OP_MUL: case OP_DIV:
+            return 9;
         default:
             return -1;
         }
@@ -293,6 +315,7 @@ const char *op_to_str(int op) {
     case OP_AND: return "&&";
     case OP_OR: return "||";
     case OP_EQUALS: return "==";
+    case OP_NEQUALS: return "!=";
     default:
         return "BAD OP";
     }

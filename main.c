@@ -148,6 +148,31 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right) {
         error("LHS of expression has type '%s', while RHS has type '%s'.",
                 type_as_str(left->var->type), type_as_str(var_type(right)));
     }
+    switch (op) {
+    case OP_PLUS:
+    case OP_MINUS:
+    case OP_MUL:
+    case OP_DIV:
+    case OP_XOR:
+    case OP_BINAND:
+    case OP_BINOR:
+        if (var_type(left) != INT_T) {
+            error("Operator '%s' is not valid for non-integer arguments of type '%s'.",
+                    op_to_str(op), type_as_str(var_type(left)));
+        }
+        break;
+    case OP_AND:
+    case OP_OR:
+        if (var_type(left) != BOOL_T) {
+            error("Operator '%s' is not valid for non-bool arguments of type '%s'.",
+                    op_to_str(op), type_as_str(var_type(left)));
+        }
+        break;
+    case OP_EQUALS:
+        break;
+    case OP_NEQUALS:
+        break;
+    }
     Ast *binop = malloc(sizeof(Ast));
     binop->type = AST_BINOP;
     binop->op = op;
@@ -334,8 +359,24 @@ void emit_binop(Ast *ast) {
         printf("mov %%%s, -%d(%%rbp)\n\t", reg, ast->left->var->offset);
         return;
     }
-    if (ast->left->type == AST_STRING) {
+    if (var_type(ast->left) == AST_STRING) {
         error("Invalid operation '%c' for strings.", ast->op);
+    } else if (ast->op == OP_OR) {
+        compile(ast->left);
+        int id = last_cond_id++;
+        printf("testb $1, %%al\n\t");
+        printf("jne .endor%d\n\t", id);
+        compile(ast->right);
+        printf("\n.endor%d:\n\t", id);
+        return;
+    } else if (ast->op == OP_AND) {
+        compile(ast->left);
+        int id = last_cond_id++;
+        printf("testb $1, %%al\n\t");
+        printf("je .endand%d\n\t", id);
+        compile(ast->right);
+        printf("\n.endand%d:\n\t", id);
+        return;
     }
     char *asm_op = "";
     switch (ast->op) {
