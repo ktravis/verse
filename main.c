@@ -54,6 +54,9 @@ char var_type(Ast *ast) {
     case AST_CALL:
         error("idk how to tell function stuff");
     case AST_BINOP:
+        if (is_comparison(ast->op)) {
+            return BOOL_T;
+        }
         return var_type(ast->left);
     default:
         error("don't know how to infer vartype");
@@ -145,8 +148,8 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right) {
         error("LHS of assignment is not an identifier.");
     }
     if (var_type(left) != var_type(right)) {
-        error("LHS of expression has type '%s', while RHS has type '%s'.",
-                type_as_str(left->var->type), type_as_str(var_type(right)));
+        error("LHS of operation '%s' has type '%s', while RHS has type '%s'.",
+                op_to_str(op), type_as_str(left->var->type), type_as_str(var_type(right)));
     }
     switch (op) {
     case OP_PLUS:
@@ -156,6 +159,10 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right) {
     case OP_XOR:
     case OP_BINAND:
     case OP_BINOR:
+    case OP_GT:
+    case OP_GTE:
+    case OP_LT:
+    case OP_LTE:
         if (var_type(left) != INT_T) {
             error("Operator '%s' is not valid for non-integer arguments of type '%s'.",
                     op_to_str(op), type_as_str(var_type(left)));
@@ -169,9 +176,9 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right) {
         }
         break;
     case OP_EQUALS:
+    case OP_NEQUALS: {
         break;
-    case OP_NEQUALS:
-        break;
+    }
     }
     Ast *binop = malloc(sizeof(Ast));
     binop->type = AST_BINOP;
@@ -347,6 +354,48 @@ void emit_data_section() {
     printf("\t");
 }
 
+void emit_comparison(Ast *ast) {
+    char *reg = "eax";
+    char *reg2 = "ebx";
+    if (var_type(ast->left) == BOOL_T) {
+        reg = "al";
+        reg2 = "bl";
+    }
+    int id = last_cond_id++;
+    char *jmp = "jmp";
+    switch (ast->op) {
+    case OP_EQUALS:
+        jmp = "jne";
+        break;
+    case OP_NEQUALS:
+        jmp = "je";
+        break;
+    case OP_GT:
+        jmp = "jna";
+        break;
+    case OP_GTE:
+        jmp = "jnae";
+        break;
+    case OP_LT:
+        jmp = "jnb";
+        break;
+    case OP_LTE:
+        jmp = "jnbe";
+        break;
+    default:
+        error("Unknown operation '%s'.", op_to_str(ast->op));
+    }
+    compile(ast->left);
+    printf("mov %%%s, %%%s\n\t", reg, reg2);
+    compile(ast->right);
+    printf("cmp %%%s, %%%s\n\t", reg, reg2);
+    printf("mov $0, %%r10b\n\t");
+    printf("%s .comp%d\n\t", jmp, id);
+    printf("mov $1, %%r10b\n");
+    printf(".comp%d:\n\t", id);
+    printf("movb %%r10b, %%al\n\t");
+}
+
 void emit_binop(Ast *ast) {
     if (ast->op == OP_ASSIGN) {
         compile(ast->right);
@@ -376,6 +425,9 @@ void emit_binop(Ast *ast) {
         printf("je .endand%d\n\t", id);
         compile(ast->right);
         printf("\n.endand%d:\n\t", id);
+        return;
+    } else if (is_comparison(ast->op)) {
+        emit_comparison(ast);
         return;
     }
     char *asm_op = "";

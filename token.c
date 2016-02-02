@@ -71,6 +71,26 @@ Tok *next_token() {
         Tok *t = make_token(TOK_OP);
         t->op = OP_XOR;
         return t;
+    } else if (c == '>') {
+        Tok *t = make_token(TOK_OP);
+        int d = getc(stdin);
+        if (d == '=') {
+            t->op = OP_GTE;
+        } else {
+            ungetc(d, stdin);
+            t->op = OP_GT;
+        } // TODO binary shift
+        return t;
+    } else if (c == '<') {
+        Tok *t = make_token(TOK_OP);
+        int d = getc(stdin);
+        if (d == '=') {
+            t->op = OP_LTE;
+        } else {
+            ungetc(d, stdin);
+            t->op = OP_LT;
+        } // TODO binary shift
+        return t;
     } else if (c == '!') {
         int d = getc(stdin);
         if (d != '=') {
@@ -227,10 +247,12 @@ int priority_of(Tok *t) {
             return 6;
         case OP_EQUALS: case OP_NEQUALS:
             return 7;
-        case OP_PLUS: case OP_MINUS:
+        case OP_GT: case OP_GTE: case OP_LT: case OP_LTE:
             return 8;
-        case OP_MUL: case OP_DIV:
+        case OP_PLUS: case OP_MINUS:
             return 9;
+        case OP_MUL: case OP_DIV:
+            return 10;
         default:
             return -1;
         }
@@ -316,7 +338,16 @@ const char *op_to_str(int op) {
     case OP_OR: return "||";
     case OP_EQUALS: return "==";
     case OP_NEQUALS: return "!=";
+    case OP_GT: return ">";
+    case OP_GTE: return ">=";
+    case OP_LT: return "<";
+    case OP_LTE: return "<=";
     default:
         return "BAD OP";
     }
+}
+
+int is_comparison(int op) {
+    return op == OP_EQUALS || op == OP_NEQUALS || op == OP_GT ||
+        op == OP_GTE || op == OP_LT || op == OP_LTE;
 }

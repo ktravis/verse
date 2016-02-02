@@ -38,7 +38,11 @@ enum {
     OP_AND,
     OP_OR,
     OP_EQUALS,
-    OP_NEQUALS
+    OP_NEQUALS,
+    OP_GT,
+    OP_GTE,
+    OP_LT,
+    OP_LTE
 };
 
 typedef struct Tok {
@@ -72,5 +76,6 @@ int priority_of(Tok *t);
 const char *to_string(Tok *t);
 const char *token_type(int type);
 const char *op_to_str(int op);
+int is_comparison(int op);
 
 #endif

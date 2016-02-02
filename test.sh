@@ -56,6 +56,17 @@ test 'add(42,18);' 60
 test 'x:int = 0;x;' 0
 test 'x:int = 1;x=2+1;x-3;' 0
 test 'x:int = 1; { x:int = 2; { x:int = 3; } } x;' 1
+test "if 1 < 2 { printf('thing'); }2;" 'thing2'
+test "if false { printf('thing'); } else { 1; }" 1
+test "a:bool = 1 + 0 > 1;a;" 0
+test "a:bool = 1 < 2;a;" 1
+test "a:bool = 3 >= 3;a;" 1
+test "a:bool = 2 <= 2;a;" 1
+test "a:bool = 2 <= 1;a;" 0
+test "a:bool = 1 != 2;a;" 1
+test "a:bool = 1 == 2;a;" 0
+test "a:bool = false == true;a;" 0
+test "a:bool = false == false;a;" 1
 
 test_ast "0;" "{ 0 }"
 test_ast "a:int;" "{ a }"
@@ -68,6 +79,8 @@ test_ast "2 / 23 * 164 + 1;" "{ (+ (* (/ 2 23) 164) 1) }"
 test_ast "1 + 3;test(1, 2, 3 , 4);"  "{ (+ 1 3)test(1,2,3,4) }"
 test_ast "x();test( 1, 2, 3 , 4);"  "{ x()test(1,2,3,4) }"
 test_ast "x(a(1,2),3);" "{ x(a(1,2),3) }"
+test_ast "if 1 < 2 { printf('thing'); }" "{ (if (< 1 2) printf(thing)) }"
+test_ast "if false { printf('thing'); } else { 1; }" "{ (if false printf(thing) 1) }"
 
 test_fail "0"
 test_fail ";"
@@ -75,11 +88,14 @@ test_fail "x;"
 test_fail "x = 1;"
 test_fail "(1 + 2;"
 test_fail "x:a = 1;"
-test_fail "x:int = 1;x:int = 2;"
+test_fail "x:int = 1;x:int = 2;" # something screwy might be going on here
 test_fail "x:string = 2;"
 test_fail "x:int = 2;x = 'string';"
 test_fail "{ x:int = 2;"
 test_fail "{ x:int = 2; } x;"
+test_fail "if { x:int = 2; } x;"
+test_fail "if { x:int = 2;"
+test_fail "if { x:int = 2; };"
 
 printf "\e[0;32mTests passed.\e[0m\n"
 rm tmp.out tmp.s
