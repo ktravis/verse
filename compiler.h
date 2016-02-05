@@ -18,6 +18,7 @@ enum {
     AST_BOOL,
     AST_BINOP,
     AST_IDENTIFIER,
+    AST_DECL,
     AST_CALL,
     AST_CONDITIONAL,
     AST_SCOPE,
@@ -46,6 +47,11 @@ typedef struct Ast {
         };
         // var
         Var *var;
+        // decl
+        struct {
+            Var *decl_var;
+            struct Ast *init;
+        };
         // binop
         struct {
             int op;

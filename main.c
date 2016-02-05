@@ -51,6 +51,8 @@ char var_type(Ast *ast) {
         return BOOL_T;
     case AST_IDENTIFIER:
         return ast->var->type;
+    case AST_DECL:
+        return ast->var->type;
     case AST_CALL:
         error("idk how to tell function stuff");
     case AST_BINOP:
@@ -84,6 +86,14 @@ void print_ast(Ast *ast) {
         break;
     case AST_IDENTIFIER:
         printf("%s", ast->var->name);
+        break;
+    case AST_DECL:
+        printf("(decl %s %s", ast->var->name, type_as_str(ast->var->type));
+        if (ast->init != NULL) {
+            printf(" ");
+            print_ast(ast->init);
+        }
+        printf(")");
         break;
     case AST_CALL:
         printf("%s(", ast->fn);
@@ -216,10 +226,10 @@ Ast *parse_arg_list(Tok *t, Ast *scope) {
     return func; 
 }
 
-Ast *make_ast_id(char *name, int type, Ast *scope) {
+Ast *make_ast_decl(char *name, int type, Ast *scope) {
     Ast *ast = malloc(sizeof(Ast));
-    ast->type = AST_IDENTIFIER;
-    ast->var = make_var(name, type, scope);
+    ast->type = AST_DECL;
+    ast->decl_var = make_var(name, type, scope);
     return ast;
 }
 
@@ -232,17 +242,22 @@ Ast *parse_declaration(Tok *t, Ast *scope) {
         error("Unexpected token '%s' in declaration.", to_string(next));
     }
 
-    Ast *lhs = make_ast_id(t->sval, next->tval, scope);
+    Ast *lhs = make_ast_decl(t->sval, next->tval, scope);
 
     next = next_token();
     if (next == NULL) {
         error("Unexpected end of input while parsing declaration.");
     } else if (next->type == TOK_OP && next->op == OP_ASSIGN) {
-        return make_ast_binop(OP_ASSIGN, lhs, parse_expression(next_token(), 0, scope));
+        Ast *init = parse_expression(next_token(), 0, scope);
+        if (var_type(lhs) != var_type(init)) {
+            error("Can't initialize variable '%s' of type '%s' with value of type '%s'.", t->sval, type_as_str(next->tval), type_as_str(var_type(init)));
+        }
+        lhs->init = init;
     } else if (next->type != TOK_SEMI) {
         error("Unexpected token '%s' while parsing declaration.", to_string(next));
+    } else {
+        unget_token(next);
     }
-    unget_token(next);
     return lhs; 
 }
 
@@ -342,7 +357,7 @@ Ast *parse_primary(Tok *t, Ast *scope) {
 }
 
 void emit_data_section() {
-    printf("\t.data\n");
+    emit(".data");
     Ast *str = strings;
     while (str != NULL) {
         printf(".s%d:\n\t", str->sid);
@@ -386,14 +401,14 @@ void emit_comparison(Ast *ast) {
         error("Unknown operation '%s'.", op_to_str(ast->op));
     }
     compile(ast->left);
-    printf("mov %%%s, %%%s\n\t", reg, reg2);
+    emit("mov %%%s, %%%s", reg, reg2);
     compile(ast->right);
-    printf("cmp %%%s, %%%s\n\t", reg, reg2);
-    printf("mov $0, %%r10b\n\t");
-    printf("%s .comp%d\n\t", jmp, id);
-    printf("mov $1, %%r10b\n");
-    printf(".comp%d:\n\t", id);
-    printf("movb %%r10b, %%al\n\t");
+    emit("cmp %%%s, %%%s", reg, reg2);
+    emit("mov $0, %%r10b");
+    emit("%s .comp%d", jmp, id);
+    emit("mov $1, %%r10b");
+    emit(".comp%d:", id);
+    emit("movb %%r10b, %%al");
 }
 
 void emit_binop(Ast *ast) {
@@ -405,7 +420,7 @@ void emit_binop(Ast *ast) {
         } else if (ast->left->var->type == BOOL_T) {
             reg = "al";
         }
-        printf("mov %%%s, -%d(%%rbp)\n\t", reg, ast->left->var->offset);
+        emit("mov %%%s, -%d(%%rbp)", reg, ast->left->var->offset);
         return;
     }
     if (var_type(ast->left) == AST_STRING) {
@@ -413,18 +428,18 @@ void emit_binop(Ast *ast) {
     } else if (ast->op == OP_OR) {
         compile(ast->left);
         int id = last_cond_id++;
-        printf("testb $1, %%al\n\t");
-        printf("jne .endor%d\n\t", id);
+        emit("testb $1, %%al");
+        emit("jne .endor%d", id);
         compile(ast->right);
-        printf("\n.endor%d:\n\t", id);
+        emit("", id);
         return;
     } else if (ast->op == OP_AND) {
         compile(ast->left);
         int id = last_cond_id++;
-        printf("testb $1, %%al\n\t");
-        printf("je .endand%d\n\t", id);
+        emit("testb $1, %%al");
+        emit("je .endand%d", id);
         compile(ast->right);
-        printf("\n.endand%d:\n\t", id);
+        emit("", id);
         return;
     } else if (is_comparison(ast->op)) {
         emit_comparison(ast);
@@ -440,30 +455,57 @@ void emit_binop(Ast *ast) {
         error("Unknown operator '%s'.", op_to_str(ast->op));
     }
     compile(ast->left);
-    printf("push %%rax\n\t");
+    emit("push %%rax");
     compile(ast->right);
     if (ast->op == OP_DIV) {
-        printf("mov %%rax, %%rbx\n\t");
-        printf("pop %%rax\n\t");
-        printf("mov $0, %%rdx\n\t");
-        printf("idiv %%rbx\n\t");
+        emit("mov %%rax, %%rbx");
+        emit("pop %%rax");
+        emit("mov $0, %%rdx");
+        emit("idiv %%rbx");
     } else {
-        printf("mov %%rax, %%rbx\n\t");
-        printf("pop %%rax\n\t");
-        printf("%s %%rbx, %%rax\n\t", asm_op);
+        emit("mov %%rax, %%rbx");
+        emit("pop %%rax");
+        emit("%s %%rbx, %%rax", asm_op);
     }
+}
+
+void emit_string_init(Ast *ast) {
+    if (ast->init == NULL) {
+        printf("\tmov $16, %%rdi\n\t"
+               "call _malloc\n\t" // should test result
+               "movl $0, 0(%%rax)\n\t"
+               "movl $8, 4(%%rax)\n\t"
+               "movb $0, 5(%%rax)\n\t"); // maybe not needed
+    } else if (ast->init->type == AST_STRING) {
+        int len = strlen(ast->init->sval);
+        printf("\tmov $%d, %%rdi\n\t"
+               "call _malloc\n", (len+1) * 2 + 8);
+        emit("movl $%d, 0(%%rax)", len);
+        emit("movl $%d, 4(%%rax)", (len+1) * 2 + 8);
+        if (len > 0) {
+            emit("lea .s%d(%%rip), %%rsi", ast->init->sid);
+            emit("lea 8(%%rax), %%rdi");
+            emit("cld");
+            emit("mov $%d, %%ecx", len);
+            emit("rep movsb");
+            emit("movb $0, %%dil");
+        }
+    } else {
+        error("Can't init string var from non-literal yet.");
+    }
+    emit("movq %%rax, -%d(%%rbp)", ast->var->offset);
 }
 
 void compile(Ast *ast) {
     switch (ast->type) {
     case AST_INTEGER:
-        printf("mov $%d, %%eax\n\t", ast->ival);
+        emit("mov $%d, %%eax", ast->ival);
         break;
     case AST_BOOL:
-        printf("mov $%d, %%al\n\t", ast->ival);
+        emit("mov $%d, %%al", ast->ival);
         break;
     case AST_STRING:
-        printf("lea .s%d(%%rip), %%rax\n\t", ast->sid);
+        emit("lea .s%d(%%rip), %%rax", ast->sid);
         break;
     case AST_BINOP:
         emit_binop(ast);
@@ -479,28 +521,41 @@ void compile(Ast *ast) {
         /*} else if (size == 1) {*/
             /*s = "al";*/
         /*}*/
-        printf("mov -%d(%%rbp), %%%s\n\t", ast->var->offset, s);
+        emit("mov -%d(%%rbp), %%%s", ast->var->offset, s);
+        break;
+    }
+    case AST_DECL: {
+        char *reg = "rax";
+        switch (ast->decl_var->type) {
+        case INT_T: reg = "eax"; break;
+        case BOOL_T: reg = "al"; break;
+        case STRING_T: emit_string_init(ast); return;
+        }
+        if (ast->init != NULL) {
+            compile(ast->init);
+            emit("mov %%%s, -%d(%%rbp)", reg, ast->decl_var->offset);
+        }
         break;
     }
     case AST_CALL:
         // save regs
         /*for (int i = 1; i < ast->nargs; i++) {*/
-            /*printf("push %s\n\t", ARG_REGS[i]);*/
+            /*emit("push %s", ARG_REGS[i]);*/
         /*}*/
         // put args onto stack
         for (int i = 0; i < ast->nargs; i++) {
             compile(ast->args[i]);
-            printf("push %%rax\n\t");
+            emit("push %%rax");
         }
         // pop stack into regs
         for (int i = ast->nargs - 1; i >= 0; i--) {
-            printf("pop %s\n\t", ARG_REGS[i]);
+            emit("pop %s", ARG_REGS[i]);
         }
-        printf("mov $0, %%eax\n\t");
-        printf("call _%s\n\t", ast->fn);
+        emit("mov $0, %%eax");
+        emit("call _%s", ast->fn);
         // restore regs
         /*for (int i = ast->nargs - 1; i >= 1; i--) {*/
-            /*printf("pop %s\n\t", ARG_REGS[i]);*/
+            /*emit("pop %s", ARG_REGS[i]);*/
         /*}*/
         break;
     case AST_BLOCK:
@@ -515,15 +570,15 @@ void compile(Ast *ast) {
         break;
     case AST_CONDITIONAL:
         compile(ast->condition);
-        printf("testb $1, %%al\n\t");
-        printf("je _else%d\n\t", ast->cond_id);
+        emit("testb $1, %%al");
+        emit("je _else%d", ast->cond_id);
         compile(ast->if_body);
-        printf("jmp _endif%d\n\t", ast->cond_id);
-        printf("\n_else%d:\n\t", ast->cond_id);
+        emit("jmp _endif%d", ast->cond_id);
+        label("_else%d:", ast->cond_id);
         if (ast->else_body != NULL) {
             compile(ast->else_body);
         }
-        printf("\n_endif%d:\n\t", ast->cond_id);
+        label("_endif%d:", ast->cond_id);
         break;
     default:
         error("No idea how to deal with this.");
@@ -601,29 +656,29 @@ Ast *parse_scope(Ast *parent) {
 }
 
 void emit_scope_start(Ast *scope) {
-    printf("push %%rbp\n\t");
-    printf("mov %%rsp, %%rbp\n\t");
+    emit("push %%rbp");
+    emit("mov %%rsp, %%rbp");
     if (scope->locals != NULL) {
         int offset = (scope->locals->offset + type_offset(scope->locals->type))/16;
-        printf("subq $%d, %%rsp\n\t", offset < 1 ? 16 : 16 * offset);
+        emit("subq $%d, %%rsp", offset < 1 ? 16 : 16 * offset);
     }
 }
 
 void emit_scope_end(Ast *scope) {
     /*if (scope->locals != NULL) {*/
         /*int offset = (scope->locals->offset + type_offset(scope->locals->type))/16;*/
-        /*printf("addq $%d, %%rsp\n\t", offset < 1 ? 16 : 16 * offset);*/
+        /*emit("addq $%d, %%rsp", offset < 1 ? 16 : 16 * offset);*/
     /*}*/
-    /*printf("leave\n\t");*/
-    printf("mov %%rbp, %%rsp\n\t");
-    printf("pop %%rbp\n\t");
+    /*emit("leave");*/
+    emit("mov %%rbp, %%rsp");
+    emit("pop %%rbp");
 }
 
 void emit_func_start() {
 }
 
 void emit_func_end() {
-    printf("ret\n");
+    emit("ret");
 }
 
 int main(int argc, char **argv) {
@@ -636,9 +691,8 @@ int main(int argc, char **argv) {
         print_ast(root);
     } else {
         emit_data_section();
-        printf(".text\n\t"
-               ".global _asm_main\n"
-               "_asm_main:\n\t");
+        printf(".text\n\t.global _asm_main\n");
+        label("_asm_main:");
         emit_func_start();
         compile(root);
         emit_func_end();

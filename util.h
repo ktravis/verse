@@ -6,5 +6,7 @@
 #include <stdarg.h>
 
 void error(char *fmt, ...);
+void emit(char *fmt, ...);
+void label(char *fmt, ...);
 
 #endif

@@ -39,7 +39,7 @@ test_fail() {
 
 test '0;' 0
 test '42;' 42
-test 'x:string = "test";printf("%s", x);1;' test1
+test 'x:string = "test";printf("%s", cstr(x));1;' test1
 test '1 + 2;' 3
 test '1 + 2 * 3;' 7
 test '(1 + 2) * 3;' 9
@@ -69,8 +69,8 @@ test "a:bool = false == true;a;" 0
 test "a:bool = false == false;a;" 1
 
 test_ast "0;" "{ 0 }"
-test_ast "a:int;" "{ a }"
-test_ast "a:int = 1;b:int = a + 1;" "{ (= a 1)(= b (+ a 1)) }"
+test_ast "a:int;" "{ (decl a int) }"
+test_ast "a:int = 1;b:int = a + 1;" "{ (decl a int 1)(decl b int (+ a 1)) }"
 test_ast "1 + 2;" "{ (+ 1 2) }"
 test_ast "1 + 2 * 3;" "{ (+ 1 (* 2 3)) }"
 test_ast "(1 + 2) * 3;" "{ (* (+ 1 2) 3) }"
