@@ -1,5 +1,14 @@
 #include "util.h"
 
+void print_quoted_string(char *val) {
+    for (char *c = val; *c; c++) {
+        if (*c == '\"') {// || *c == '\\') {
+            printf("\\");
+        }
+        printf("%c", *c);
+    }
+}
+
 void error(char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -9,19 +18,13 @@ void error(char *fmt, ...) {
     exit(1); 
 }
 
-void emit(char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    printf("\t");
-    vprintf(fmt, args);
-    printf("\n");
-    va_end(args);
-}
-
-void label(char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    vprintf(fmt, args);
-    printf("\n");
-    va_end(args);
+int escaped_strlen(const char *str) {
+    int n = 0, i = 0;
+    char c;
+    while ((c = str[i++]) != 0) {
+        if (c != '\\') {
+            n++;
+        }
+    }
+    return n;
 }

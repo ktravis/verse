@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-extern void * asm_main(void);
+extern int asm_main(void);
 
 int add(int a, int b) {
     return a + b;

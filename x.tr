@@ -1,0 +1,7 @@
+// test
+// ok:string = "12\n3"; //  heyy
+ok:string = "123";
+why:string;
+why = ok;
+why = why + ('45' + '678\n');
+print_str(why);

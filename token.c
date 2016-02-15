@@ -2,8 +2,19 @@
 #include "util.h"
 
 char read_non_space() {
-    char c;
+    char c, d;
     while ((c = getc(stdin)) != EOF) {
+        if (c == '/') {
+            d = getc(stdin);
+            if (d == '/') {
+                while (c != '\n') {
+                    c = getc(stdin);
+                }
+            } else {
+                ungetc(d, stdin);
+                break;
+            }
+        }
         if (!(c == ' ' || c == '\n' || c == '\r')) {
             break;
         }

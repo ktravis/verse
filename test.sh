@@ -37,6 +37,7 @@ test_fail() {
     fi
 }
 
+rm tmp.out tmp.s 2>/dev/null
 test '0;' 0
 test '42;' 42
 test 'x:string = "test";printf("%s", cstr(x));1;' test1
