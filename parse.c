@@ -460,7 +460,7 @@ Ast *parse_block(Ast *scope, int bracketed) {
         }
         if (i >= n) {
             n *= 2;
-            realloc(statements, sizeof(Ast*)*n);
+            statements = realloc(statements, sizeof(Ast*)*n);
         }
         statements[i] = parse_statement(t, scope);
         i++;
