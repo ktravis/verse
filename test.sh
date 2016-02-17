@@ -9,7 +9,7 @@ test_ast() {
     #echo "test ast '$x' => '$expected'"
     res=`echo "$x" | ./compiler -a`
     if [[ "$res" != "$expected" ]]; then
-        printf "\e[0;31mTest failed (got $res and expected $expected).\e[0m\n"
+        printf "\e[0;31mfailed:\e[0m \"$x\"\n\t(got $res and expected $expected).\n"
         exit 1
     fi
 }
@@ -17,9 +17,9 @@ test_ast() {
 test_fail() {
     x=$1
     #echo "test non-compile '$x'"
-    echo "$x" | ./compiler 2> /dev/null
+    echo "$x" | ./compiler 2&> /dev/null
     if [ "$?" == 0 ]; then
-        printf "\e[0;31mTest failed (to fail -- compiled successfully).\e[0m\n"
+        printf "\e[0;31mfailed:\e[0m \"$x\"\n\t(to fail -- compiled successfully).\n"
         exit 1
     fi
 }
