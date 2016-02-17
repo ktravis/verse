@@ -217,9 +217,8 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right, Ast *scope) {
         }
         break;
     case OP_EQUALS:
-    case OP_NEQUALS: {
+    case OP_NEQUALS:
         break;
-    }
     }
     int lt = var_type(left);
     Ast *binop = malloc(sizeof(Ast));
@@ -227,7 +226,7 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right, Ast *scope) {
     binop->op = op;
     binop->left = left;
     binop->right = right;
-    if (is_dynamic(lt)) {
+    if (!is_comparison(op) && is_dynamic(lt)) {
         if (op == OP_ASSIGN) {
             if (right->type != AST_TEMP_VAR) {
                 binop->right = make_ast_tmpvar(binop->right, make_temp_var(lt, scope));

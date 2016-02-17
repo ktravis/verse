@@ -37,7 +37,17 @@ struct string_type *copy_string(struct string_type *str) {
     v->alloc = str->alloc;
     return v;
 }
-struct string_type *append_string(struct string_type *lhs, char *bytes, int len) {
+struct string_type *append_string(struct string_type *lhs, struct string_type *rhs) {
+    int lhs_len = lhs->len;
+    lhs->len += rhs->len;
+    if (lhs->len > lhs->alloc) {
+        lhs->alloc = lhs->len * 2;
+        lhs->bytes = realloc(lhs->bytes, lhs->alloc);
+    }
+    strncpy(lhs->bytes + lhs_len, rhs->bytes, rhs->len);
+    return lhs;
+}
+struct string_type *append_string_lit(struct string_type *lhs, char *bytes, int len) {
     int lhs_len = lhs->len;
     lhs->len += len;
     if (lhs->len > lhs->alloc) {
@@ -46,4 +56,26 @@ struct string_type *append_string(struct string_type *lhs, char *bytes, int len)
     }
     strncpy(lhs->bytes + lhs_len, bytes, len);
     return lhs;
+}
+int streq_lit(struct string_type *left, char *right, int n) {
+    if (left->len != n) {
+        return 0;
+    }
+    for (int i = 0; i < n; i++) {
+        if (left->bytes[i] != right[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+int streq(struct string_type *left, struct string_type *right) {
+    if (left->len != right->len) {
+        return 0;
+    }
+    for (int i = 0; i < left->len; i++) {
+        if (left->bytes[i] != right->bytes[i]) {
+            return 0;
+        }
+    }
+    return 1;
 }

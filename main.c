@@ -29,8 +29,34 @@ void label(char *fmt, ...) {
 }
 
 void emit_string_comparison(Ast *ast) {
-    // check if left or right is a literal
-    //
+    if (ast->op == OP_NEQUALS) {
+        printf("!");
+    } else if (ast->op != OP_EQUALS) {
+        error("Comparison of type '%s' is not valid for type 'string'.", op_to_str(ast->op));
+    }
+    if (ast->left->type == AST_STRING && ast->right->type == AST_STRING) {
+        printf("%d", strcmp(ast->left->sval, ast->right->sval) ? 0 : 1);
+        return;
+    }
+    if (ast->left->type == AST_STRING) {
+        printf("streq_lit(");
+        compile(ast->right);
+        printf(",\"");
+        print_quoted_string(ast->left->sval);
+        printf("\",%d)", escaped_strlen(ast->left->sval));
+    } else if (ast->right->type == AST_STRING) {
+        printf("streq_lit(");
+        compile(ast->left);
+        printf(",\"");
+        print_quoted_string(ast->right->sval);
+        printf("\",%d)", escaped_strlen(ast->right->sval));
+    } else {
+        printf("streq(");
+        compile(ast->left);
+        printf(",");
+        compile(ast->right);
+        printf(")");
+    }
 }
 
 void emit_comparison(Ast *ast) {
@@ -46,21 +72,19 @@ void emit_comparison(Ast *ast) {
 }
 
 void emit_string_binop(Ast *ast) {
-    compile(ast->left);
-    printf(";\n");
-    indent();
     switch (ast->right->type) {
     case AST_IDENTIFIER:
-        printf("append_string(_tmp%d,_tr_%s->bytes,_tr_%s->len)", ast->left->tmpvar->offset, ast->right->var->name, ast->right->var->name);
-        break;
     case AST_TEMP_VAR:
+        printf("append_string(");
+        compile(ast->left);
+        printf(",");
         compile(ast->right);
-        printf(";\n");
-        indent();
-        printf("append_string(_tmp%d,_tmp%d->bytes,_tmp%d->len)", ast->left->tmpvar->offset, ast->right->tmpvar->offset, ast->right->tmpvar->offset); 
+        printf(")");
         break;
     case AST_STRING:
-        printf("append_string(_tmp%d,\"", ast->left->tmpvar->offset);
+        printf("append_string_lit(");
+        compile(ast->left);
+        printf(",\"");
         print_quoted_string(ast->right->sval);
         printf("\",%d)", (int) escaped_strlen(ast->right->sval));
         break;
@@ -76,9 +100,9 @@ void emit_binop(Ast *ast) {
                 compile(ast->right);
                 printf(";\n");
                 indent();
-                printf("SWAP(_tr_%s,_tmp%d)", ast->left->var->name, ast->right->tmpvar->offset);
+                printf("SWAP(_vs_%s,_tmp%d)", ast->left->var->name, ast->right->tmpvar->offset);
             } else {
-                printf("_tr_%s = ", ast->left->var->name);
+                printf("_vs_%s = ", ast->left->var->name);
                 compile(ast->right);
                 ast->left->var->initialized = 1;
                 if (ast->right->type == AST_TEMP_VAR) {
@@ -86,7 +110,7 @@ void emit_binop(Ast *ast) {
                 }
             }
         } else {
-            printf("_tr_%s = ", ast->left->var->name);
+            printf("_vs_%s = ", ast->left->var->name);
             compile(ast->right);
         }
         return;
@@ -127,7 +151,7 @@ void emit_tmpvar(Ast *ast) {
         printf("\"");
         printf("))");
     } else if (ast->expr->type == AST_IDENTIFIER) {
-        printf("(_tmp%d = copy_string(_tr_%s))", ast->tmpvar->offset, ast->expr->var->name);
+        printf("(_tmp%d = copy_string(_vs_%s))", ast->tmpvar->offset, ast->expr->var->name);
     } else if (ast->expr->type == AST_BINOP && var_type(ast->expr) == STRING_T) {
         /*printf("_tmp%d = ", ast->tmpvar->offset);*/
         emit_string_binop(ast->expr);
@@ -150,7 +174,7 @@ void emit_decl(Ast *ast) {
     default:
         error("wtf");
     }
-    printf("_tr_%s", ast->decl_var->name);
+    printf("_vs_%s", ast->decl_var->name);
     if (ast->init != NULL) {
         printf(" = ");
         compile(ast->init);
@@ -181,7 +205,7 @@ void compile(Ast *ast) {
         emit_tmpvar(ast);
         break;
     case AST_IDENTIFIER: {
-        printf("_tr_%s", ast->var->name);
+        printf("_vs_%s", ast->var->name);
         break;
     }
     case AST_DECL: {
@@ -277,11 +301,11 @@ void emit_free(Var *var) {
             printf("}\n");
         } else {
             indent();
-            printf("if (_tr_%s != NULL) {\n", var->name);
+            printf("if (_vs_%s != NULL) {\n", var->name);
             indent();
-            printf("    free(_tr_%s->bytes);\n", var->name);
+            printf("    free(_vs_%s->bytes);\n", var->name);
             indent();
-            printf("    free(_tr_%s);\n", var->name);
+            printf("    free(_vs_%s);\n", var->name);
             indent();
             printf("}\n");
         }
@@ -327,11 +351,11 @@ int main(int argc, char **argv) {
         printf("int main(int argc, char** argv) ");
         emit_scope_start(root);
         indent();
-        printf("int _tr_exit_code = 0;\n");
+        printf("int _vs_exit_code = 0;\n");
         compile(root->body);
         emit_free_locals(root);
         indent();
-        printf("return _tr_exit_code;\n");
+        printf("return _vs_exit_code;\n");
         _indent--;
         indent();
         printf("}\n");
