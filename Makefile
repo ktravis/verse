@@ -6,3 +6,6 @@ compiler: $(OBJS)
 
 clean:
 	rm $(OBJS) 2> /dev/null
+
+test: compiler
+	@cat x.vs | ./compiler > tmp.c && gcc -o tmp.out tmp.c && ./tmp.out
