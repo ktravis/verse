@@ -6,6 +6,3 @@ compiler: $(OBJS)
 
 clean:
 	rm $(OBJS) 2> /dev/null
-
-run: compiler
-	@ cat | ./compiler > tmp.s && gcc tmp.s driver.c -o tmp.out && ./tmp.out
