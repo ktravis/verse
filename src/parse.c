@@ -61,7 +61,8 @@ char var_type(Ast *ast) {
     case AST_DECL:
         return ast->var->type;
     case AST_CALL:
-        error("idk how to tell function stuff");
+        /*error("idk how to tell function stuff");*/
+        return INT_T;
     case AST_BINOP:
         if (is_comparison(ast->op)) {
             return BOOL_T;
@@ -88,7 +89,9 @@ void print_ast(Ast *ast) {
         printf("%s", ast->ival == 1 ? "true" : "false");
         break;
     case AST_STRING:
+        printf("\"");
         print_quoted_string(ast->sval);
+        printf("\"");
         break;
     case AST_BINOP:
         printf("(%s ", op_to_str(ast->op));
@@ -98,9 +101,9 @@ void print_ast(Ast *ast) {
         printf(")");
         break;
     case AST_TEMP_VAR:
-        printf("(tmp ");
+        /*printf("(tmp ");*/
         print_ast(ast->expr);
-        printf(")");
+        /*printf(")");*/
         break;
     case AST_IDENTIFIER:
         printf("%s", ast->var->name);
