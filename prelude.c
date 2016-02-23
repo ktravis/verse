@@ -18,6 +18,14 @@ struct string_type {
 void print_str(struct string_type *str) {
     printf("%s", str->bytes);
 }
+struct string_type *itoa(int x) {
+    struct string_type *v = malloc(sizeof(struct string_type));
+    v->alloc = 8;
+    v->bytes = malloc(8);
+    snprintf(v->bytes, 7, "%d", x);
+    v->len = strlen(v->bytes);
+    return v;
+}
 struct string_type *init_string(const char *str) {
     struct string_type *v = malloc(sizeof(struct string_type));
     int l = strlen(str);

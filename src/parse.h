@@ -7,6 +7,7 @@
 
 #include "token.h"
 #include "util.h"
+#include "types.h"
 
 #define MAX_ARGS 6
 
@@ -18,16 +19,23 @@ enum {
     AST_IDENTIFIER,
     AST_TEMP_VAR,
     AST_DECL,
+    AST_FUNC_DECL,
     AST_CALL,
     AST_CONDITIONAL,
     AST_SCOPE,
+    AST_RETURN,
     AST_BLOCK
+};
+
+enum {
+    PARSE_MAIN,
+    PARSE_FUNC
 };
 
 typedef struct Var {
     char *name;
-    int type;
-    int offset;
+    Type *type;
+    int id;
     int length;
     int temp;
     int consumed;
@@ -53,6 +61,15 @@ typedef struct Ast {
             Var *decl_var;
             struct Ast *init;
         };
+        // func decl
+        struct {
+            char *fn_decl_name; // probably just use a Var
+            Type *fn_decl_type;
+            int fn_decl_nargs;
+            Var **fn_decl_args;
+            struct Ast *fn_body;
+            struct Ast *next_fn_decl;
+        };
         // binop
         struct {
             int op;
@@ -61,7 +78,7 @@ typedef struct Ast {
         };
         // call
         struct {
-            char *fn; // should be symbol, but not until decl works
+            char *fn;
             int nargs;
             struct Ast **args;
         };
@@ -88,23 +105,29 @@ typedef struct Ast {
             Var *tmpvar;
             struct Ast *expr;
         };
+        // return
+        struct {
+            struct Ast *fn_scope;
+            struct Ast *ret_expr;
+        };
     };
 } Ast;
 
-Var *make_var(char *name, int type, Ast *scope);
+Var *make_var(char *name, Type *type, Ast *scope);
 Var *find_local_var(char *name, Ast *scope);
 Var *find_var(char *name, Ast *scope);
 
 void print_ast(Ast *ast);
-char var_type(Ast *ast);
-int is_dynamic(int t);
+Type *var_type(Ast *ast);
+int is_dynamic(Type *t);
 
 Ast *find_or_make_string(char *str);
 Ast *get_string_list();
+Ast *get_global_funcs();
 
 Ast *make_ast_string(char *val);
-Ast *make_ast_identifier(char *ident, int type);
 
+Type *parse_type(Tok *t, Ast *scope);
 Ast *parse_expression(Tok *t, int priority, Ast *scope);
 Ast *parse_arg_list(Tok *t, Ast *scope);
 Ast *parse_primary(Tok *t, Ast *scope);

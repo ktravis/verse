@@ -10,10 +10,6 @@ void emit(char *fmt, ...) {
     va_end(args);
 }
 
-void endl() {
-    printf("\n"); 
-}
-
 void indent() {
     for (int i = 0; i < _indent; i++) {
         printf("    ");
@@ -60,7 +56,7 @@ void emit_string_comparison(Ast *ast) {
 }
 
 void emit_comparison(Ast *ast) {
-    if (var_type(ast->left) == STRING_T) {
+    if (var_type(ast->left)->base == STRING_T) {
         emit_string_comparison(ast);
         return;
     }
@@ -100,7 +96,7 @@ void emit_binop(Ast *ast) {
                 compile(ast->right);
                 printf(";\n");
                 indent();
-                printf("SWAP(_vs_%s,_tmp%d)", ast->left->var->name, ast->right->tmpvar->offset);
+                printf("SWAP(_vs_%s,_tmp%d)", ast->left->var->name, ast->right->tmpvar->id);
             } else {
                 printf("_vs_%s = ", ast->left->var->name);
                 compile(ast->right);
@@ -118,7 +114,7 @@ void emit_binop(Ast *ast) {
     if (is_comparison(ast->op)) {
         emit_comparison(ast);
         return;
-    } else if (var_type(ast->left) == STRING_T) {
+    } else if (var_type(ast->left)->base == STRING_T) {
         emit_string_binop(ast);
         return;
     } else if (ast->op == OP_OR) {
@@ -145,23 +141,23 @@ void emit_binop(Ast *ast) {
 
 void emit_tmpvar(Ast *ast) {
     if (ast->expr->type == AST_STRING) {
-        printf("(_tmp%d = init_string(", ast->tmpvar->offset);
+        printf("(_tmp%d = init_string(", ast->tmpvar->id);
         printf("\"");
         print_quoted_string(ast->expr->sval);
         printf("\"");
         printf("))");
     } else if (ast->expr->type == AST_IDENTIFIER) {
-        printf("(_tmp%d = copy_string(_vs_%s))", ast->tmpvar->offset, ast->expr->var->name);
-    } else if (ast->expr->type == AST_BINOP && var_type(ast->expr) == STRING_T) {
-        /*printf("_tmp%d = ", ast->tmpvar->offset);*/
+        printf("(_tmp%d = copy_string(_vs_%s))", ast->tmpvar->id, ast->expr->var->name);
+    } else if (ast->expr->type == AST_BINOP && var_type(ast->expr)->base == STRING_T) {
+        /*printf("_tmp%d = ", ast->tmpvar->id);*/
         emit_string_binop(ast->expr);
     } else {
         error("idk");
     }
 }
 
-void emit_decl(Ast *ast) {
-    switch (ast->decl_var->type) {
+void emit_type(Type *type) {
+    switch (type->base) {
     case INT_T:
         printf("int ");
         break;
@@ -171,9 +167,19 @@ void emit_decl(Ast *ast) {
     case STRING_T:
         printf("struct string_type *");
         break;
+    case FN_T:
+        printf("void *");
+        break;
+    case VOID_T:
+        printf("void ");
+        break;
     default:
-        error("wtf");
+        error("wtf type");
     }
+}
+
+void emit_decl(Ast *ast) {
+    emit_type(ast->decl_var->type);
     printf("_vs_%s", ast->decl_var->name);
     if (ast->init != NULL) {
         printf(" = ");
@@ -183,6 +189,20 @@ void emit_decl(Ast *ast) {
         }
         ast->decl_var->initialized = 1;
     }
+}
+
+void emit_func_decl(Ast *fn) {
+    emit_type(fn->fn_decl_type->ret);
+    printf("%s(", fn->fn_decl_name);
+    for (int i = 0; i < fn->fn_decl_nargs; i++) {
+        emit_type(fn->fn_decl_args[i]->type);
+        printf("_vs_%s", fn->fn_decl_args[i]->name);
+        if (i < fn->fn_decl_nargs - 1) {
+            printf(",");
+        }
+    }
+    printf(") ");
+    compile(fn->fn_body);
 }
 
 void compile(Ast *ast) {
@@ -204,18 +224,40 @@ void compile(Ast *ast) {
     case AST_TEMP_VAR:
         emit_tmpvar(ast);
         break;
-    case AST_IDENTIFIER: {
+    case AST_IDENTIFIER:
         printf("_vs_%s", ast->var->name);
         break;
-    }
-    case AST_DECL: {
+    case AST_RETURN:
+        if (ast->ret_expr != NULL) {
+            if (ast->ret_expr->type == AST_TEMP_VAR) {
+                ast->ret_expr->tmpvar->consumed = 1;
+            }
+            emit_type(var_type(ast->ret_expr));
+            printf("_ret = ");
+            compile(ast->ret_expr); // need to do something with tmpvar instead
+            printf(";");
+        }
+        printf("\n");
+        emit_free_locals(ast->fn_scope);
+        indent();
+        printf("return");
+        if (ast->ret_expr != NULL) {
+            printf(" _ret");
+        }
+        break;
+    case AST_DECL:
         emit_decl(ast);
         break;
-    }
+    /*case AST_FUNC_DECL: */
+        /*emit_func_decl(ast);*/
+        /*break;*/
     case AST_CALL:
         printf("%s(", ast->fn);
         for (int i = 0; i < ast->nargs; i++) {
             compile(ast->args[i]);
+            if (ast->args[i]->type == AST_TEMP_VAR && is_dynamic(var_type(ast->args[i]))) {
+                ast->args[i]->tmpvar->consumed = 1;
+            }
             if (i != ast->nargs-1) {
                 printf(",");
             }
@@ -237,9 +279,10 @@ void compile(Ast *ast) {
         emit_scope_end(ast);
         break;
     case AST_CONDITIONAL:
-        printf("if ((");
+        printf("if (");
         compile(ast->condition);
-        printf(") == 1) {\n");
+        /*printf(") == 1) {\n");*/
+        printf(") {\n");
         _indent++;
         compile(ast->if_body);
         _indent--;
@@ -265,7 +308,7 @@ void emit_scope_start(Ast *scope) {
     while (var != NULL) {
         if (var->temp) {
             indent();
-            switch (var->type) {
+            switch (var->type->base) {
             case INT_T:
                 printf("int ");
                 break;
@@ -275,10 +318,12 @@ void emit_scope_start(Ast *scope) {
             case STRING_T:
                 printf("struct string_type *");
                 break;
+            case FN_T:
+                printf("void *");
             default:
                 error("wtf");
             }
-            printf("_tmp%d = NULL;\n", var->offset);
+            printf("_tmp%d = NULL;\n", var->id);
         }
         var = var->next;
     }
@@ -288,15 +333,15 @@ void emit_free(Var *var) {
     if ((!var->temp && !var->initialized) || (var->temp && var->consumed)) {
         return;
     }
-    switch (var->type) {
+    switch (var->type->base) {
     case STRING_T:
         if (var->temp) {
             indent();
-            printf("if (_tmp%d != NULL) {\n", var->offset); // maybe skip these
+            printf("if (_tmp%d != NULL) {\n", var->id); // maybe skip these
             indent();
-            printf("    free(_tmp%d->bytes);\n", var->offset);
+            printf("    free(_tmp%d->bytes);\n", var->id);
             indent();
-            printf("    free(_tmp%d);\n", var->offset);
+            printf("    free(_tmp%d);\n", var->id);
             indent();
             printf("}\n");
         } else {
@@ -331,12 +376,6 @@ void emit_scope_end(Ast *scope) {
     printf("}\n");
 }
 
-void emit_func_start() {
-}
-
-void emit_func_end() {
-}
-
 int main(int argc, char **argv) {
     int just_ast = 0;
     if (argc > 1 && !strcmp(argv[1], "-a")) {
@@ -348,6 +387,11 @@ int main(int argc, char **argv) {
     } else {
         printf("#include \"prelude.c\"\n");
         _indent = 0;
+        Ast *fn = get_global_funcs();
+        while (fn != NULL) {
+            emit_func_decl(fn);
+            fn = fn->next_fn_decl;
+        }
         printf("int main(int argc, char** argv) ");
         emit_scope_start(root);
         indent();

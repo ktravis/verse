@@ -15,6 +15,7 @@ enum {
     TOK_COLON,
     TOK_SEMI,
     TOK_ID,
+    TOK_FN,
     TOK_TYPE,
     TOK_OP,
     TOK_LPAREN,
@@ -23,7 +24,8 @@ enum {
     TOK_LBRACE,
     TOK_RBRACE,
     TOK_IF,
-    TOK_ELSE
+    TOK_ELSE,
+    TOK_RETURN
 };
 
 enum {
@@ -77,5 +79,7 @@ const char *to_string(Tok *t);
 const char *token_type(int type);
 const char *op_to_str(int op);
 int is_comparison(int op);
+
+Tok *expect(int type);
 
 #endif

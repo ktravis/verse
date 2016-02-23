@@ -188,6 +188,10 @@ Tok *check_reserved(char *buf) {
         Tok *t = make_token(TOK_BOOL);
         t->ival = 0;
         return t;
+    } else if (!strcmp(buf, "fn")) {
+        return make_token(TOK_FN);
+    } else if (!strcmp(buf, "return")) {
+        return make_token(TOK_RETURN);
     } else if (!strcmp(buf, "if")) {
         return make_token(TOK_IF);
     } else if (!strcmp(buf, "else")) {
@@ -302,6 +306,8 @@ const char *to_string(Tok *t) {
         return "{";
     case TOK_RBRACE:
         return "}";
+    case TOK_FN:
+        return "fn";
     case TOK_OP: {
         return op_to_str(t->op);
     }
@@ -330,6 +336,8 @@ const char *token_type(int type) {
         return "RPAREN";
     case TOK_OP:
         return "OP";
+    case TOK_FN:
+        return "FN";
     default:
         return "BAD TOKEN";
     }
@@ -356,6 +364,14 @@ const char *op_to_str(int op) {
     default:
         return "BAD OP";
     }
+}
+
+Tok *expect(int type) {
+    Tok *t = next_token();
+    if (t == NULL || t->type != type) {
+        error("Expected token of type '%s', got '%s'.", token_type(type), to_string(t));
+    }
+    return t;
 }
 
 int is_comparison(int op) {
