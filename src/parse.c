@@ -124,7 +124,7 @@ Type *var_type(Ast *ast) {
 int check_type(Type *a, Type *b) {
     if (a->base == b->base) {
         if (a->base == FN_T) {
-            if (a->nargs == b->nargs) {
+            if (a->nargs == b->nargs && check_type(a->ret, b->ret)) {
                 for (int i = 0; i < a->nargs; i++) {
                     if (!check_type(a->args[i], b->args[i])) {
                         return 0;
