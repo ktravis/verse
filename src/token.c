@@ -1,6 +1,8 @@
 #include "token.h"
 #include "util.h"
 
+static int line = 1;
+
 char read_non_space() {
     char c, d;
     while ((c = getc(stdin)) != EOF) {
@@ -17,6 +19,8 @@ char read_non_space() {
         }
         if (!(c == ' ' || c == '\n' || c == '\r')) {
             break;
+        } else if (c == '\n') {
+            line++;
         }
     }
     return c;
@@ -196,6 +200,8 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_IF);
     } else if (!strcmp(buf, "else")) {
         return make_token(TOK_ELSE);
+    } else if (!strcmp(buf, "extern")) {
+        return make_token(TOK_EXTERN);
     }
     return NULL;
 }
@@ -377,4 +383,8 @@ Tok *expect(int type) {
 int is_comparison(int op) {
     return op == OP_EQUALS || op == OP_NEQUALS || op == OP_GT ||
         op == OP_GTE || op == OP_LT || op == OP_LTE;
+}
+
+int lineno() {
+    return line;
 }

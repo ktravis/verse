@@ -2,6 +2,7 @@
 #define TYPES_H
 
 #include <stdlib.h>
+#include <string.h>
 
 enum {
     INT_T = 1,
@@ -21,7 +22,7 @@ typedef struct Type {
     int struct_id;
 } Type;
 
-char *type_as_str(int type);
+char *type_as_str(Type *t);
 Type *make_type(int base);
 Type *make_fn_type(int nargs, Type **args, Type *ret);
 

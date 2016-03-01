@@ -25,7 +25,8 @@ enum {
     TOK_RBRACE,
     TOK_IF,
     TOK_ELSE,
-    TOK_RETURN
+    TOK_RETURN,
+    TOK_EXTERN
 };
 
 enum {
@@ -81,5 +82,7 @@ const char *op_to_str(int op);
 int is_comparison(int op);
 
 Tok *expect(int type);
+
+int lineno();
 
 #endif

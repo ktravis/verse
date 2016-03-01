@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "token.h"
+
 void print_quoted_string(char *val);
 void error(char *fmt, ...);
 int escaped_strlen(const char *str);

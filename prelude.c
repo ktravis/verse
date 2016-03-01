@@ -10,6 +10,7 @@
      memcpy(&x,swap_temp,sizeof(x)); \
     } while(0)
 
+typedef void * fn_type;
 struct string_type {
     int len;
     int alloc;

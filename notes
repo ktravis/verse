@@ -6,6 +6,8 @@ need to change the way global func decls are handled
 parsing needs to be done better, parser should be aware of current declaration (declared return type)
     - keep a "current scope"?
     - already returned
+func calls need to be properly parsed, right now they are coerced to an int if not found.
+In order to fix this, an "extern" global func declaration will first be needed
 
 
 function declarations should create unique labels to be called from, and if they use local variables, the "instance" of the function includes their values at the time of creation

@@ -20,6 +20,8 @@ enum {
     AST_TEMP_VAR,
     AST_DECL,
     AST_FUNC_DECL,
+    AST_ANON_FUNC_DECL,
+    AST_EXTERN_FUNC_DECL,
     AST_CALL,
     AST_CONDITIONAL,
     AST_SCOPE,
@@ -40,8 +42,13 @@ typedef struct Var {
     int temp;
     int consumed;
     int initialized;
-    struct Var *next;
+    int ext;
 } Var;
+
+typedef struct VarList {
+    Var *item;
+    struct VarList *next;
+} VarList;
 
 typedef struct Ast {
     int type;
@@ -52,10 +59,12 @@ typedef struct Ast {
         struct {
             char *sval;
             int sid;
-            struct Ast *snext;
         };
         // var
-        Var *var;
+        struct {
+            Var *var;
+            char *varname;
+        };
         // decl
         struct {
             Var *decl_var;
@@ -63,12 +72,10 @@ typedef struct Ast {
         };
         // func decl
         struct {
-            char *fn_decl_name; // probably just use a Var
-            Type *fn_decl_type;
-            int fn_decl_nargs;
+            Var *fn_decl_var;
+            int anon;
             Var **fn_decl_args;
             struct Ast *fn_body;
-            struct Ast *next_fn_decl;
         };
         // binop
         struct {
@@ -79,6 +86,7 @@ typedef struct Ast {
         // call
         struct {
             char *fn;
+            Var *fn_var;
             int nargs;
             struct Ast **args;
         };
@@ -91,7 +99,7 @@ typedef struct Ast {
         struct {
             struct Ast *parent;
             struct Ast *body;
-            Var *locals;
+            VarList *locals;
         };
         // conditional
         struct {
@@ -113,7 +121,13 @@ typedef struct Ast {
     };
 } Ast;
 
-Var *make_var(char *name, Type *type, Ast *scope);
+typedef struct AstList {
+    Ast *item;
+    struct AstList *next;
+} AstList;
+
+Var *make_var(char *name, Type *type);
+void attach_var(Var *var, Ast *scope);
 Var *find_local_var(char *name, Ast *scope);
 Var *find_var(char *name, Ast *scope);
 
@@ -122,8 +136,9 @@ Type *var_type(Ast *ast);
 int is_dynamic(Type *t);
 
 Ast *find_or_make_string(char *str);
-Ast *get_string_list();
-Ast *get_global_funcs();
+AstList *get_global_funcs();
+Ast *generate_ast();
+Ast *parse_semantics(Ast *ast, Ast *scope);
 
 Ast *make_ast_string(char *val);
 

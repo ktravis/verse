@@ -151,8 +151,12 @@ void emit_tmpvar(Ast *ast) {
     } else if (ast->expr->type == AST_BINOP && var_type(ast->expr)->base == STRING_T) {
         /*printf("_tmp%d = ", ast->tmpvar->id);*/
         emit_string_binop(ast->expr);
+    } else if (ast->expr->type == AST_CALL) {
+        printf("(_tmp%d = ", ast->tmpvar->id);
+        compile(ast->expr);
+        printf(")");
     } else {
-        error("idk");
+        error("idk tmpvar");
     }
 }
 
@@ -168,7 +172,7 @@ void emit_type(Type *type) {
         printf("struct string_type *");
         break;
     case FN_T:
-        printf("void *");
+        printf("fn_type ");
         break;
     case VOID_T:
         printf("void ");
@@ -192,12 +196,12 @@ void emit_decl(Ast *ast) {
 }
 
 void emit_func_decl(Ast *fn) {
-    emit_type(fn->fn_decl_type->ret);
-    printf("%s(", fn->fn_decl_name);
-    for (int i = 0; i < fn->fn_decl_nargs; i++) {
+    emit_type(fn->fn_decl_var->type->ret);
+    printf("_fn_%s(", fn->fn_decl_var->name);
+    for (int i = 0; i < fn->fn_decl_var->type->nargs; i++) {
         emit_type(fn->fn_decl_args[i]->type);
         printf("_vs_%s", fn->fn_decl_args[i]->name);
-        if (i < fn->fn_decl_nargs - 1) {
+        if (i < fn->fn_decl_var->type->nargs - 1) {
             printf(",");
         }
     }
@@ -248,11 +252,20 @@ void compile(Ast *ast) {
     case AST_DECL:
         emit_decl(ast);
         break;
-    /*case AST_FUNC_DECL: */
+    case AST_FUNC_DECL: 
+        break;
+    case AST_ANON_FUNC_DECL: 
+        printf("_fn_%s", ast->fn_decl_var->name);
         /*emit_func_decl(ast);*/
-        /*break;*/
+        break;
+    case AST_EXTERN_FUNC_DECL: 
+        break;
     case AST_CALL:
-        printf("%s(", ast->fn);
+        /*Var *fn_var = find_var(ast->fn, */
+        if (!ast->fn_var->ext) {
+            printf("_fn_");
+        }
+        printf("%s(", ast->fn_var->name);
         for (int i = 0; i < ast->nargs; i++) {
             compile(ast->args[i]);
             if (ast->args[i]->type == AST_TEMP_VAR && is_dynamic(var_type(ast->args[i]))) {
@@ -268,7 +281,7 @@ void compile(Ast *ast) {
         for (int i = 0; i < ast->num_statements; i++) {
             indent();
             compile(ast->statements[i]);
-            if (ast->statements[i]->type != AST_CONDITIONAL) {
+            if (ast->statements[i]->type != AST_CONDITIONAL && ast->statements[i]->type != AST_FUNC_DECL && ast->statements[i]->type != AST_ANON_FUNC_DECL && ast->statements[i]->type != AST_EXTERN_FUNC_DECL) {
                 printf(";\n");
             }
         }
@@ -304,11 +317,11 @@ void compile(Ast *ast) {
 void emit_scope_start(Ast *scope) {
     printf("{\n");
     _indent++;
-    Var *var = scope->locals;
-    while (var != NULL) {
-        if (var->temp) {
+    VarList *list = scope->locals;
+    while (list != NULL) {
+        if (list->item->temp) {
             indent();
-            switch (var->type->base) {
+            switch (list->item->type->base) {
             case INT_T:
                 printf("int ");
                 break;
@@ -323,9 +336,9 @@ void emit_scope_start(Ast *scope) {
             default:
                 error("wtf");
             }
-            printf("_tmp%d = NULL;\n", var->id);
+            printf("_tmp%d = NULL;\n", list->item->id);
         }
-        var = var->next;
+        list = list->next;
     }
 }
 
@@ -364,7 +377,7 @@ void emit_free(Var *var) {
 
 void emit_free_locals(Ast *scope) {
     while (scope->locals != NULL) {
-        emit_free(scope->locals);
+        emit_free(scope->locals->item);
         scope->locals = scope->locals->next;
     }
 }
@@ -376,33 +389,60 @@ void emit_scope_end(Ast *scope) {
     printf("}\n");
 }
 
+void emit_forward_decl(Var *fn) {
+    if (fn->ext) {
+        printf("extern ");
+    }
+    emit_type(fn->type->ret);
+    if (fn->ext) {
+        printf("%s(", fn->name);
+    } else {
+        printf("_fn_%s(", fn->name);
+    }
+    for (int i = 0; i < fn->type->nargs; i++) {
+        emit_type(fn->type->args[i]);
+        /*printf("_vs_%s", fn->type->args[i]->name);*/
+        printf("a%d", i);
+        if (i < fn->type->nargs - 1) {
+            printf(",");
+        }
+    }
+    printf(");\n");
+}
+
 int main(int argc, char **argv) {
     int just_ast = 0;
     if (argc > 1 && !strcmp(argv[1], "-a")) {
         just_ast = 1;
     }
-    Ast *root = parse_scope(NULL);
+    Ast *root = generate_ast();
+    root = parse_semantics(root, root);
     if (just_ast) {
         print_ast(root);
     } else {
         printf("#include \"prelude.c\"\n");
         _indent = 0;
-        Ast *fn = get_global_funcs();
-        while (fn != NULL) {
-            emit_func_decl(fn);
-            fn = fn->next_fn_decl;
+        AstList *fnlist = get_global_funcs();
+        while (fnlist != NULL) {
+            emit_forward_decl(fnlist->item->fn_decl_var);
+            fnlist = fnlist->next;
         }
-        printf("int main(int argc, char** argv) ");
-        emit_scope_start(root);
-        indent();
-        printf("int _vs_exit_code = 0;\n");
+        fnlist = get_global_funcs();
+        while (fnlist != NULL) {
+            emit_func_decl(fnlist->item);
+            fnlist = fnlist->next;
+        }
         compile(root->body);
-        emit_free_locals(root);
-        indent();
-        printf("return _vs_exit_code;\n");
-        _indent--;
-        indent();
-        printf("}\n");
+        printf("int main(int argc, char** argv) {\n");
+        /*emit_scope_start(root);*/
+        /*indent();*/
+        /*printf("    int exit_code = _fn_main();\n"); // TODO argc, argv*/
+        /*emit_free_locals(root);*/
+        /*indent();*/
+        printf("    return _fn_main();\n");
+        /*_indent--;*/
+        /*indent();*/
+        printf("}");
     }
     return 0;
 }

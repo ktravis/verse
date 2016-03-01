@@ -1,51 +1,89 @@
 #include "parse.h"
 
+static int last_var_id = 0;
 static int last_cond_id = 0;
-static Ast *strings = NULL;
-static Ast *global_func_decls = NULL;
+static int last_tmp_fn_id = 0;
+static VarList *global_fn_vars = NULL;
+static AstList *global_fn_decls = NULL;
+static AstList *strings = NULL; // TODO maybe don't need this at all?
 static int parser_state = PARSE_MAIN;
 
-Var *make_var(char *name, Type *type, Ast *scope) {
+VarList *varlist_append(VarList *list, Var *v) {
+    VarList *vl = malloc(sizeof(VarList));
+    vl->item = v;
+    vl->next = list;
+    return vl;
+}
+
+Var *varlist_find(VarList *list, char *name) {
+    Var *v = NULL;
+    while (list != NULL) {
+        if (!strcmp(list->item->name, name)) {
+            v = list->item;
+            break;
+        }
+        list = list->next;
+    }
+    return v;
+}
+
+AstList *astlist_append(AstList *list, Ast *ast) {
+    AstList *l = malloc(sizeof(AstList));
+    l->item = ast;
+    l->next = list;
+    return l;
+}
+
+void print_locals(Ast *scope) {
+    VarList *v = scope->locals;
+    printf("locals: ");
+    while (v != NULL) {
+        printf("%s ", v->item->name);
+        v = v->next;
+    }
+    printf("\n");
+}
+
+Var *make_var(char *name, Type *type) {
     Var *var = malloc(sizeof(Var));
     var->name = malloc(strlen(name)+1);
     strcpy(var->name, name);
+    var->id = last_var_id++;
     var->type = type;
-    var->id = scope->locals != NULL ? scope->locals->id + 1 : 0;
     var->temp = 0;
     var->initialized = 0;
-    var->next = scope->locals;
-    scope->locals = var;
     return var;
+}
+
+void attach_var(Var *var, Ast *scope) {
+    scope->locals = varlist_append(scope->locals, var);
 }
 
 Var *make_temp_var(Type *type, Ast *scope) {
     Var *var = malloc(sizeof(Var));
     var->name = "";
     var->type = type;
-    var->id = scope->locals != NULL ? scope->locals->id + 1 : 0;
+    var->id = last_var_id++;
     var->temp = 1;
     var->consumed = 0;
     var->initialized = 0;
-    var->next = scope->locals;
-    scope->locals = var;
+    attach_var(var, scope);
     return var;
 }
 
-Var *find_var(char *name, Ast *scope) {
-    Var *v = find_local_var(name, scope);
-    if (v == NULL && scope->parent != NULL) {
-        v = find_var(name, scope->parent);
-    }
-    return v;
-}
+/*Var *find_var(char *name, Ast *scope) {*/
+    /*Var *v = find_local_var(name, scope);*/
+    /*if (v == NULL && scope->parent != NULL) {*/
+        /*v = find_var(name, scope->parent);*/
+    /*}*/
+    /*return v;*/
+/*}*/
 
 Var *find_local_var(char *name, Ast *scope) {
-    Var *v = scope->locals;
-    while (v != NULL) {
-        if (!strcmp(name, v->name)) {
-            break;
-        }
-        v = v->next;
+    
+    Var *v = varlist_find(scope->locals, name);
+    if (v == NULL) {
+        v = varlist_find(global_fn_vars, name);
     }
     return v;
 }
@@ -63,8 +101,13 @@ Type *var_type(Ast *ast) {
     case AST_DECL:
         return ast->decl_var->type;
     case AST_CALL:
-        /*error("idk how to tell function stuff");*/
-        return make_type(INT_T); // this is obviously wrong, need to change AST_CALL first though
+        if (ast->fn_var != NULL) {
+            return ast->fn_var->type->ret;
+        }
+        error("cannot do: %s", ast->fn);
+        return make_type(INT_T);
+    case AST_ANON_FUNC_DECL:
+        return ast->fn_decl_var->type;
     case AST_BINOP:
         if (is_comparison(ast->op)) {
             return make_type(BOOL_T);
@@ -126,31 +169,42 @@ void print_ast(Ast *ast) {
         /*printf(")");*/
         break;
     case AST_IDENTIFIER:
-        printf("%s", ast->var->name);
+        printf("%s", ast->varname);
         break;
     case AST_DECL:
-        printf("(decl %s %s", ast->var->name, type_as_str(ast->var->type->base));
+        printf("(decl %s %s", ast->decl_var->name, type_as_str(ast->decl_var->type));
         if (ast->init != NULL) {
             printf(" ");
             print_ast(ast->init);
         }
         printf(")");
         break;
+    case AST_EXTERN_FUNC_DECL:
+        printf("(extern fn %s)", ast->fn_decl_var->name);
+        break;
+    case AST_ANON_FUNC_DECL:
     case AST_FUNC_DECL:
-        printf("(fn %s (", ast->fn_decl_name);
-        for (int i = 0; i < ast->fn_decl_nargs; i++) {
+        printf("(fn ");
+        if (!ast->anon) {
+            printf("%s", ast->fn_decl_var->name);
+        }
+        printf("(");
+        for (int i = 0; i < ast->fn_decl_var->type->nargs; i++) {
             printf("%s", ast->fn_decl_args[i]->name);
-            if (i < ast->fn_decl_nargs - 1) {
+            if (i < ast->fn_decl_var->type->nargs - 1) {
                 printf(",");
             }
         }
-        printf(") "); // print ret type
+        printf("):%s ", type_as_str(ast->fn_decl_var->type->ret));
         print_ast(ast->fn_body);
         printf(")");
         break;
     case AST_RETURN:
-        printf("(return ");
-        print_ast(ast->expr);
+        printf("(return");
+        if (ast->ret_expr != NULL) {
+            printf(" ");
+            print_ast(ast->ret_expr);
+        }
         printf(")");
         break;
     case AST_CALL:
@@ -193,20 +247,24 @@ Ast *make_ast_string(char *str) {
     Ast *ast = malloc(sizeof(Ast));
     ast->type = AST_STRING;
     ast->sval = str;
-    ast->sid = strings == NULL ? 0 : strings->sid + 1;
-    ast->snext = strings;
-    strings = ast;
+    ast->sid = strings == NULL ? 0 : strings->item->sid + 1;
+    strings = astlist_append(strings, ast);
     return ast;
 }
 
 Ast *find_or_make_string(char *sval) {
-    Ast *str = strings;
-    for (;;) {
-        if (str == NULL || !strcmp(str->sval, sval)) {
-            str = make_ast_string(sval);
+    AstList *strlist = strings;
+    Ast *str = NULL;
+    while (strlist != NULL) {
+        if (!strcmp(strlist->item->sval, sval)) {
+            str = strlist->item;
             break;
         }
-        str = str->snext;
+        strlist = strlist->next;
+    }
+    if (str == NULL) {
+        str = make_ast_string(sval);
+        strings = astlist_append(strings, str);
     }
     return str;
 }
@@ -219,19 +277,23 @@ Ast *make_ast_tmpvar(Ast *ast, Var *tmpvar) {
     return tmp;
 }
 
-Ast *make_ast_binop(int op, Ast *left, Ast *right, Ast *scope) {
+Ast *parse_binop_semantics(Ast *ast, Ast *scope) {
+    int op = ast->op;
+    Ast *left = parse_semantics(ast->left, scope);
+    Ast *right = parse_semantics(ast->right, scope);
     if (op == '=' && left->type != AST_IDENTIFIER) {
         error("LHS of assignment is not an identifier.");
     }
     if (!check_type(var_type(left), var_type(right))) {
         error("LHS of operation '%s' has type '%s', while RHS has type '%s'.",
-                op_to_str(op), type_as_str(left->var->type->base), type_as_str(var_type(right)->base));
+                op_to_str(op), type_as_str(left->var->type),
+                type_as_str(var_type(right)));
     }
     switch (op) {
     case OP_PLUS:
         if (var_type(left)->base != INT_T && var_type(left)->base != STRING_T) {
             error("Operator '%s' is valid only for integer or string arguments, not for type '%s'.",
-                    op_to_str(op), type_as_str(var_type(left)->base));
+                    op_to_str(op), type_as_str(var_type(left)));
         }
         break;
     case OP_MINUS:
@@ -246,39 +308,44 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right, Ast *scope) {
     case OP_LTE:
         if (var_type(left)->base != INT_T) {
             error("Operator '%s' is not valid for non-integer arguments of type '%s'.",
-                    op_to_str(op), type_as_str(var_type(left)->base));
+                    op_to_str(op), type_as_str(var_type(left)));
         }
         break;
     case OP_AND:
     case OP_OR:
         if (var_type(left)->base != BOOL_T) {
             error("Operator '%s' is not valid for non-bool arguments of type '%s'.",
-                    op_to_str(op), type_as_str(var_type(left)->base));
+                    op_to_str(op), type_as_str(var_type(left)));
         }
         break;
     case OP_EQUALS:
     case OP_NEQUALS:
         break;
     }
-    Type *lt = var_type(left);
+    ast->left = left;
+    ast->right = right;
+    if (!is_comparison(ast->op) && is_dynamic(var_type(ast->left))) {
+        if (ast->op == OP_ASSIGN) {
+            if (ast->right->type != AST_TEMP_VAR) {
+                ast->right = make_ast_tmpvar(ast->right, make_temp_var(var_type(ast->right), scope));
+            }
+        } else {
+            if (ast->left->type != AST_TEMP_VAR) {
+                ast->left = make_ast_tmpvar(ast->left, make_temp_var(var_type(ast->left), scope));
+            }
+            Ast *tmp = make_ast_tmpvar(ast, ast->left->tmpvar);
+            return tmp;
+        }
+    }
+    return ast;
+}
+
+Ast *make_ast_binop(int op, Ast *left, Ast *right, Ast *scope) {
     Ast *binop = malloc(sizeof(Ast));
     binop->type = AST_BINOP;
     binop->op = op;
     binop->left = left;
     binop->right = right;
-    if (!is_comparison(op) && is_dynamic(lt)) {
-        if (op == OP_ASSIGN) {
-            if (right->type != AST_TEMP_VAR) {
-                binop->right = make_ast_tmpvar(binop->right, make_temp_var(lt, scope));
-            }
-        } else {
-            if (left->type != AST_TEMP_VAR) {
-                binop->left = make_ast_tmpvar(left, make_temp_var(lt, scope));
-            }
-            Ast *tmp = make_ast_tmpvar(binop, binop->left->tmpvar);
-            return tmp;
-        }
-    }
     return binop;
 }
 
@@ -289,17 +356,12 @@ Ast *parse_arg_list(Tok *t, Ast *scope) {
     func->type = AST_CALL;    
     int i;
     int n = 0;
-    Ast *arg;
     for (i = 0; i < MAX_ARGS; i++) {
         t = next_token();
         if (t->type == TOK_RPAREN) {
             break;
         }
-        arg = parse_expression(t, 0, scope);
-        if (arg->type != AST_TEMP_VAR && is_dynamic(var_type(arg))) {
-            arg = make_ast_tmpvar(arg, make_temp_var(var_type(arg), scope));
-        }
-        func->args[i] = arg;
+        func->args[i] = parse_expression(t, 0, scope);
         n++;
         t = next_token();
         if (t->type == TOK_RPAREN) {
@@ -315,32 +377,20 @@ Ast *parse_arg_list(Tok *t, Ast *scope) {
     return func; 
 }
 
-Ast *make_ast_decl(char *name, Type *type, Ast *scope) {
+Ast *make_ast_decl(char *name, Type *type) {
     Ast *ast = malloc(sizeof(Ast));
     ast->type = AST_DECL;
-    ast->decl_var = make_var(name, type, scope);
+    ast->decl_var = make_var(name, type);
     return ast;
 }
 
 Ast *parse_declaration(Tok *t, Ast *scope) {
-    if (find_local_var(t->sval, scope) != NULL) {
-        error("Declared variable '%s' already exists.", t->sval);
-    }
+    Ast *lhs = make_ast_decl(t->sval, parse_type(next_token(), scope));
     Tok *next = next_token();
-    Ast *lhs = make_ast_decl(t->sval, parse_type(next, scope), scope);
-
-    next = next_token();
     if (next == NULL) {
         error("Unexpected end of input while parsing declaration.");
     } else if (next->type == TOK_OP && next->op == OP_ASSIGN) {
-        Ast *init = parse_expression(next_token(), 0, scope);
-        if (!check_type(var_type(lhs), var_type(init))) {
-            error("Can't initialize variable '%s' of type '%s' with value of type '%s'.", t->sval, type_as_str(next->tval), type_as_str(var_type(init)->base));
-        }
-        if (init->type != AST_TEMP_VAR && is_dynamic(var_type(init))) {
-            init = make_ast_tmpvar(init, make_temp_var(var_type(init), scope));
-        }
-        lhs->init = init;
+        lhs->init = parse_expression(next_token(), 0, scope);
     } else if (next->type != TOK_SEMI) {
         error("Unexpected token '%s' while parsing declaration.", to_string(next));
     } else {
@@ -395,6 +445,7 @@ Type *parse_type(Tok *t, Ast *scope) {
                 error("Unexpected token '%s' while parsing type.", to_string(t));
             }
         }
+        expect(TOK_COLON);
         Type *ret = parse_type(next_token(), scope);
         return make_fn_type(nargs, args, ret);
     /*} else if (t->type == TOK_ID) {*/
@@ -406,18 +457,63 @@ Type *parse_type(Tok *t, Ast *scope) {
     return NULL;
 }
 
-Ast *parse_func_decl(Ast *scope) {
-    Tok *t = expect(TOK_ID);
+Ast *parse_extern_func_decl(Ast *scope) {
+    Tok *t = expect(TOK_FN);
+    t = expect(TOK_ID);
     char *fname = t->sval;
-    if (find_local_var(fname, scope) != NULL) {
-        error("Declared function name '%s' already exists in this scope.", fname);
+    expect(TOK_LPAREN);
+
+    Ast *func = malloc(sizeof(Ast));
+    func->type = AST_EXTERN_FUNC_DECL;    
+
+    int i;
+    int n = 0;
+    Type** arg_types = malloc(sizeof(Type*) * (MAX_ARGS + 1));
+    for (i = 0; i < MAX_ARGS; i++) {
+        t = next_token();
+        if (t->type == TOK_RPAREN) {
+            break;
+        }
+        arg_types[i] = parse_type(t, scope);
+        n++;
+        t = next_token();
+        if (t->type == TOK_RPAREN) {
+            break;
+        } else if (t->type != TOK_COMMA) {
+            error("Unexpected token '%s' in argument list.", to_string(t));
+        }
+    }
+    if (i == MAX_ARGS) {
+        error("OH NO THE ARGS");
+    }
+    expect(TOK_COLON);
+    Type *fn_type = make_fn_type(n, arg_types, parse_type(next_token(), scope));
+    Var *fn_decl_var = make_var(fname, fn_type);
+    fn_decl_var->ext = 1;
+    func->fn_decl_var = fn_decl_var;
+    return func; 
+}
+
+Ast *parse_func_decl(Ast *scope, int anonymous) {
+    Tok *t;
+    char *fname;
+    if (anonymous) {
+        int len = snprintf(NULL, 0, "%d", last_tmp_fn_id);
+        fname = malloc(sizeof(char) * (len + 1));
+        snprintf(fname, len+1, "%d", last_tmp_fn_id++);
+        fname[len] = 0;
+    } else {
+        t = expect(TOK_ID);
+        fname = t->sval;
+        if (find_local_var(fname, scope) != NULL) {
+            error("Declared function name '%s' already exists in this scope.", fname);
+        }
     }
     expect(TOK_LPAREN);
 
     Ast *func = malloc(sizeof(Ast));
     func->fn_decl_args = malloc(sizeof(Var*) * (MAX_ARGS + 1));
-    func->fn_decl_name = fname;
-    func->type = AST_FUNC_DECL;    
+    func->type = anonymous ? AST_ANON_FUNC_DECL : AST_FUNC_DECL;
 
     Ast *fn_scope = malloc(sizeof(Ast));
     fn_scope->type = AST_SCOPE;
@@ -439,7 +535,8 @@ Ast *parse_func_decl(Ast *scope) {
             error("Declared variable '%s' already exists.", t->sval);
         }
         expect(TOK_COLON);
-        func->fn_decl_args[i] = make_var(t->sval, parse_type(next_token(), scope), fn_scope);
+        func->fn_decl_args[i] = make_var(t->sval, parse_type(next_token(), scope));
+        attach_var(func->fn_decl_args[i], fn_scope);
         func->fn_decl_args[i]->initialized = 1;
         arg_types[i] = func->fn_decl_args[i]->type;
         n++;
@@ -453,20 +550,23 @@ Ast *parse_func_decl(Ast *scope) {
     if (i == MAX_ARGS) {
         error("OH NO THE ARGS");
     }
-    func->fn_decl_nargs = n;
     expect(TOK_COLON);
     Type *fn_type = make_fn_type(n, arg_types, parse_type(next_token(), scope));
     expect(TOK_LBRACE);
-    make_var(func->fn_decl_name, fn_type, scope);
-    func->fn_decl_type = fn_type;
+    Var *fn_decl_var = make_var(fname, fn_type);
+    fn_decl_var->ext = 0;
+
+    func->anon = anonymous;
+    func->fn_decl_var = fn_decl_var;
+
     int prev = parser_state;
     parser_state = PARSE_FUNC;
     fn_scope->body = parse_block(fn_scope, 1);
     func->fn_body = fn_scope;
     parser_state = prev;
 
-    func->next_fn_decl = global_func_decls;
-    global_func_decls = func;
+    global_fn_decls = astlist_append(global_fn_decls, func);
+
     return func; 
 }
 
@@ -492,7 +592,9 @@ Ast *parse_statement(Tok *t, Ast *scope) {
         next_token();
         ast = parse_declaration(t, scope);
     } else if (t->type == TOK_FN) {
-        return parse_func_decl(scope);
+        return parse_func_decl(scope, 0);
+    } else if (t->type == TOK_EXTERN) {
+        ast = parse_extern_func_decl(scope);
     } else if (t->type == TOK_LBRACE) {
         return parse_scope(scope);
     } else if (t->type == TOK_IF) {
@@ -533,15 +635,14 @@ Ast *parse_primary(Tok *t, Ast *scope) {
             return parse_arg_list(t, scope);
         }
         unget_token(next);
-        Var *v = find_var(t->sval, scope);
-        if (v == NULL) {
-            error("Undefined identifier '%s' encountered.", t->sval);
-        }
         Ast *id = malloc(sizeof(Ast));
         id->type = AST_IDENTIFIER;
-        id->var = v;
+        id->var = NULL;
+        id->varname = t->sval;
         return id;
     }
+    case TOK_FN:
+        return parse_func_decl(scope, 1);
     case TOK_LPAREN: {
         Tok *next = next_token();
         if (next == NULL) {
@@ -568,7 +669,7 @@ Ast *parse_conditional(Ast *scope) {
     cond->cond_id = last_cond_id++;
     cond->condition = parse_expression(next_token(), 0, scope);
     if (var_type(cond->condition)->base != BOOL_T) {
-        error("Expression of type '%s' is not a valid conditional.", type_as_str(var_type(cond->condition)->base));
+        error("Expression of type '%s' is not a valid conditional.", type_as_str(var_type(cond->condition)));
     }
     Tok *next = next_token();
     if (next == NULL || next->type != TOK_LBRACE) {
@@ -615,11 +716,10 @@ Ast *parse_block(Ast *scope, int bracketed) {
             n *= 2;
             statements = realloc(statements, sizeof(Ast*)*n);
         }
-        Ast *statement = parse_statement(t, scope);
-        if (statement->type != AST_FUNC_DECL) {
-            statements[i] = statement;
-            i++;
-        }
+        Ast *stmt = parse_statement(t, scope);
+        /*if (stmt->type != AST_EXTERN_FUNC_DECL) {*/
+            statements[i++] = stmt;
+        /*}*/
     }
     block->num_statements = i;
     block->statements = statements;
@@ -635,10 +735,106 @@ Ast *parse_scope(Ast *parent) {
     return scope;
 }
 
-Ast *get_string_list() {
-    return strings;
+Ast *generate_ast() {
+    Ast *scope = malloc(sizeof(Ast));
+    scope->type = AST_SCOPE;
+    scope->locals = NULL;
+    scope->parent = NULL;
+    scope->body = parse_block(scope, 0);
+    return scope;
 }
 
-Ast *get_global_funcs() {
-    return global_func_decls;
+Ast *parse_semantics(Ast *ast, Ast *scope) {
+    switch (ast->type) {
+    case AST_INTEGER:
+    case AST_BOOL:
+    case AST_STRING:
+        break;
+    case AST_BINOP:
+        return parse_binop_semantics(ast, scope);
+    case AST_IDENTIFIER: {
+        Var *v = find_local_var(ast->varname, scope);
+        if (v == NULL) {
+            error("Undefined identifier '%s' encountered.", ast->varname);
+        }
+        ast->var = v;
+        break;
+    }
+    /*case AST_TEMP_VAR: // shouldn't happen*/
+        /*break;*/
+    case AST_DECL: {
+        Ast *init = ast->init;
+        if (find_local_var(ast->decl_var->name, scope) != NULL) {
+            error("Declared variable '%s' already exists.", ast->decl_var->name);
+        }
+        attach_var(ast->decl_var, scope);
+        if (init != NULL) {
+            init = parse_semantics(init, scope);
+            if (!check_type(ast->decl_var->type, var_type(init))) {
+                error("Can't initialize variable '%s' of type '%s' with value of type '%s'.",
+                        ast->decl_var->name, type_as_str(ast->decl_var->type), type_as_str(var_type(init)));
+            }
+            if (init->type != AST_TEMP_VAR && is_dynamic(var_type(init))) {
+                init = make_ast_tmpvar(init, make_temp_var(var_type(init), scope));
+            }
+            ast->init = init;
+        }
+        break;
+    }
+    case AST_EXTERN_FUNC_DECL:
+        if (parser_state != PARSE_MAIN) {
+            error("Cannot declare an extern inside scope ('%s').", ast->fn_decl_var->name);
+        }
+        attach_var(ast->fn_decl_var, scope);
+        global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);
+        break;
+    case AST_FUNC_DECL:
+    case AST_ANON_FUNC_DECL:
+        // it was checking for n in the scope with assert and print_str
+        attach_var(ast->fn_decl_var, scope);
+        attach_var(ast->fn_decl_var, ast->fn_body);
+        global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);
+
+        ast->fn_body = parse_semantics(ast->fn_body, scope);
+        break;
+    case AST_CALL: {
+        Ast *arg;
+        ast->fn_var = find_local_var(ast->fn, scope);
+        for (int i = 0; i < ast->nargs; i++) {
+            arg = ast->args[i];
+            arg = parse_semantics(ast->args[i], scope);
+            if (arg->type != AST_TEMP_VAR && is_dynamic(var_type(arg))) {
+                arg = make_ast_tmpvar(arg, make_temp_var(var_type(arg), scope));
+            }
+            ast->args[i] = arg;
+        }
+        break;
+    }
+    case AST_CONDITIONAL:
+        ast->condition = parse_semantics(ast->condition, scope);
+        ast->if_body = parse_semantics(ast->if_body, scope);
+        if (ast->else_body != NULL) {
+            ast->else_body = parse_semantics(ast->else_body, scope);
+        }
+        // TODO need to do all type checking in this function (for everything)
+        break;
+    case AST_SCOPE:
+        ast->body = parse_semantics(ast->body, ast);
+        break;
+    case AST_RETURN:
+        ast->ret_expr = parse_semantics(ast->ret_expr, scope);
+        break;
+    case AST_BLOCK:
+        for (int i = 0; i < ast->num_statements; i++) {
+            ast->statements[i] = parse_semantics(ast->statements[i], scope);
+        }
+        break;
+    default:
+        error("idk parse semantics");
+    }
+    return ast;
+}
+
+AstList *get_global_funcs() {
+    return global_fn_decls;
 }
