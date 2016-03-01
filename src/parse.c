@@ -764,13 +764,18 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         /*break;*/
     case AST_DECL: {
         Ast *init = ast->init;
+        if (ast->decl_var->type->base == AUTO_T && init == NULL) {
+            error("Cannot use type 'auto' for variable '%s' without initialization.", ast->decl_var->name);
+        }
         if (find_local_var(ast->decl_var->name, scope) != NULL) {
             error("Declared variable '%s' already exists.", ast->decl_var->name);
         }
         attach_var(ast->decl_var, scope);
         if (init != NULL) {
             init = parse_semantics(init, scope);
-            if (!check_type(ast->decl_var->type, var_type(init))) {
+            if (ast->decl_var->type->base == AUTO_T) {
+                ast->decl_var->type = var_type(ast->init);
+            } else if (!check_type(ast->decl_var->type, var_type(init))) {
                 error("Can't initialize variable '%s' of type '%s' with value of type '%s'.",
                         ast->decl_var->name, type_as_str(ast->decl_var->type), type_as_str(var_type(init)));
             }
@@ -790,7 +795,8 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         break;
     case AST_FUNC_DECL:
     case AST_ANON_FUNC_DECL:
-        // it was checking for n in the scope with assert and print_str
+        // TODO check return value type, allow for auto
+        //
         attach_var(ast->fn_decl_var, scope);
         attach_var(ast->fn_decl_var, ast->fn_body);
         global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);

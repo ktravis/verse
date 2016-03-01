@@ -247,6 +247,8 @@ int type_id(char *buf) {
         return STRING_T;
     } else if (!strcmp(buf, "void")) {
         return VOID_T;
+    } else if (!strcmp(buf, "auto")) {
+        return AUTO_T;
     }
     return 0;
 }

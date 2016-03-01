@@ -41,6 +41,7 @@ char* type_as_str(Type *t) {
          return buf;
     }
     case VOID_T: return "void";
+    case AUTO_T: return "auto";
     }
     return "null";
 }

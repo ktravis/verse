@@ -25,10 +25,12 @@ fn main():int {
     x = "123";
     assert(x != '1234');
 
-    z:fn():bool = fn ():bool {
+    z:auto = fn ():bool {
         return true;
     };
+    z2:auto = z;
     assert(z);
+    assert(z2);
     if x != '123' {
         assert(false);
     }
