@@ -1,5 +1,10 @@
 #include "parse.h"
 
+#define PUSH_FN_SCOPE(x) \
+    Ast *__old_fn_scope = current_fn_scope;\
+    current_fn_scope = (x);
+#define POP_FN_SCOPE() current_fn_scope = __old_fn_scope;
+
 static int last_var_id = 0;
 static int last_cond_id = 0;
 static int last_tmp_fn_id = 0;
@@ -7,6 +12,7 @@ static VarList *global_fn_vars = NULL;
 static AstList *global_fn_decls = NULL;
 static AstList *strings = NULL; // TODO maybe don't need this at all?
 static int parser_state = PARSE_MAIN;
+static Ast *current_fn_scope = NULL;
 
 VarList *varlist_append(VarList *list, Var *v) {
     VarList *vl = malloc(sizeof(VarList));
@@ -795,13 +801,13 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         break;
     case AST_FUNC_DECL:
     case AST_ANON_FUNC_DECL:
-        // TODO check return value type, allow for auto
-        //
         attach_var(ast->fn_decl_var, scope);
         attach_var(ast->fn_decl_var, ast->fn_body);
         global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);
 
+        PUSH_FN_SCOPE(ast);
         ast->fn_body = parse_semantics(ast->fn_body, scope);
+        POP_FN_SCOPE();
         break;
     case AST_CALL: {
         Ast *arg;
@@ -818,18 +824,36 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
     }
     case AST_CONDITIONAL:
         ast->condition = parse_semantics(ast->condition, scope);
+        if (var_type(ast->condition)->base != BOOL_T) {
+            error("Non-boolean ('%s') condition for if statement.", type_as_str(var_type(ast->condition)));
+        }
         ast->if_body = parse_semantics(ast->if_body, scope);
         if (ast->else_body != NULL) {
             ast->else_body = parse_semantics(ast->else_body, scope);
         }
-        // TODO need to do all type checking in this function (for everything)
         break;
     case AST_SCOPE:
         ast->body = parse_semantics(ast->body, ast);
         break;
-    case AST_RETURN:
-        ast->ret_expr = parse_semantics(ast->ret_expr, scope);
+    case AST_RETURN: {
+        if (current_fn_scope == NULL) {
+            error("Return statement outside of function body.");
+        }
+        Type *fn_ret_t = current_fn_scope->fn_decl_var->type->ret;
+        Type *ret_t = NULL;
+        if (ast->ret_expr == NULL) {
+            ret_t = make_type(VOID_T);
+        } else {
+            ast->ret_expr = parse_semantics(ast->ret_expr, scope);
+            ret_t = var_type(ast->ret_expr);
+        }
+        if (fn_ret_t->base == AUTO_T) {
+            current_fn_scope->fn_decl_var->type->ret = ret_t;
+        } else if (!check_type(fn_ret_t, ret_t)) {
+            error("Return statement type '%s' does not match enclosing function's return type '%s'.", type_as_str(ret_t), type_as_str(fn_ret_t));
+        }
         break;
+    }
     case AST_BLOCK:
         for (int i = 0; i < ast->num_statements; i++) {
             ast->statements[i] = parse_semantics(ast->statements[i], scope);

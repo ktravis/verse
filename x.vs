@@ -43,7 +43,7 @@ fn main():int {
     assert(fib(8) == 34);
     println(x);
 
-    blah:auto = fn(x:int, y:int):int {
+    blah:auto = fn(x:int, y:int):auto {
         return x * x + y * y;
     };
     assert(blah(3, 4) == 25);
