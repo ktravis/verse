@@ -47,6 +47,14 @@ fn main():int {
         return x * x + y * y;
     };
     assert(blah(3, 4) == 25);
+    blah2:auto = fn():fn(bool):bool {
+        return fn(a:bool):bool {
+            return !a;
+        };
+    };
+    blah3:auto = blah2();
+    assert(blah3(false));
+    assert(blah3(!true));
 
     println("Tests passed.");
     return 0;

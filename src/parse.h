@@ -16,6 +16,7 @@ enum {
     AST_INTEGER,
     AST_BOOL,
     AST_BINOP,
+    AST_UOP,
     AST_IDENTIFIER,
     AST_TEMP_VAR,
     AST_DECL,
@@ -77,7 +78,7 @@ typedef struct Ast {
             Var **fn_decl_args;
             struct Ast *fn_body;
         };
-        // binop
+        // uop / binop
         struct {
             int op;
             struct Ast *left;

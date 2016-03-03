@@ -90,6 +90,15 @@ void emit_string_binop(Ast *ast) {
     }
 }
 
+void emit_uop(Ast *ast) {
+    if (ast->op == OP_NOT) {
+        printf("!");
+    } else {
+        error("Unkown unary operator '%s' (%s).", op_to_str(ast->op), ast->op);
+    }
+    compile(ast->right);
+}
+
 void emit_binop(Ast *ast) {
     if (ast->op == OP_ASSIGN) {
         if (is_dynamic(var_type(ast->left))) {
@@ -234,6 +243,9 @@ void compile(Ast *ast) {
         printf("\"");
         print_quoted_string(ast->sval);
         printf("\"");
+        break;
+    case AST_UOP:
+        emit_uop(ast);
         break;
     case AST_BINOP:
         emit_binop(ast);

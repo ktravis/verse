@@ -114,6 +114,13 @@ Type *var_type(Ast *ast) {
         return make_type(INT_T);
     case AST_ANON_FUNC_DECL:
         return ast->fn_decl_var->type;
+    case AST_UOP:
+        if (ast->op == OP_NOT) {
+            return make_type(BOOL_T);
+        } else {
+            error("don't know how to infer vartype of operator '%s' (%d).", op_to_str(ast->op), ast->op);
+        }
+        break;
     case AST_BINOP:
         if (is_comparison(ast->op)) {
             return make_type(BOOL_T);
@@ -161,6 +168,11 @@ void print_ast(Ast *ast) {
         printf("\"");
         print_quoted_string(ast->sval);
         printf("\"");
+        break;
+    case AST_UOP:
+        printf("(%s ", op_to_str(ast->op));
+        print_ast(ast->right);
+        printf(")");
         break;
     case AST_BINOP:
         printf("(%s ", op_to_str(ast->op));
@@ -281,6 +293,20 @@ Ast *make_ast_tmpvar(Ast *ast, Var *tmpvar) {
     tmp->tmpvar = tmpvar;
     tmp->expr = ast;
     return tmp;
+}
+
+Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
+    ast->right = parse_semantics(ast->right, scope);
+    switch (ast->op) {
+    case OP_NOT:
+        if (var_type(ast->right)->base != BOOL_T) {
+            error("Cannot perform logical negation on type '%s'.", type_as_str(var_type(ast->right)));
+        }
+        break;
+    default:
+        error("Unknown unary operator '%s' (%d).", op_to_str(ast->op), ast->op);
+    }
+    return ast;
 }
 
 Ast *parse_binop_semantics(Ast *ast, Ast *scope) {
@@ -431,28 +457,43 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope) {
 Type *parse_type(Tok *t, Ast *scope) {
     if (t == NULL) {
         error("Unexpected EOF while parsing type.");
-    } else if (t->type == TOK_TYPE) {
-        return make_type(t->tval);
+    }
+    int parens = 0;
+    if (t->type == TOK_LPAREN) {
+        parens = 1;
+        t = next_token();
+    }
+    if (t->type == TOK_TYPE) {
+        Type *type = make_type(t->tval);
+        if (parens) {
+            expect(TOK_RPAREN);
+        }
+        return type;
     } else if (t->type == TOK_FN) {
-        // parse fn type
         Type **args = malloc(sizeof(Type*)*MAX_ARGS);
         int nargs = 0;
         expect(TOK_LPAREN);
         t = next_token();
         if (t == NULL) {
-            error("Unexpected token '%s' while parsing type.", to_string(t));
+            error("Unexpected EOF while parsing type.");
         } else if (t->type != TOK_RPAREN) {
-            do {
-                args[nargs] = parse_type(next_token(), scope);
-                nargs++;
+            for (nargs = 0; nargs < MAX_ARGS;) {
+                args[nargs++] = parse_type(t, scope);
                 t = next_token();
-            } while (t->type == TOK_COMMA); 
-            if (t == NULL || t->type != TOK_RPAREN) {
-                error("Unexpected token '%s' while parsing type.", to_string(t));
+                if (t == NULL) {
+                    error("Unexpected EOF while parsing type.");
+                } else if (t->type == TOK_RPAREN) {
+                    break;
+                } else if (t->type != TOK_COMMA) {
+                    error("Unexpected token '%s' while parsing type.", to_string(t));
+                }
             }
         }
         expect(TOK_COLON);
         Type *ret = parse_type(next_token(), scope);
+        if (parens) {
+            expect(TOK_RPAREN);
+        }
         return make_fn_type(nargs, args, ret);
     /*} else if (t->type == TOK_ID) {*/
         /*// check for custom type, check for struct*/
@@ -618,6 +659,9 @@ Ast *parse_statement(Tok *t, Ast *scope) {
 }
 
 Ast *parse_primary(Tok *t, Ast *scope) {
+    if (t == NULL) {
+        error("Unexpected EOF while parsing primary.");
+    }
     switch (t->type) {
     case TOK_INT: {
         Ast *ast = malloc(sizeof(Ast));
@@ -649,6 +693,14 @@ Ast *parse_primary(Tok *t, Ast *scope) {
     }
     case TOK_FN:
         return parse_func_decl(scope, 1);
+    case TOK_UOP: {
+        Ast *ast = malloc(sizeof(Ast));
+        ast->type = AST_UOP;
+        ast->op = t->op;
+        ast->left = NULL;
+        ast->right = parse_primary(next_token(), scope);
+        return ast;
+    }
     case TOK_LPAREN: {
         Tok *next = next_token();
         if (next == NULL) {
@@ -758,6 +810,8 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         break;
     case AST_BINOP:
         return parse_binop_semantics(ast, scope);
+    case AST_UOP:
+        return parse_uop_semantics(ast, scope);
     case AST_IDENTIFIER: {
         Var *v = find_local_var(ast->varname, scope);
         if (v == NULL) {

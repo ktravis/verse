@@ -107,15 +107,17 @@ Tok *next_token() {
         } // TODO binary shift
         return t;
     } else if (c == '!') {
+        Tok *t;
         int d = getc(stdin);
-        if (d != '=') {
-            ungetc(d, stdin);
-            // TODO UNARY NOT
-        } else {
-            Tok *t = make_token(TOK_OP);
+        if (d == '=') {
+            t = make_token(TOK_OP);
             t->op = OP_NEQUALS;
-            return t;
+        } else {
+            ungetc(d, stdin);
+            t = make_token(TOK_UOP);
+            t->op = OP_NOT;
         }
+        return t;
     } else if (c == '&' || c == '|' || c == '=') {
         int d = getc(stdin);
         int same = (d == c);
@@ -276,6 +278,8 @@ int priority_of(Tok *t) {
             return 9;
         case OP_MUL: case OP_DIV:
             return 10;
+        case OP_NOT:
+            return 11;
         default:
             return -1;
         }
@@ -316,9 +320,11 @@ const char *to_string(Tok *t) {
         return "}";
     case TOK_FN:
         return "fn";
-    case TOK_OP: {
+    case TOK_OP:
+    case TOK_UOP:
         return op_to_str(t->op);
-    }
+    case TOK_TYPE:
+        return type_as_str(make_type(t->tval));
     default:
         return NULL;
     }
@@ -344,8 +350,12 @@ const char *token_type(int type) {
         return "RPAREN";
     case TOK_OP:
         return "OP";
+    case TOK_UOP:
+        return "UOP";
     case TOK_FN:
         return "FN";
+    case TOK_TYPE:
+        return "TYPE";
     default:
         return "BAD TOKEN";
     }
@@ -365,6 +375,7 @@ const char *op_to_str(int op) {
     case OP_OR: return "||";
     case OP_EQUALS: return "==";
     case OP_NEQUALS: return "!=";
+    case OP_NOT: return "!";
     case OP_GT: return ">";
     case OP_GTE: return ">=";
     case OP_LT: return "<";
