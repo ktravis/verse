@@ -173,6 +173,7 @@ Tok *read_string(char quote) {
         if (c == quote && (len == 0 || buf[len-1] != '\\')) {
             Tok *t = make_token(TOK_STR);
             t->sval = buf;
+            buf[len] = 0;
             return t;
         }
         buf[len++] = c;
@@ -225,6 +226,7 @@ Tok *read_identifier(char c) {
             buf = realloc(buf, alloc);
         }
     }
+    buf[len] = 0;
     Tok *t = check_reserved(buf);
     if (t == NULL) {
         t = malloc(sizeof(Tok));
