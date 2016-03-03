@@ -117,6 +117,9 @@ void emit_binop(Ast *ast) {
             }
         } else {
             printf("_vs_%s = ", ast->left->var->name);
+            /*if (var_type(ast->right)->base == FN_T) {*/
+                /*printf("&");*/
+            /*}*/
             compile(ast->right);
         }
         return;
@@ -416,16 +419,22 @@ void emit_scope_end(Ast *scope) {
     printf("}\n");
 }
 
-void emit_forward_decl(Var *v) {
+void emit_var_decl(Var *v) {
+    if (v->ext) {
+        printf("extern ");
+    }
     if (v->type->base == FN_T) {
-        if (v->ext) {
-            printf("extern ");
-        }
         emit_type(v->type->ret);
-        if (!v->ext) {
-            printf("_vs_");
-        }
-        printf("%s(", v->name);
+        printf("(*");
+    } else {
+        emit_type(v->type);
+    }
+    if (!v->ext) {
+        printf("_vs_");
+    }
+    printf("%s", v->name);
+    if (v->type->base == FN_T) {
+        printf(")(");
         for (int i = 0; i < v->type->nargs; i++) {
             emit_type(v->type->args[i]);
             /*printf("_vs_%s", v->type->args[i]->name);*/
@@ -434,17 +443,28 @@ void emit_forward_decl(Var *v) {
                 printf(",");
             }
         }
-        printf(");\n");
-    } else {
-        if (v->ext) {
-            printf("extern ");
-        }
-        emit_type(v->type);
-        if (!v->ext) {
-            printf("_vs_");
-        }
-        printf("%s;\n", v->name);
+        printf(")");
     }
+    printf(";\n");
+}
+void emit_forward_decl(Var *v) {
+    if (v->ext) {
+        printf("extern ");
+    }
+    emit_type(v->type->ret);
+    if (!v->ext) {
+        printf("_vs_");
+    }
+    printf("%s(", v->name);
+    for (int i = 0; i < v->type->nargs; i++) {
+        emit_type(v->type->args[i]);
+        /*printf("_vs_%s", v->type->args[i]->name);*/
+        printf("a%d", i);
+        if (i < v->type->nargs - 1) {
+            printf(",");
+        }
+    }
+    printf(");\n");
 }
 
 int main(int argc, char **argv) {
@@ -466,7 +486,7 @@ int main(int argc, char **argv) {
         }
         VarList *varlist = get_global_vars();
         while (varlist != NULL) {
-            emit_forward_decl(varlist->item);
+            emit_var_decl(varlist->item);
             varlist = varlist->next;
         }
         fnlist = get_global_funcs();

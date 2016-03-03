@@ -421,6 +421,9 @@ Ast *parse_declaration(Tok *t, Ast *scope) {
         id->type = AST_IDENTIFIER;
         id->varname = lhs->decl_var->name;
         id->var = lhs->decl_var;
+        if (lhs->decl_var->type->base == AUTO_T) {
+            lhs->decl_var->type = var_type(lhs->init); // TODO probably wrong
+        }
         lhs = make_ast_binop(OP_ASSIGN, id, lhs->init, scope);
     }
     return lhs; 

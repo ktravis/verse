@@ -18,7 +18,11 @@ fn println(x:string):void {
     print_str(x + "\n");
 }
 
-// need to handle global vars
+noodler:auto = fn():void {
+    println("NOOOOOOOOOOOODLE");
+    println("NOOOOOOOOOOOODLE");
+    println("NOOOOOOOOOOOODLE");
+};
 
 fn main():int {
     assert(2 == 2);
