@@ -29,8 +29,8 @@ fn main():int {
         return true;
     };
     z2:auto = z;
-    assert(z);
-    assert(z2);
+    assert(z());
+    assert(z2());
     if x != '123' {
         assert(false);
     }
@@ -42,6 +42,11 @@ fn main():int {
     }
     assert(fib(8) == 34);
     println(x);
+
+    blah:auto = fn(x:int, y:int):int {
+        return x * x + y * y;
+    };
+    assert(blah(3, 4) == 25);
 
     println("Tests passed.");
     return 0;

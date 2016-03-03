@@ -64,7 +64,8 @@ void emit_comparison(Ast *ast) {
     compile(ast->left);
     printf(" %s ", op_to_str(ast->op));
     compile(ast->right);
-    printf(" ? 1 : 0)");
+    printf(")");
+    /*printf(" ? 1 : 0)");*/
 }
 
 void emit_string_binop(Ast *ast) {
@@ -183,8 +184,20 @@ void emit_type(Type *type) {
 }
 
 void emit_decl(Ast *ast) {
-    emit_type(ast->decl_var->type);
-    printf("_vs_%s", ast->decl_var->name);
+    if (ast->decl_var->type->base == FN_T) {
+        emit_type(ast->decl_var->type->ret);
+        printf("(*_vs_%s)(", ast->decl_var->name);
+        for (int i = 0; i < ast->decl_var->type->nargs; i++) {
+            emit_type(ast->decl_var->type->args[i]);
+            if (i < ast->decl_var->type->nargs - 1) {
+                printf(",");
+            }
+        }
+        printf(")");
+    } else {
+        emit_type(ast->decl_var->type);
+        printf("_vs_%s", ast->decl_var->name);
+    }
     if (ast->init != NULL) {
         printf(" = ");
         compile(ast->init);
@@ -197,7 +210,7 @@ void emit_decl(Ast *ast) {
 
 void emit_func_decl(Ast *fn) {
     emit_type(fn->fn_decl_var->type->ret);
-    printf("_fn_%s(", fn->fn_decl_var->name);
+    printf("_vs_%s(", fn->fn_decl_var->name);
     for (int i = 0; i < fn->fn_decl_var->type->nargs; i++) {
         emit_type(fn->fn_decl_args[i]->type);
         printf("_vs_%s", fn->fn_decl_args[i]->name);
@@ -255,15 +268,14 @@ void compile(Ast *ast) {
     case AST_FUNC_DECL: 
         break;
     case AST_ANON_FUNC_DECL: 
-        printf("_fn_%s", ast->fn_decl_var->name);
+        printf("_vs_%s", ast->fn_decl_var->name);
         /*emit_func_decl(ast);*/
         break;
     case AST_EXTERN_FUNC_DECL: 
         break;
     case AST_CALL:
-        /*Var *fn_var = find_var(ast->fn, */
         if (!ast->fn_var->ext) {
-            printf("_fn_");
+            printf("_vs_");
         }
         printf("%s(", ast->fn_var->name);
         for (int i = 0; i < ast->nargs; i++) {
@@ -394,11 +406,10 @@ void emit_forward_decl(Var *fn) {
         printf("extern ");
     }
     emit_type(fn->type->ret);
-    if (fn->ext) {
-        printf("%s(", fn->name);
-    } else {
-        printf("_fn_%s(", fn->name);
+    if (!fn->ext) {
+        printf("_vs_");
     }
+    printf("%s(", fn->name);
     for (int i = 0; i < fn->type->nargs; i++) {
         emit_type(fn->type->args[i]);
         /*printf("_vs_%s", fn->type->args[i]->name);*/
@@ -439,7 +450,7 @@ int main(int argc, char **argv) {
         /*printf("    int exit_code = _fn_main();\n"); // TODO argc, argv*/
         /*emit_free_locals(root);*/
         /*indent();*/
-        printf("    return _fn_main();\n");
+        printf("    return _vs_main();\n");
         /*_indent--;*/
         /*indent();*/
         printf("}");
