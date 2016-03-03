@@ -16,7 +16,7 @@ struct string_type {
     int alloc;
     char *bytes;
 };
-void print_str(struct string_type *str) {
+void print_str(struct string_type *str) { // should cleanup its arg
     printf("%s", str->bytes);
 }
 struct string_type *itoa(int x) {

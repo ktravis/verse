@@ -864,6 +864,9 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
     case AST_CALL: {
         Ast *arg;
         ast->fn_var = find_var(ast->fn, scope);
+        if (ast->fn_var == NULL) {
+            error("Undefined identifier '%s' encountered.", ast->fn);
+        }
         for (int i = 0; i < ast->nargs; i++) {
             arg = ast->args[i];
             arg = parse_semantics(ast->args[i], scope);
