@@ -303,9 +303,12 @@ void compile(Ast *ast) {
         break;
     case AST_BLOCK:
         for (int i = 0; i < ast->num_statements; i++) {
+            if (ast->statements[i]->type == AST_FUNC_DECL || ast->statements[i]->type == AST_EXTERN_FUNC_DECL) {
+                continue;
+            }
             indent();
             compile(ast->statements[i]);
-            if (ast->statements[i]->type != AST_CONDITIONAL && ast->statements[i]->type != AST_FUNC_DECL && ast->statements[i]->type != AST_ANON_FUNC_DECL && ast->statements[i]->type != AST_EXTERN_FUNC_DECL) {
+            if (ast->statements[i]->type != AST_CONDITIONAL && ast->statements[i]->type != AST_ANON_FUNC_DECL) {
                 printf(";\n");
             }
         }
@@ -413,24 +416,35 @@ void emit_scope_end(Ast *scope) {
     printf("}\n");
 }
 
-void emit_forward_decl(Var *fn) {
-    if (fn->ext) {
-        printf("extern ");
-    }
-    emit_type(fn->type->ret);
-    if (!fn->ext) {
-        printf("_vs_");
-    }
-    printf("%s(", fn->name);
-    for (int i = 0; i < fn->type->nargs; i++) {
-        emit_type(fn->type->args[i]);
-        /*printf("_vs_%s", fn->type->args[i]->name);*/
-        printf("a%d", i);
-        if (i < fn->type->nargs - 1) {
-            printf(",");
+void emit_forward_decl(Var *v) {
+    if (v->type->base == FN_T) {
+        if (v->ext) {
+            printf("extern ");
         }
+        emit_type(v->type->ret);
+        if (!v->ext) {
+            printf("_vs_");
+        }
+        printf("%s(", v->name);
+        for (int i = 0; i < v->type->nargs; i++) {
+            emit_type(v->type->args[i]);
+            /*printf("_vs_%s", v->type->args[i]->name);*/
+            printf("a%d", i);
+            if (i < v->type->nargs - 1) {
+                printf(",");
+            }
+        }
+        printf(");\n");
+    } else {
+        if (v->ext) {
+            printf("extern ");
+        }
+        emit_type(v->type);
+        if (!v->ext) {
+            printf("_vs_");
+        }
+        printf("%s;\n", v->name);
     }
-    printf(");\n");
 }
 
 int main(int argc, char **argv) {
@@ -450,22 +464,23 @@ int main(int argc, char **argv) {
             emit_forward_decl(fnlist->item->fn_decl_var);
             fnlist = fnlist->next;
         }
+        VarList *varlist = get_global_vars();
+        while (varlist != NULL) {
+            emit_forward_decl(varlist->item);
+            varlist = varlist->next;
+        }
         fnlist = get_global_funcs();
         while (fnlist != NULL) {
             emit_func_decl(fnlist->item);
             fnlist = fnlist->next;
         }
-        compile(root->body);
-        printf("int main(int argc, char** argv) {\n");
-        /*emit_scope_start(root);*/
-        /*indent();*/
-        /*printf("    int exit_code = _fn_main();\n"); // TODO argc, argv*/
-        /*emit_free_locals(root);*/
-        /*indent();*/
-        printf("    return _vs_main();\n");
-        /*_indent--;*/
-        /*indent();*/
-        printf("}");
+        printf("void _init() ");
+        compile(root);
+        /*compile(root->body);*/
+        printf("int main(int argc, char** argv) {\n"
+               "    _init();\n"
+               "    return _vs_main();\n"
+               "}");
     }
     return 0;
 }

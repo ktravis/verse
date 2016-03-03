@@ -8,9 +8,9 @@
 static int last_var_id = 0;
 static int last_cond_id = 0;
 static int last_tmp_fn_id = 0;
+static VarList *global_vars = NULL;
 static VarList *global_fn_vars = NULL;
 static AstList *global_fn_decls = NULL;
-static AstList *strings = NULL; // TODO maybe don't need this at all?
 static int parser_state = PARSE_MAIN;
 static Ast *current_fn_scope = NULL;
 
@@ -85,13 +85,19 @@ Var *make_temp_var(Type *type, Ast *scope) {
     /*return v;*/
 /*}*/
 
-Var *find_local_var(char *name, Ast *scope) {
-    
-    Var *v = varlist_find(scope->locals, name);
+Var *find_var(char *name, Ast *scope) {
+    Var *v = find_local_var(name, scope);
+    if (v == NULL) {
+        v = varlist_find(global_vars, name);
+    }
     if (v == NULL) {
         v = varlist_find(global_fn_vars, name);
     }
     return v;
+}
+
+Var *find_local_var(char *name, Ast *scope) {
+    return varlist_find(scope->locals, name);
 }
 
 Type *var_type(Ast *ast) {
@@ -265,26 +271,7 @@ Ast *make_ast_string(char *str) {
     Ast *ast = malloc(sizeof(Ast));
     ast->type = AST_STRING;
     ast->sval = str;
-    ast->sid = strings == NULL ? 0 : strings->item->sid + 1;
-    strings = astlist_append(strings, ast);
     return ast;
-}
-
-Ast *find_or_make_string(char *sval) {
-    AstList *strlist = strings;
-    Ast *str = NULL;
-    while (strlist != NULL) {
-        if (!strcmp(strlist->item->sval, sval)) {
-            str = strlist->item;
-            break;
-        }
-        strlist = strlist->next;
-    }
-    if (str == NULL) {
-        str = make_ast_string(sval);
-        strings = astlist_append(strings, str);
-    }
-    return str;
 }
 
 Ast *make_ast_tmpvar(Ast *ast, Var *tmpvar) {
@@ -427,6 +414,14 @@ Ast *parse_declaration(Tok *t, Ast *scope) {
         error("Unexpected token '%s' while parsing declaration.", to_string(next));
     } else {
         unget_token(next);
+    }
+    if (parser_state == PARSE_MAIN && lhs->init != NULL) {
+        global_vars = varlist_append(global_vars, lhs->decl_var);
+        Ast *id = malloc(sizeof(Ast));
+        id->type = AST_IDENTIFIER;
+        id->varname = lhs->decl_var->name;
+        id->var = lhs->decl_var;
+        lhs = make_ast_binop(OP_ASSIGN, id, lhs->init, scope);
     }
     return lhs; 
 }
@@ -676,7 +671,7 @@ Ast *parse_primary(Tok *t, Ast *scope) {
         return ast;
     }
     case TOK_STR:
-        return find_or_make_string(t->sval);
+        return make_ast_string(t->sval);
     case TOK_ID: {
         Tok *next = next_token();
         if (next == NULL) {
@@ -813,7 +808,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
     case AST_UOP:
         return parse_uop_semantics(ast, scope);
     case AST_IDENTIFIER: {
-        Var *v = find_local_var(ast->varname, scope);
+        Var *v = find_var(ast->varname, scope);
         if (v == NULL) {
             error("Undefined identifier '%s' encountered.", ast->varname);
         }
@@ -830,7 +825,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         if (find_local_var(ast->decl_var->name, scope) != NULL) {
             error("Declared variable '%s' already exists.", ast->decl_var->name);
         }
-        attach_var(ast->decl_var, scope);
+        attach_var(ast->decl_var, scope); // should this be after the init parsing?
         if (init != NULL) {
             init = parse_semantics(init, scope);
             if (ast->decl_var->type->base == AUTO_T) {
@@ -865,7 +860,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         break;
     case AST_CALL: {
         Ast *arg;
-        ast->fn_var = find_local_var(ast->fn, scope);
+        ast->fn_var = find_var(ast->fn, scope);
         for (int i = 0; i < ast->nargs; i++) {
             arg = ast->args[i];
             arg = parse_semantics(ast->args[i], scope);
@@ -921,4 +916,8 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
 
 AstList *get_global_funcs() {
     return global_fn_decls;
+}
+
+VarList *get_global_vars() {
+    return global_vars;
 }

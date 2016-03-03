@@ -154,4 +154,7 @@ Ast *parse_block(Ast *scope, int bracketed);
 Ast *parse_scope(Ast *parent);
 Ast *parse_conditional(Ast *scope);
 
+VarList *get_global_vars();
+AstList *get_init_list();
+
 #endif

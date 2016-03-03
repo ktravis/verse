@@ -3,6 +3,10 @@
 extern fn assert(bool):void;
 extern fn print_str(string):void;
 
+x:int = 2;
+x1:int = 2;
+x2:string = 'hi';
+
 fn fib(n:int):int {
     if n < 2 {
         return 1;
@@ -55,6 +59,9 @@ fn main():int {
     blah3:auto = blah2();
     assert(blah3(false));
     assert(blah3(!true));
+    assert(x1 == 2);
+    x1 = x1 + 1;
+    assert(x1 == 3);
 
     println("Tests passed.");
     return 0;
