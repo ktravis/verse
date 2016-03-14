@@ -1,5 +1,6 @@
 #include "types.h"
 
+static StructType *struct_defs = NULL;
 
 char* type_as_str(Type *t) {
     switch (t->base) {
@@ -42,6 +43,18 @@ char* type_as_str(Type *t) {
     }
     case VOID_T: return "void";
     case AUTO_T: return "auto";
+    case STRUCT_T: {
+        StructType *s = get_struct_type(t->struct_id);
+        if (s == NULL) {
+            return "invalid struct";
+        }
+        size_t size = strlen(s->name) + 8;
+        char *n = malloc(sizeof(char) * size);
+        strncpy(n, "struct ", 8);
+        strncpy(n, s->name, size - 8);
+        n[size-1] = 0;
+        return n;
+    }
     }
     return "null";
 }
@@ -59,4 +72,41 @@ Type *make_fn_type(int nargs, Type **args, Type *ret) {
     t->args = args;
     t->ret = ret;
     return t;
+}
+
+StructType *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types) {
+    StructType *s = malloc(sizeof(StructType));    
+    s->name = name;
+    s->nmembers = nmembers;
+    s->member_names = member_names;
+    s->member_types = member_types;
+    s->id = struct_defs == NULL ? 0 : struct_defs->id + 1;
+    s->next = struct_defs;
+    struct_defs = s;
+    return s;
+}
+
+Type *find_struct_type(char *name) {
+    StructType *s = struct_defs;
+    while (s != NULL) {
+        if (!strcmp(s->name, name)) {
+            Type *t = malloc(sizeof(Type));
+            t->base = STRUCT_T;
+            t->struct_id = s->id;
+            return t;
+        }
+        s = s->next;
+    }
+    return NULL;
+}
+
+StructType *get_struct_type(int id) {
+    StructType *s = struct_defs;
+    while (s != NULL) {
+        if (id == s->id) {
+            break;
+        }
+        s = s->next;
+    }
+    return s;
 }

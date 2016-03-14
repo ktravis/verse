@@ -70,7 +70,9 @@ void emit_comparison(Ast *ast) {
 
 void emit_string_binop(Ast *ast) {
     switch (ast->right->type) {
+    case AST_CALL: // is this right? need to do anything else?
     case AST_IDENTIFIER:
+    case AST_DOT:
     case AST_TEMP_VAR:
         printf("append_string(");
         compile(ast->left);
@@ -86,8 +88,13 @@ void emit_string_binop(Ast *ast) {
         printf("\",%d)", (int) escaped_strlen(ast->right->sval));
         break;
     default:
-        error("Couldn't do the string binop?");
+        error("Couldn't do the string binop? %d", ast->type);
     }
+}
+
+void emit_dot_op(Ast *ast) {
+    compile(ast->dot_left);
+    printf(".%s", ast->member_name);
 }
 
 void emit_uop(Ast *ast) {
@@ -102,21 +109,24 @@ void emit_uop(Ast *ast) {
 void emit_binop(Ast *ast) {
     if (ast->op == OP_ASSIGN) {
         if (is_dynamic(var_type(ast->left))) {
-            if (ast->left->var->initialized) {
+            Var *l = get_ast_var(ast->left);
+            if (l->initialized) {
                 compile(ast->right);
                 printf(";\n");
                 indent();
-                printf("SWAP(_vs_%s,_tmp%d)", ast->left->var->name, ast->right->tmpvar->id);
+                printf("SWAP(_vs_%s,_tmp%d)", l->name, ast->right->tmpvar->id);
             } else {
-                printf("_vs_%s = ", ast->left->var->name);
+                printf("_vs_%s = ", l->name);
                 compile(ast->right);
-                ast->left->var->initialized = 1;
+                l->initialized = 1;
                 if (ast->right->type == AST_TEMP_VAR) {
                     ast->right->tmpvar->consumed = 1;
                 }
             }
         } else {
-            printf("_vs_%s = ", ast->left->var->name);
+            compile(ast->left);
+            printf(" = ");
+            /*printf("_vs_%s = ", ast->left->var->name);*/
             /*if (var_type(ast->right)->base == FN_T) {*/
                 /*printf("&");*/
             /*}*/
@@ -168,6 +178,8 @@ void emit_tmpvar(Ast *ast) {
         printf("(_tmp%d = ", ast->tmpvar->id);
         compile(ast->expr);
         printf(")");
+    } else if (ast->expr->type == AST_DOT) {
+        printf("(_tmp%d = copy_string(_vs_%s))", ast->tmpvar->id, get_ast_var(ast->expr)->name);
     } else {
         error("idk tmpvar");
     }
@@ -190,6 +202,14 @@ void emit_type(Type *type) {
     case VOID_T:
         printf("void ");
         break;
+    case STRUCT_T: {
+        StructType *st = get_struct_type(type->struct_id);
+        if (st == NULL) {
+            error("Cannot find struct '%d'.", type->struct_id);
+        }
+        printf("struct _vs_%s ", st->name);
+        break;
+    }
     default:
         error("wtf type");
     }
@@ -210,7 +230,13 @@ void emit_decl(Ast *ast) {
         emit_type(ast->decl_var->type);
         printf("_vs_%s", ast->decl_var->name);
     }
-    if (ast->init != NULL) {
+    if (ast->init == NULL) {
+        // TODO change to is_dynamic()
+        if (ast->decl_var->type->base == STRING_T) {
+            printf(" = init_string(\"\")");
+            ast->decl_var->initialized = 1;
+        }
+    } else {
         printf(" = ");
         compile(ast->init);
         if (ast->init->type == AST_TEMP_VAR) {
@@ -234,6 +260,20 @@ void emit_func_decl(Ast *fn) {
     compile(fn->fn_body);
 }
 
+void emit_struct_decl(Ast *ast) {
+    StructType *st = get_struct_type(ast->struct_type->struct_id);
+    printf("struct _vs_%s {\n", ast->struct_name);
+    _indent++;
+    for (int i = 0; i < st->nmembers; i++) {
+        indent();
+        emit_type(st->member_types[i]);
+        printf("%s;\n", st->member_names[i]);
+    }
+    _indent--;
+    indent();
+    printf("};\n");
+}
+
 void compile(Ast *ast) {
     switch (ast->type) {
     case AST_INTEGER:
@@ -247,11 +287,17 @@ void compile(Ast *ast) {
         print_quoted_string(ast->sval);
         printf("\"");
         break;
+    case AST_DOT:
+        emit_dot_op(ast);
+        break;
     case AST_UOP:
         emit_uop(ast);
         break;
     case AST_BINOP:
         emit_binop(ast);
+        break;
+    case AST_STRUCT_DECL:
+        emit_struct_decl(ast);
         break;
     case AST_TEMP_VAR:
         emit_tmpvar(ast);
@@ -306,7 +352,7 @@ void compile(Ast *ast) {
         break;
     case AST_BLOCK:
         for (int i = 0; i < ast->num_statements; i++) {
-            if (ast->statements[i]->type == AST_FUNC_DECL || ast->statements[i]->type == AST_EXTERN_FUNC_DECL) {
+            if (ast->statements[i]->type == AST_FUNC_DECL || ast->statements[i]->type == AST_EXTERN_FUNC_DECL || ast->statements[i]->type == AST_STRUCT_DECL) {
                 continue;
             }
             indent();
@@ -372,11 +418,39 @@ void emit_scope_start(Ast *scope) {
     }
 }
 
+void emit_free_struct(char *name, Var *v) {
+    StructType *st = get_struct_type(v->type->struct_id);
+    for (int i = 0; i < st->nmembers; i++) {
+        if (v->members[i]->initialized) {
+            switch (st->member_types[i]->base) {
+            case STRING_T:
+                indent();
+                printf("free(%s.%s);\n", name, st->member_names[i]);
+                break;
+            case STRUCT_T: {
+                char *memname = malloc(sizeof(char) * (strlen(name) + strlen(st->member_names[i]) + 2));
+                sprintf(memname, "%s.%s", name, st->member_names[i]);
+                emit_free_struct(memname, v->members[i]);
+                free(memname);
+                break;
+            }
+            }
+        }
+    }
+}
+
 void emit_free(Var *var) {
     if ((!var->temp && !var->initialized) || (var->temp && var->consumed)) {
         return;
     }
     switch (var->type->base) {
+    case STRUCT_T: {
+        char *name = malloc(sizeof(char) * (strlen(var->name) + 5));
+        sprintf(name, "_vs_%s", var->name);
+        emit_free_struct(name, var);
+        free(name);
+        break;
+    }
     case STRING_T:
         if (var->temp) {
             indent();
@@ -479,15 +553,20 @@ int main(int argc, char **argv) {
     } else {
         printf("#include \"prelude.c\"\n");
         _indent = 0;
-        AstList *fnlist = get_global_funcs();
-        while (fnlist != NULL) {
-            emit_forward_decl(fnlist->item->fn_decl_var);
-            fnlist = fnlist->next;
-        }
         VarList *varlist = get_global_vars();
         while (varlist != NULL) {
             emit_var_decl(varlist->item);
             varlist = varlist->next;
+        }
+        AstList *stlist = get_global_structs();
+        while (stlist != NULL) {
+            emit_struct_decl(stlist->item);
+            stlist = stlist->next;
+        }
+        AstList *fnlist = get_global_funcs();
+        while (fnlist != NULL) {
+            emit_forward_decl(fnlist->item->fn_decl_var);
+            fnlist = fnlist->next;
         }
         fnlist = get_global_funcs();
         while (fnlist != NULL) {
@@ -496,7 +575,6 @@ int main(int argc, char **argv) {
         }
         printf("void _init() ");
         compile(root);
-        /*compile(root->body);*/
         printf("int main(int argc, char** argv) {\n"
                "    _init();\n"
                "    return _vs_main();\n"

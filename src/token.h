@@ -15,6 +15,7 @@ enum {
     TOK_COLON,
     TOK_SEMI,
     TOK_ID,
+    TOK_DOT,
     TOK_FN,
     TOK_TYPE,
     TOK_OP,
@@ -27,7 +28,8 @@ enum {
     TOK_IF,
     TOK_ELSE,
     TOK_RETURN,
-    TOK_EXTERN
+    TOK_EXTERN,
+    TOK_STRUCT
 };
 
 enum {
@@ -44,6 +46,7 @@ enum {
     OP_EQUALS,
     OP_NEQUALS,
     OP_NOT,
+    OP_DOT,
     OP_GT,
     OP_GTE,
     OP_LT,

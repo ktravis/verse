@@ -11,6 +11,7 @@ static int last_tmp_fn_id = 0;
 static VarList *global_vars = NULL;
 static VarList *global_fn_vars = NULL;
 static AstList *global_fn_decls = NULL;
+static AstList *global_struct_decls = NULL;
 static int parser_state = PARSE_MAIN;
 static Ast *current_fn_scope = NULL;
 
@@ -58,6 +59,20 @@ Var *make_var(char *name, Type *type) {
     var->type = type;
     var->temp = 0;
     var->initialized = 0;
+    if (type->base == STRUCT_T) {
+        var->initialized = 1;
+        StructType *st = get_struct_type(type->struct_id);
+        var->members = malloc(sizeof(Var*)*st->nmembers);
+        for (int i = 0; i < st->nmembers; i++) {
+            int l = strlen(name)+strlen(st->member_names[i])+1;
+            char *member_name = malloc((l+1)*sizeof(char));
+            sprintf(member_name, "%s.%s", name, st->member_names[i]);
+            member_name[l] = 0;
+            var->members[i] = make_var(member_name, st->member_types[i]);
+        }
+    } else {
+        var->members = NULL;
+    }
     return var;
 }
 
@@ -76,14 +91,6 @@ Var *make_temp_var(Type *type, Ast *scope) {
     attach_var(var, scope);
     return var;
 }
-
-/*Var *find_var(char *name, Ast *scope) {*/
-    /*Var *v = find_local_var(name, scope);*/
-    /*if (v == NULL && scope->parent != NULL) {*/
-        /*v = find_var(name, scope->parent);*/
-    /*}*/
-    /*return v;*/
-/*}*/
 
 Var *find_var(char *name, Ast *scope) {
     Var *v = find_local_var(name, scope);
@@ -132,6 +139,16 @@ Type *var_type(Ast *ast) {
             return make_type(BOOL_T);
         }
         return var_type(ast->left);
+    case AST_DOT: {
+        Type *t = var_type(ast->dot_left);
+        StructType *st = get_struct_type(t->struct_id);
+        for (int i = 0; i < st->nmembers; i++) {
+            if (!strcmp(ast->member_name, st->member_names[i])) {
+                return st->member_types[i];
+            }
+        }
+        error("No member named '%s' in struct '%s'.", ast->member_name, st->name);
+    }
     case AST_TEMP_VAR:
         return ast->tmpvar->type;
     default:
@@ -152,6 +169,8 @@ int check_type(Type *a, Type *b) {
                 return 1;
             }
             return 0;
+        } else if (a->base == STRUCT_T) {
+            return a->struct_id == b->struct_id;
         }
         return 1;
     }
@@ -174,6 +193,10 @@ void print_ast(Ast *ast) {
         printf("\"");
         print_quoted_string(ast->sval);
         printf("\"");
+        break;
+    case AST_DOT:
+        print_ast(ast->dot_left);
+        printf(".%s", ast->member_name);
         break;
     case AST_UOP:
         printf("(%s ", op_to_str(ast->op));
@@ -202,6 +225,9 @@ void print_ast(Ast *ast) {
             print_ast(ast->init);
         }
         printf(")");
+        break;
+    case AST_STRUCT_DECL:
+        printf("(struct %s)", ast->struct_name);
         break;
     case AST_EXTERN_FUNC_DECL:
         printf("(extern fn %s)", ast->fn_decl_var->name);
@@ -296,11 +322,47 @@ Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
     return ast;
 }
 
+Ast *parse_dot_op_semantics(Ast *ast, Ast *scope) {
+    ast->dot_left = parse_semantics(ast->dot_left, scope);
+    if (var_type(ast->dot_left)->base != STRUCT_T) {
+        error("Cannot use dot operator on non-struct type '%s'.", type_as_str(var_type(ast->dot_left)));
+    }
+    return ast;
+}
+
+// TODO nameof function that prepends _vs_, _tmp, _fn_, etc
+// this will allow DOT to work on tmpvars
+
+Var *get_ast_var(Ast *ast) {
+    switch (ast->type) {
+    case AST_DOT: {
+        Var *v = get_ast_var(ast->dot_left);
+        StructType *st = get_struct_type(v->type->struct_id);
+        for (int i = 0; i < st->nmembers; i++) {
+            if (!strcmp(st->member_names[i], ast->member_name)) {
+                return v->members[i];
+            }
+        }
+        error("Couldn't get member '%s' in struct %d.", ast->member_name, v->type->struct_id);
+    }
+    case AST_IDENTIFIER:
+        return ast->var;
+    case AST_TEMP_VAR:
+        return ast->tmpvar;
+    case AST_DECL:
+        return ast->decl_var;
+    }
+    error("Can't get_ast_var(%d)", ast->type);
+    return NULL;
+}
+
 Ast *parse_binop_semantics(Ast *ast, Ast *scope) {
     int op = ast->op;
     Ast *left = parse_semantics(ast->left, scope);
     Ast *right = parse_semantics(ast->right, scope);
-    if (op == '=' && left->type != AST_IDENTIFIER) {
+    ast->left = left;
+    ast->right = right;
+    if (op == '=' && left->type != AST_IDENTIFIER && left->type != AST_DOT) {
         error("LHS of assignment is not an identifier.");
     }
     if (!check_type(var_type(left), var_type(right))) {
@@ -341,13 +403,12 @@ Ast *parse_binop_semantics(Ast *ast, Ast *scope) {
     case OP_NEQUALS:
         break;
     }
-    ast->left = left;
-    ast->right = right;
     if (!is_comparison(ast->op) && is_dynamic(var_type(ast->left))) {
         if (ast->op == OP_ASSIGN) {
             if (ast->right->type != AST_TEMP_VAR) {
                 ast->right = make_ast_tmpvar(ast->right, make_temp_var(var_type(ast->right), scope));
             }
+            /*get_ast_var(ast->left)->initialized = 1;*/
         } else {
             if (ast->left->type != AST_TEMP_VAR) {
                 ast->left = make_ast_tmpvar(ast->left, make_temp_var(var_type(ast->left), scope));
@@ -359,7 +420,7 @@ Ast *parse_binop_semantics(Ast *ast, Ast *scope) {
     return ast;
 }
 
-Ast *make_ast_binop(int op, Ast *left, Ast *right, Ast *scope) {
+Ast *make_ast_binop(int op, Ast *left, Ast *right) {
     Ast *binop = malloc(sizeof(Ast));
     binop->type = AST_BINOP;
     binop->op = op;
@@ -424,7 +485,7 @@ Ast *parse_declaration(Tok *t, Ast *scope) {
         if (lhs->decl_var->type->base == AUTO_T) {
             lhs->decl_var->type = var_type(lhs->init); // TODO probably wrong
         }
-        lhs = make_ast_binop(OP_ASSIGN, id, lhs->init, scope);
+        lhs = make_ast_binop(OP_ASSIGN, id, lhs->init);
     }
     return lhs; 
 }
@@ -444,7 +505,7 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope) {
             unget_token(t);
             return ast;
         } else if (t->type == TOK_OP) {
-            ast = make_ast_binop(t->op, ast, parse_expression(next_token(), next_priority + 1, scope), scope);
+            ast = make_ast_binop(t->op, ast, parse_expression(next_token(), next_priority + 1, scope));
         } else {
             error("Unexpected token '%s'.", to_string(t));
             return NULL;
@@ -457,13 +518,22 @@ Type *parse_type(Tok *t, Ast *scope) {
         error("Unexpected EOF while parsing type.");
     }
     int parens = 0;
-    if (t->type == TOK_LPAREN) {
-        parens = 1;
+    while (t->type == TOK_LPAREN) {
+        parens++;
         t = next_token();
     }
     if (t->type == TOK_TYPE) {
         Type *type = make_type(t->tval);
-        if (parens) {
+        while (parens--) {
+            expect(TOK_RPAREN);
+        }
+        return type;
+    } else if (t->type == TOK_ID) {
+        Type *type = find_struct_type(t->sval);
+        if (type == NULL) {
+            error("Unknown type '%s'.", t->sval);
+        }
+        while (parens--) {
             expect(TOK_RPAREN);
         }
         return type;
@@ -489,7 +559,7 @@ Type *parse_type(Tok *t, Ast *scope) {
         }
         expect(TOK_COLON);
         Type *ret = parse_type(next_token(), scope);
-        if (parens) {
+        while (parens--) {
             expect(TOK_RPAREN);
         }
         return make_fn_type(nargs, args, ret);
@@ -631,6 +701,41 @@ Ast *parse_return_statement(Tok *t, Ast *scope) {
     return ast;
 }
 
+Ast *parse_struct_decl(Ast *scope) {
+    Tok *t = expect(TOK_ID);
+    expect(TOK_LBRACE);
+    int alloc = 6;
+    StructType *st = make_struct_type(t->sval, 0, malloc(sizeof(char*) * alloc), malloc(sizeof(Type*) * alloc));
+    // add name to vars before parse_type's
+    for (;;) {
+        if (st->nmembers >= alloc) {
+            alloc += 6;
+            st->member_names = realloc(st->member_names, sizeof(char*) * alloc);
+            st->member_types = realloc(st->member_types, sizeof(char*) * alloc);
+        }
+        t = expect(TOK_ID);
+        expect(TOK_COLON);
+        Type *ty = parse_type(next_token(), scope);
+        st->member_names[st->nmembers] = t->sval;
+        st->member_types[st->nmembers++] = ty;
+        expect(TOK_SEMI);
+        t = next_token();
+        if (t != NULL && t->type == TOK_RBRACE) {
+            break;
+        } else {
+            unget_token(t);
+        }
+    }
+    Ast *ast = malloc(sizeof(Ast));
+    ast->type = AST_STRUCT_DECL;
+    ast->struct_name = st->name;
+    Type *ty = make_type(STRUCT_T);
+    ty->struct_id = st->id;
+    ast->struct_type = ty;
+    global_struct_decls = astlist_append(global_struct_decls, ast);
+    return ast;
+}
+
 Ast *parse_statement(Tok *t, Ast *scope) {
     Ast *ast;
     if (t->type == TOK_ID && peek_token() != NULL && peek_token()->type == TOK_COLON) {
@@ -640,6 +745,8 @@ Ast *parse_statement(Tok *t, Ast *scope) {
         return parse_func_decl(scope, 0);
     } else if (t->type == TOK_EXTERN) {
         ast = parse_extern_func_decl(scope);
+    } else if (t->type == TOK_STRUCT) {
+        return parse_struct_decl(scope);
     } else if (t->type == TOK_LBRACE) {
         return parse_scope(scope);
     } else if (t->type == TOK_IF) {
@@ -653,6 +760,22 @@ Ast *parse_statement(Tok *t, Ast *scope) {
         ast = parse_expression(t, 0, scope);
     }
     expect(TOK_SEMI);
+    return ast;
+}
+
+Ast *make_ast_id(Var *var, char *name) {
+    Ast *id = malloc(sizeof(Ast));
+    id->type = AST_IDENTIFIER;
+    id->var = NULL;
+    id->varname = name;
+    return id;
+}
+
+Ast *make_ast_dot_op(Ast *dot_left, char *member_name) {
+    Ast *ast = malloc(sizeof(Ast));
+    ast->type = AST_DOT;
+    ast->dot_left = dot_left;
+    ast->member_name = member_name;
     return ast;
 }
 
@@ -681,6 +804,24 @@ Ast *parse_primary(Tok *t, Ast *scope) {
             error("Unexpected end of input.");
         } else if (next->type == TOK_LPAREN) {
             return parse_arg_list(t, scope);
+        } else if (next->type == TOK_DOT) {
+            Ast *id = make_ast_id(NULL, t->sval);
+            next = expect(TOK_ID);
+            Ast *dot = make_ast_dot_op(id, next->sval);
+            dot->type = AST_DOT;
+            for (;;) {
+                next = next_token();
+                if (next == NULL || next->type != TOK_DOT) {
+                    unget_token(next);
+                    break;
+                }
+                dot = make_ast_dot_op(dot, expect(TOK_ID)->sval);
+                next = peek_token();
+                if (next == NULL || next->type != TOK_DOT) {
+                    break;
+                }
+            }
+            return dot;
         }
         unget_token(next);
         Ast *id = malloc(sizeof(Ast));
@@ -806,6 +947,8 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
     case AST_BOOL:
     case AST_STRING:
         break;
+    case AST_DOT:
+        return parse_dot_op_semantics(ast, scope);
     case AST_BINOP:
         return parse_binop_semantics(ast, scope);
     case AST_UOP:
@@ -818,6 +961,8 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         ast->var = v;
         break;
     }
+    /*case AST_DOT:*/
+        
     /*case AST_TEMP_VAR: // shouldn't happen*/
         /*break;*/
     case AST_DECL: {
@@ -841,6 +986,20 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
                 init = make_ast_tmpvar(init, make_temp_var(var_type(init), scope));
             }
             ast->init = init;
+        }
+        break;
+    }
+    case AST_STRUCT_DECL: {
+        StructType *st = get_struct_type(ast->struct_type->struct_id);
+        if (parser_state != PARSE_MAIN) {
+            error("Cannot declare a struct inside scope ('%s').", st->name);
+        }
+        for (int i = 0; i < st->nmembers-1; i++) {
+            for (int j = i + 1; j < st->nmembers; j++) {
+                if (!strcmp(st->member_names[i], st->member_names[j])) {
+                    error("Repeat member name '%s' in struct '%s'.", st->member_names[i], st->name);
+                }
+            }
         }
         break;
     }
@@ -922,6 +1081,23 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
 
 AstList *get_global_funcs() {
     return global_fn_decls;
+}
+
+AstList *get_global_structs() {
+    AstList *tail = global_struct_decls;
+    if (tail == NULL) {
+        return NULL;
+    }
+    AstList *head = tail;
+    AstList *tmp = head->next;
+    head->next = NULL;
+    while (tmp != NULL) {
+        tail = head;
+        head = tmp;
+        tmp = tmp->next;
+        head->next = tail;
+    }
+    return head;
 }
 
 VarList *get_global_vars() {

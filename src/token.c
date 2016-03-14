@@ -62,6 +62,8 @@ Tok *next_token() {
         return make_token(TOK_RBRACE);
     } else if (c == ',') {
         return make_token(TOK_COMMA);
+    } else if (c == '.') {
+        return make_token(TOK_DOT);
     } else if (c == ';') {
         return make_token(TOK_SEMI);
     } else if (c == ':') {
@@ -205,6 +207,8 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_ELSE);
     } else if (!strcmp(buf, "extern")) {
         return make_token(TOK_EXTERN);
+    } else if (!strcmp(buf, "struct")) {
+        return make_token(TOK_STRUCT);
     }
     return NULL;
 }
@@ -282,6 +286,8 @@ int priority_of(Tok *t) {
             return 10;
         case OP_NOT:
             return 11;
+        case OP_DOT:
+            return 12;
         default:
             return -1;
         }
@@ -325,8 +331,12 @@ const char *to_string(Tok *t) {
     case TOK_OP:
     case TOK_UOP:
         return op_to_str(t->op);
+    case TOK_STRUCT:
+        return "struct";
     case TOK_TYPE:
         return type_as_str(make_type(t->tval));
+    case TOK_DOT:
+        return ".";
     default:
         return NULL;
     }
@@ -356,8 +366,12 @@ const char *token_type(int type) {
         return "UOP";
     case TOK_FN:
         return "FN";
+    case TOK_STRUCT:
+        return "STRUCT";
     case TOK_TYPE:
         return "TYPE";
+    case TOK_DOT:
+        return "DOT";
     default:
         return "BAD TOKEN";
     }

@@ -10,7 +10,8 @@ enum {
     STRING_T,
     VOID_T,
     FN_T,
-    AUTO_T
+    AUTO_T,
+    STRUCT_T
 };
 
 typedef struct Type {
@@ -23,8 +24,20 @@ typedef struct Type {
     int struct_id;
 } Type;
 
+typedef struct StructType {
+    char *name;
+    int nmembers;
+    char **member_names;
+    Type **member_types;
+    struct StructType *next;
+    int id;
+} StructType;
+
 char *type_as_str(Type *t);
 Type *make_type(int base);
 Type *make_fn_type(int nargs, Type **args, Type *ret);
+StructType *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types);
+Type *find_struct_type(char *name);
+StructType *get_struct_type(int id);
 
 #endif

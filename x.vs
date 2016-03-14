@@ -68,5 +68,6 @@ fn main():int {
     assert(x1 == 3);
 
     println("Tests passed.");
+    noodler();
     return 0;
 }

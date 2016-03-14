@@ -15,6 +15,7 @@ enum {
     AST_STRING,
     AST_INTEGER,
     AST_BOOL,
+    AST_DOT,
     AST_BINOP,
     AST_UOP,
     AST_IDENTIFIER,
@@ -27,6 +28,7 @@ enum {
     AST_CONDITIONAL,
     AST_SCOPE,
     AST_RETURN,
+    AST_STRUCT_DECL,
     AST_BLOCK
 };
 
@@ -44,6 +46,7 @@ typedef struct Var {
     int consumed;
     int initialized;
     int ext;
+    struct Var **members;
 } Var;
 
 typedef struct VarList {
@@ -84,6 +87,11 @@ typedef struct Ast {
             struct Ast *left;
             struct Ast *right;
         };
+        // dot
+        struct {
+            struct Ast *dot_left;
+            char *member_name;
+        };
         // call
         struct {
             char *fn;
@@ -108,6 +116,11 @@ typedef struct Ast {
             struct Ast *if_body;
             struct Ast *else_body;
             int cond_id;
+        };
+        // struct decl
+        struct {
+            char *struct_name;
+            Type *struct_type;
         };
         // temp var
         struct {
@@ -138,8 +151,10 @@ int is_dynamic(Type *t);
 
 Ast *find_or_make_string(char *str);
 AstList *get_global_funcs();
+AstList *get_global_structs();
 Ast *generate_ast();
 Ast *parse_semantics(Ast *ast, Ast *scope);
+Var *get_ast_var(Ast *ast);
 
 Ast *make_ast_string(char *val);
 
