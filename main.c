@@ -235,6 +235,10 @@ void emit_decl(Ast *ast) {
         if (ast->decl_var->type->base == STRING_T) {
             printf(" = init_string(\"\")");
             ast->decl_var->initialized = 1;
+        } else if (ast->decl_var->type->base == STRUCT_T) {
+            StructType *st = get_struct_type(ast->decl_var->type->struct_id);
+            printf(" = _init_%s()", st->name);
+            ast->decl_var->initialized = 1;
         }
     } else {
         printf(" = ");
@@ -272,6 +276,42 @@ void emit_struct_decl(Ast *ast) {
     _indent--;
     indent();
     printf("};\n");
+    printf("struct _vs_%s _init_%s() {\n", ast->struct_name, ast->struct_name);
+    _indent++;
+    indent();
+    printf("struct _vs_%s x;\n", ast->struct_name);
+    for (int i = 0; i < st->nmembers; i++) {
+        if (st->member_types[i]->base == STRING_T) {
+            indent();
+            printf("x.%s = NULL;\n", st->member_names[i]);
+        } else if (st->member_types[i]->base == STRUCT_T) {
+            indent();
+            StructType *m = get_struct_type(st->member_types[i]->struct_id);
+            printf("x.%s = _init_%s();\n", st->member_names[i], m->name);
+        }
+    }
+    indent();
+    printf("return x;\n");
+    _indent--;
+    indent();
+    printf("}\n");
+    printf("struct _vs_%s _copy_%s(struct _vs_%s x) {\n", ast->struct_name, ast->struct_name, ast->struct_name);
+    _indent++;
+    for (int i = 0; i < st->nmembers; i++) {
+        if (st->member_types[i]->base == STRING_T) {
+            indent();
+            printf("x.%s = copy_string(x.%s);\n", st->member_names[i], st->member_names[i]);
+        } else if (st->member_types[i]->base == STRUCT_T) {
+            indent();
+            StructType *m = get_struct_type(st->member_types[i]->struct_id);
+            printf("x.%s = _copy_%s(x.%s);\n", st->member_names[i], m->name, st->member_names[i]);
+        }
+    }
+    indent();
+    printf("return x;\n");
+    _indent--;
+    indent();
+    printf("}\n");
 }
 
 void compile(Ast *ast) {
@@ -340,8 +380,16 @@ void compile(Ast *ast) {
         }
         printf("%s(", ast->fn_var->name);
         for (int i = 0; i < ast->nargs; i++) {
-            compile(ast->args[i]);
-            if (ast->args[i]->type == AST_TEMP_VAR && is_dynamic(var_type(ast->args[i]))) {
+            Type *t = var_type(ast->args[i]);
+            if (t->base == STRUCT_T && is_dynamic(t)) {
+                StructType *st = get_struct_type(t->struct_id);
+                printf("_copy_%s(", st->name);
+                compile(ast->args[i]);
+                printf(")");
+            } else {
+                compile(ast->args[i]);
+            }
+            if (ast->args[i]->type == AST_TEMP_VAR && is_dynamic(t)) {
                 ast->args[i]->tmpvar->consumed = 1;
             }
             if (i != ast->nargs-1) {
@@ -425,7 +473,15 @@ void emit_free_struct(char *name, Var *v) {
             switch (st->member_types[i]->base) {
             case STRING_T:
                 indent();
+                printf("if (%s.%s != NULL) {\n", name, st->member_names[i]);
+                _indent++;
+                indent();
+                printf("free(%s.%s->bytes);\n", name, st->member_names[i]);
+                indent();
                 printf("free(%s.%s);\n", name, st->member_names[i]);
+                _indent--;
+                indent();
+                printf("}\n");
                 break;
             case STRUCT_T: {
                 char *memname = malloc(sizeof(char) * (strlen(name) + strlen(st->member_names[i]) + 2));

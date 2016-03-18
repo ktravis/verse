@@ -69,6 +69,7 @@ Var *make_var(char *name, Type *type) {
             sprintf(member_name, "%s.%s", name, st->member_names[i]);
             member_name[l] = 0;
             var->members[i] = make_var(member_name, st->member_types[i]);
+            var->members[i]->initialized = 1; // maybe wrong?
         }
     } else {
         var->members = NULL;
@@ -178,6 +179,15 @@ int check_type(Type *a, Type *b) {
 }
 
 int is_dynamic(Type *t) {
+    if (t->base == STRUCT_T) {
+        StructType *st = get_struct_type(t->struct_id);
+        for (int i = 0; i < st->nmembers; i++) {
+            if (is_dynamic(st->member_types[i])) {
+                return 1;
+            }
+        }
+        return 0;
+    }
     return t->base == STRING_T;
 }
 
@@ -1029,7 +1039,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         for (int i = 0; i < ast->nargs; i++) {
             arg = ast->args[i];
             arg = parse_semantics(ast->args[i], scope);
-            if (arg->type != AST_TEMP_VAR && is_dynamic(var_type(arg))) {
+            if (arg->type != AST_TEMP_VAR && var_type(arg)->base != STRUCT_T && is_dynamic(var_type(arg))) {
                 arg = make_ast_tmpvar(arg, make_temp_var(var_type(arg), scope));
             }
             ast->args[i] = arg;
