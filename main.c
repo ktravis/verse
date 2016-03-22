@@ -73,6 +73,7 @@ void emit_string_binop(Ast *ast) {
     case AST_CALL: // is this right? need to do anything else?
     case AST_IDENTIFIER:
     case AST_DOT:
+    case AST_UOP:
     case AST_TEMP_VAR:
         printf("append_string(");
         compile(ast->left);
@@ -100,6 +101,14 @@ void emit_dot_op(Ast *ast) {
 void emit_uop(Ast *ast) {
     if (ast->op == OP_NOT) {
         printf("!");
+    } else if (ast->op == OP_AT) {
+        if (!is_dynamic(var_type(ast->right)->inner)) {
+            printf("*");
+        }
+    } else if (ast->op == OP_ADDR) {
+        if (!is_dynamic(var_type(ast->right))) {
+            printf("&");
+        }
     } else {
         error("Unkown unary operator '%s' (%s).", op_to_str(ast->op), ast->op);
     }
@@ -201,6 +210,12 @@ void emit_type(Type *type) {
         break;
     case VOID_T:
         printf("void ");
+        break;
+    case PTR_T:
+        emit_type(type->inner);
+        if (!is_dynamic(type->inner)) {
+            printf("*");
+        }
         break;
     case STRUCT_T: {
         StructType *st = get_struct_type(type->struct_id);

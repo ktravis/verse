@@ -68,6 +68,8 @@ Tok *next_token() {
         return make_token(TOK_SEMI);
     } else if (c == ':') {
         return make_token(TOK_COLON);
+    } else if (c == '^') {
+        return make_token(TOK_CARET);
     } else if (c == '+') {
         Tok *t = make_token(TOK_OP);
         t->op = OP_PLUS;
@@ -107,6 +109,10 @@ Tok *next_token() {
             ungetc(d, stdin);
             t->op = OP_LT;
         } // TODO binary shift
+        return t;
+    } else if (c == '@') {
+        Tok *t = make_token(TOK_UOP);
+        t->op = OP_AT;
         return t;
     } else if (c == '!') {
         Tok *t;

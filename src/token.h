@@ -14,6 +14,7 @@ enum {
     TOK_BOOL,
     TOK_COLON,
     TOK_SEMI,
+    TOK_CARET,
     TOK_ID,
     TOK_DOT,
     TOK_FN,
@@ -50,7 +51,9 @@ enum {
     OP_GT,
     OP_GTE,
     OP_LT,
-    OP_LTE
+    OP_LTE,
+    OP_ADDR,
+    OP_AT
 };
 
 typedef struct Tok {

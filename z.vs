@@ -16,8 +16,11 @@ fn main():int {
     b:wut;
     b.x = 1;
     b.y = "test";
+    a:^string = ^b.y;
+    c:^int = ^b.x;
     print_str("outer: " + b.y + "\n");
     check(b);
     print_str("outer: " + b.y + "\n");
-    return 0;
+    print_str("outer: " + @a + "\n");
+    return @c;
 }

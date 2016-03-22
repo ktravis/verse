@@ -131,6 +131,12 @@ Type *var_type(Ast *ast) {
     case AST_UOP:
         if (ast->op == OP_NOT) {
             return make_type(BOOL_T);
+        } else if (ast->op == OP_ADDR) {
+            Type *t = make_type(PTR_T);
+            t->inner = var_type(ast->right);
+            return t;
+        } else if (ast->op == OP_AT) {
+            return var_type(ast->right)->inner;
         } else {
             error("don't know how to infer vartype of operator '%s' (%d).", op_to_str(ast->op), ast->op);
         }
@@ -172,6 +178,8 @@ int check_type(Type *a, Type *b) {
             return 0;
         } else if (a->base == STRUCT_T) {
             return a->struct_id == b->struct_id;
+        } else if (a->base == PTR_T) {
+            return check_type(a->inner, b->inner);
         }
         return 1;
     }
@@ -324,6 +332,16 @@ Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
     case OP_NOT:
         if (var_type(ast->right)->base != BOOL_T) {
             error("Cannot perform logical negation on type '%s'.", type_as_str(var_type(ast->right)));
+        }
+        break;
+    case OP_AT:
+        if (var_type(ast->right)->base != PTR_T) {
+            error("Cannot dereference a non-pointer type.");
+        }
+        break;
+    case OP_ADDR:
+        if (ast->right->type != AST_IDENTIFIER && ast->right->type != AST_DOT) {
+            error("Cannot take the address of a non-variable.");
         }
         break;
     default:
@@ -532,8 +550,18 @@ Type *parse_type(Tok *t, Ast *scope) {
         parens++;
         t = next_token();
     }
+    unsigned char ptr = 0;
+    if (t->type == TOK_CARET) {
+        ptr = 1;
+        t = next_token();
+    }
     if (t->type == TOK_TYPE) {
         Type *type = make_type(t->tval);
+        if (ptr) {
+            Type *tmp = type;
+            type = make_type(PTR_T);
+            type->inner = tmp;
+        }
         while (parens--) {
             expect(TOK_RPAREN);
         }
@@ -543,11 +571,19 @@ Type *parse_type(Tok *t, Ast *scope) {
         if (type == NULL) {
             error("Unknown type '%s'.", t->sval);
         }
+        if (ptr) {
+            Type *tmp = type;
+            type = make_type(PTR_T);
+            type->inner = tmp;
+        }
         while (parens--) {
             expect(TOK_RPAREN);
         }
         return type;
     } else if (t->type == TOK_FN) {
+        if (ptr) {
+            error("Cannot make a pointer to a function.");
+        }
         Type **args = malloc(sizeof(Type*)*MAX_ARGS);
         int nargs = 0;
         expect(TOK_LPAREN);
@@ -842,6 +878,14 @@ Ast *parse_primary(Tok *t, Ast *scope) {
     }
     case TOK_FN:
         return parse_func_decl(scope, 1);
+    case TOK_CARET: {
+        Ast *ast = malloc(sizeof(Ast));
+        ast->type = AST_UOP;
+        ast->op = OP_ADDR;
+        ast->left = NULL;
+        ast->right = parse_primary(next_token(), scope);
+        return ast;
+    }
     case TOK_UOP: {
         Ast *ast = malloc(sizeof(Ast));
         ast->type = AST_UOP;

@@ -3,10 +3,19 @@
 static StructType *struct_defs = NULL;
 
 char* type_as_str(Type *t) {
+    // TODO doesn't show pointer
     switch (t->base) {
     case BOOL_T: return "bool";
     case INT_T: return "int";
     case STRING_T: return "string";
+    case PTR_T: {
+        char *inner = type_as_str(t->inner);
+        char *buf = malloc(sizeof(char) * (strlen(inner) + 2));
+        buf[0] = '^';
+        strncpy(buf, inner+1, strlen(inner));
+        buf[strlen(inner)+1] = 0;
+        return buf;
+    }
     case FN_T: {
          char *parts[10]; // TODO duh
          size_t size = 6; // fn + ( + ) + : + \0

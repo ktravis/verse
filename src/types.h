@@ -11,7 +11,8 @@ enum {
     VOID_T,
     FN_T,
     AUTO_T,
-    STRUCT_T
+    STRUCT_T,
+    PTR_T
 };
 
 typedef struct Type {
@@ -22,6 +23,8 @@ typedef struct Type {
     struct Type *ret;
     // for structs
     int struct_id;
+    //
+    struct Type *inner;
 } Type;
 
 typedef struct StructType {
