@@ -66,8 +66,6 @@ typedef struct Tok {
     };
 } Tok;
 
-static Tok *last = NULL;
-
 void skip_spaces();
 int is_id_char(char c);
 int type_id(char *buf);

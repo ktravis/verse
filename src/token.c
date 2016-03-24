@@ -1,6 +1,8 @@
 #include "token.h"
 #include "util.h"
 
+static Tok *last = NULL;
+
 static int line = 1;
 
 char read_non_space() {
