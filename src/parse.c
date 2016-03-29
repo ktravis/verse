@@ -1080,9 +1080,15 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         if (ast->fn_var == NULL) {
             error("Undefined identifier '%s' encountered.", ast->fn);
         }
+        if (ast->nargs != ast->fn_var->type->nargs) {
+            error("Incorrect argument count to function '%s' (expected %d, got %d)", ast->fn_var->name, ast->fn_var->type->nargs, ast->nargs);
+        }
         for (int i = 0; i < ast->nargs; i++) {
             arg = ast->args[i];
             arg = parse_semantics(ast->args[i], scope);
+            if (!check_type(var_type(arg), ast->fn_var->type->args[i])) {
+                error("Incorrect argument to function '%s', expected type '%s', and got '%s'.", ast->fn_var->name, type_as_str(ast->fn_var->type->args[i]), type_as_str(var_type(arg)));
+            }
             if (arg->type != AST_TEMP_VAR && var_type(arg)->base != STRUCT_T && is_dynamic(var_type(arg))) {
                 arg = make_ast_tmpvar(arg, make_temp_var(var_type(arg), scope));
             }

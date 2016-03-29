@@ -1,5 +1,6 @@
 extern fn print_str(string):void;
 extern fn itoa(int):string;
+extern fn assert(bool):void;
 
 struct wut {
     x:int;
@@ -7,7 +8,7 @@ struct wut {
 }
 fn check(x:wut):void {
     print_str("within check: " + x.y + " " + itoa(x.x) + "\n");
-    x.y = x.y + "lol"; // there is a leak here, because _fn_check doesn't know that x.y is initialized
+    x.y = x.y + "lol";
     x.x = x.x + 1;
     print_str("within check: " + x.y + " " + itoa(x.x) + "\n");
 }
@@ -18,9 +19,11 @@ fn main():int {
     b.y = "test";
     a:^string = ^b.y;
     c:^int = ^b.x;
-    print_str("outer: " + b.y + "\n");
+    assert(b.y == @a);
+    assert(b.x == @c);
     check(b);
-    print_str("outer: " + b.y + "\n");
-    print_str("outer: " + @a + "\n");
+    assert(b.y == @a);
+    assert(b.x == @c);
+    print_str("Success!\n");
     return @c;
 }

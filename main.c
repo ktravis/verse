@@ -644,10 +644,10 @@ int main(int argc, char **argv) {
             emit_func_decl(fnlist->item);
             fnlist = fnlist->next;
         }
-        printf("void _init() ");
+        printf("void _verse_init() ");
         compile(root);
         printf("int main(int argc, char** argv) {\n"
-               "    _init();\n"
+               "    _verse_init();\n"
                "    return _vs_main();\n"
                "}");
     }

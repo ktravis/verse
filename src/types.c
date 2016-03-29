@@ -60,7 +60,7 @@ char* type_as_str(Type *t) {
         size_t size = strlen(s->name) + 8;
         char *n = malloc(sizeof(char) * size);
         strncpy(n, "struct ", 8);
-        strncpy(n, s->name, size - 8);
+        strncpy(n+7, s->name, size - 8);
         n[size-1] = 0;
         return n;
     }
