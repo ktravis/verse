@@ -65,7 +65,10 @@ Tok *next_token() {
     } else if (c == ',') {
         return make_token(TOK_COMMA);
     } else if (c == '.') {
-        return make_token(TOK_DOT);
+        /*return make_token(TOK_DOT);*/
+        Tok *t = make_token(TOK_OP);
+        t->op = OP_DOT;
+        return t;
     } else if (c == ';') {
         return make_token(TOK_SEMI);
     } else if (c == ':') {
@@ -270,7 +273,9 @@ int type_id(char *buf) {
 }
 
 int priority_of(Tok *t) {
-    if (t->type == TOK_OP) {
+    if (t->type == TOK_LPAREN) {
+        return 13;
+    } else if (t->type == TOK_OP) {
         switch (t->op) {
         case OP_ASSIGN:
             return 1;
@@ -294,8 +299,10 @@ int priority_of(Tok *t) {
             return 10;
         case OP_NOT:
             return 11;
-        case OP_DOT:
+        case OP_ADDR: case OP_AT:
             return 12;
+        case OP_DOT:
+            return 13;
         default:
             return -1;
         }
@@ -343,8 +350,8 @@ const char *to_string(Tok *t) {
         return "struct";
     case TOK_TYPE:
         return type_as_str(make_type(t->tval));
-    case TOK_DOT:
-        return ".";
+    /*case TOK_DOT:*/
+        /*return ".";*/
     default:
         return NULL;
     }
@@ -378,8 +385,8 @@ const char *token_type(int type) {
         return "STRUCT";
     case TOK_TYPE:
         return "TYPE";
-    case TOK_DOT:
-        return "DOT";
+    /*case TOK_DOT:*/
+        /*return "DOT";*/
     default:
         return "BAD TOKEN";
     }
@@ -404,6 +411,8 @@ const char *op_to_str(int op) {
     case OP_GTE: return ">=";
     case OP_LT: return "<";
     case OP_LTE: return "<=";
+    case OP_ADDR: return "^";
+    case OP_AT: return "@";
     default:
         return "BAD OP";
     }

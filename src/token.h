@@ -16,7 +16,7 @@ enum {
     TOK_SEMI,
     TOK_CARET,
     TOK_ID,
-    TOK_DOT,
+    //TOK_DOT,
     TOK_FN,
     TOK_TYPE,
     TOK_OP,

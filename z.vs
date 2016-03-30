@@ -5,6 +5,7 @@ extern fn assert(bool):void;
 struct wut {
     x:int;
     y:string;
+    z:fn(int,int):int;
 }
 fn check(x:wut):void {
     print_str("within check: " + x.y + " " + itoa(x.x) + "\n");
@@ -17,6 +18,9 @@ fn main():int {
     b:wut;
     b.x = 1;
     b.y = "test";
+    b.z = fn (a:int,b:int):int {
+        return a*b;
+    };
     a:^string = ^b.y;
     c:^int = ^b.x;
     assert(b.y == @a);
@@ -24,6 +28,15 @@ fn main():int {
     check(b);
     assert(b.y == @a);
     assert(b.x == @c);
+    assert(b.z(1,2) == 2);
+    wee:bool = fn ():bool {
+        print_str("weeee\n");
+        return true;
+    }();
+    assert(wee);
+    assert(!(fn ():bool {
+        return false;
+    }()));
     print_str("Success!\n");
     return @c;
 }

@@ -121,11 +121,7 @@ Type *var_type(Ast *ast) {
     case AST_DECL:
         return ast->decl_var->type;
     case AST_CALL:
-        if (ast->fn_var != NULL) {
-            return ast->fn_var->type->ret;
-        }
-        error("cannot do: %s", ast->fn);
-        return make_type(INT_T);
+        return var_type(ast->fn)->ret;
     case AST_ANON_FUNC_DECL:
         return ast->fn_decl_var->type;
     case AST_UOP:
@@ -276,7 +272,8 @@ void print_ast(Ast *ast) {
         printf(")");
         break;
     case AST_CALL:
-        printf("%s(", ast->fn);
+        print_ast(ast->fn);
+        printf("(");
         for (int i = 0; i < ast->nargs; i++) {
             print_ast(ast->args[i]);
             if (i + 1 < ast->nargs) {
@@ -352,7 +349,8 @@ Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
 
 Ast *parse_dot_op_semantics(Ast *ast, Ast *scope) {
     ast->dot_left = parse_semantics(ast->dot_left, scope);
-    if (var_type(ast->dot_left)->base != STRUCT_T) {
+    Type *t = var_type(ast->dot_left);
+    if (t->base != STRUCT_T && !(t->base == PTR_T && t->inner->base == STRUCT_T)) {
         error("Cannot use dot operator on non-struct type '%s'.", type_as_str(var_type(ast->dot_left)));
     }
     return ast;
@@ -457,13 +455,14 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right) {
     return binop;
 }
 
-Ast *parse_arg_list(Tok *t, Ast *scope) {
+Ast *parse_arg_list(Ast *left, Ast *scope) {
     Ast *func = malloc(sizeof(Ast));
     func->args = malloc(sizeof(Ast*) * (MAX_ARGS + 1));
-    func->fn = t->sval;
+    func->fn = left;
     func->type = AST_CALL;    
     int i;
     int n = 0;
+    Tok *t;
     for (i = 0; i < MAX_ARGS; i++) {
         t = next_token();
         if (t->type == TOK_RPAREN) {
@@ -533,7 +532,15 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope) {
             unget_token(t);
             return ast;
         } else if (t->type == TOK_OP) {
-            ast = make_ast_binop(t->op, ast, parse_expression(next_token(), next_priority + 1, scope));
+            if (t->op == OP_DOT) {
+                Tok *next = expect(TOK_ID);
+                ast = make_ast_dot_op(ast, next->sval);
+                ast->type = AST_DOT;
+            } else {
+                ast = make_ast_binop(t->op, ast, parse_expression(next_token(), next_priority + 1, scope));
+            }
+        } else if (t->type == TOK_LPAREN) {
+            ast = parse_arg_list(ast, scope);
         } else {
             error("Unexpected token '%s'.", to_string(t));
             return NULL;
@@ -598,7 +605,9 @@ Type *parse_type(Tok *t, Ast *scope) {
                     error("Unexpected EOF while parsing type.");
                 } else if (t->type == TOK_RPAREN) {
                     break;
-                } else if (t->type != TOK_COMMA) {
+                } else if (t->type == TOK_COMMA) {
+                    t = next_token();
+                } else {
                     error("Unexpected token '%s' while parsing type.", to_string(t));
                 }
             }
@@ -788,7 +797,12 @@ Ast *parse_statement(Tok *t, Ast *scope) {
         next_token();
         ast = parse_declaration(t, scope);
     } else if (t->type == TOK_FN) {
-        return parse_func_decl(scope, 0);
+        Tok *next = next_token();
+        unget_token(next);
+        if (next->type == TOK_ID) {
+            return parse_func_decl(scope, 0);
+        }
+        ast = parse_expression(t, 0, scope);
     } else if (t->type == TOK_EXTERN) {
         ast = parse_extern_func_decl(scope);
     } else if (t->type == TOK_STRUCT) {
@@ -848,26 +862,26 @@ Ast *parse_primary(Tok *t, Ast *scope) {
         Tok *next = next_token();
         if (next == NULL) {
             error("Unexpected end of input.");
-        } else if (next->type == TOK_LPAREN) {
-            return parse_arg_list(t, scope);
-        } else if (next->type == TOK_DOT) {
-            Ast *id = make_ast_id(NULL, t->sval);
-            next = expect(TOK_ID);
-            Ast *dot = make_ast_dot_op(id, next->sval);
-            dot->type = AST_DOT;
-            for (;;) {
-                next = next_token();
-                if (next == NULL || next->type != TOK_DOT) {
-                    unget_token(next);
-                    break;
-                }
-                dot = make_ast_dot_op(dot, expect(TOK_ID)->sval);
-                next = peek_token();
-                if (next == NULL || next->type != TOK_DOT) {
-                    break;
-                }
-            }
-            return dot;
+        /*} else if (next->type == TOK_LPAREN) {*/
+            /*return parse_arg_list(t, scope);*/
+        /*} else if (next->type == TOK_DOT) {*/
+            /*Ast *id = make_ast_id(NULL, t->sval);*/
+            /*next = expect(TOK_ID);*/
+            /*Ast *dot = make_ast_dot_op(id, next->sval);*/
+            /*dot->type = AST_DOT;*/
+            /*for (;;) {*/
+                /*next = next_token();*/
+                /*if (next == NULL || next->type != TOK_DOT) {*/
+                    /*unget_token(next);*/
+                    /*break;*/
+                /*}*/
+                /*dot = make_ast_dot_op(dot, expect(TOK_ID)->sval);*/
+                /*next = peek_token();*/
+                /*if (next == NULL || next->type != TOK_DOT) {*/
+                    /*break;*/
+                /*}*/
+            /*}*/
+            /*return dot;*/
         }
         unget_token(next);
         Ast *id = malloc(sizeof(Ast));
@@ -883,7 +897,7 @@ Ast *parse_primary(Tok *t, Ast *scope) {
         ast->type = AST_UOP;
         ast->op = OP_ADDR;
         ast->left = NULL;
-        ast->right = parse_primary(next_token(), scope);
+        ast->right = parse_expression(next_token(), priority_of(t), scope);
         return ast;
     }
     case TOK_UOP: {
@@ -891,7 +905,7 @@ Ast *parse_primary(Tok *t, Ast *scope) {
         ast->type = AST_UOP;
         ast->op = t->op;
         ast->left = NULL;
-        ast->right = parse_primary(next_token(), scope);
+        ast->right = parse_expression(next_token(), priority_of(t), scope);
         return ast;
     }
     case TOK_LPAREN: {
@@ -1070,24 +1084,31 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         attach_var(ast->fn_decl_var, ast->fn_body);
         global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);
 
+        /*printf("HEYYYYY WE'RE IN THE THING\n");*/
+        /*print_ast(ast);*/
+        /*printf("\n");*/
         PUSH_FN_SCOPE(ast);
         ast->fn_body = parse_semantics(ast->fn_body, scope);
         POP_FN_SCOPE();
         break;
     case AST_CALL: {
         Ast *arg;
-        ast->fn_var = find_var(ast->fn, scope);
-        if (ast->fn_var == NULL) {
-            error("Undefined identifier '%s' encountered.", ast->fn);
+        /*printf("PARSING ast->fn semantics\n");*/
+        /*print_ast(ast->fn);*/
+        /*printf("\n");*/
+        ast->fn = parse_semantics(ast->fn, scope);
+        Type *t = var_type(ast->fn);
+        if (t->base != FN_T) {
+            error("Cannot perform call on non-function type '%s'", type_as_str(t));
         }
-        if (ast->nargs != ast->fn_var->type->nargs) {
-            error("Incorrect argument count to function '%s' (expected %d, got %d)", ast->fn_var->name, ast->fn_var->type->nargs, ast->nargs);
+        if (ast->nargs != t->nargs) {
+            error("Incorrect argument count to function (expected %d, got %d)", t->nargs, ast->nargs);
         }
         for (int i = 0; i < ast->nargs; i++) {
             arg = ast->args[i];
             arg = parse_semantics(ast->args[i], scope);
-            if (!check_type(var_type(arg), ast->fn_var->type->args[i])) {
-                error("Incorrect argument to function '%s', expected type '%s', and got '%s'.", ast->fn_var->name, type_as_str(ast->fn_var->type->args[i]), type_as_str(var_type(arg)));
+            if (!check_type(var_type(arg), t->args[i])) {
+                error("Incorrect argument to function, expected type '%s', and got '%s'.", type_as_str(t->args[i]), type_as_str(var_type(arg)));
             }
             if (arg->type != AST_TEMP_VAR && var_type(arg)->base != STRUCT_T && is_dynamic(var_type(arg))) {
                 arg = make_ast_tmpvar(arg, make_temp_var(var_type(arg), scope));

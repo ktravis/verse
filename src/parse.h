@@ -94,8 +94,8 @@ typedef struct Ast {
         };
         // call
         struct {
-            char *fn;
-            Var *fn_var;
+            struct Ast *fn;
+            //Var *fn_var;
             int nargs;
             struct Ast **args;
         };
@@ -157,10 +157,11 @@ Ast *parse_semantics(Ast *ast, Ast *scope);
 Var *get_ast_var(Ast *ast);
 
 Ast *make_ast_string(char *val);
+Ast *make_ast_dot_op(Ast *dot_left, char *member_name);
 
 Type *parse_type(Tok *t, Ast *scope);
 Ast *parse_expression(Tok *t, int priority, Ast *scope);
-Ast *parse_arg_list(Tok *t, Ast *scope);
+Ast *parse_arg_list(Ast *left, Ast *scope);
 Ast *parse_primary(Tok *t, Ast *scope);
 Ast *parse_binop(char op, Ast *left, Ast *right, Ast *scope);
 Ast *parse_declaration(Tok *t, Ast *scope);

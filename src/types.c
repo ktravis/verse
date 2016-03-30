@@ -3,7 +3,6 @@
 static StructType *struct_defs = NULL;
 
 char* type_as_str(Type *t) {
-    // TODO doesn't show pointer
     switch (t->base) {
     case BOOL_T: return "bool";
     case INT_T: return "int";
@@ -12,7 +11,7 @@ char* type_as_str(Type *t) {
         char *inner = type_as_str(t->inner);
         char *buf = malloc(sizeof(char) * (strlen(inner) + 2));
         buf[0] = '^';
-        strncpy(buf, inner+1, strlen(inner));
+        strncpy(buf+1, inner, strlen(inner));
         buf[strlen(inner)+1] = 0;
         return buf;
     }
@@ -59,7 +58,7 @@ char* type_as_str(Type *t) {
         }
         size_t size = strlen(s->name) + 8;
         char *n = malloc(sizeof(char) * size);
-        strncpy(n, "struct ", 8);
+        strncpy(n, "struct ", 7);
         strncpy(n+7, s->name, size - 8);
         n[size-1] = 0;
         return n;

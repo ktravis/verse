@@ -95,7 +95,11 @@ void emit_string_binop(Ast *ast) {
 
 void emit_dot_op(Ast *ast) {
     compile(ast->dot_left);
-    printf(".%s", ast->member_name);
+    if (var_type(ast->dot_left)->base == PTR_T) {
+        printf("->%s", ast->member_name);
+    } else {
+        printf(".%s", ast->member_name);
+    }
 }
 
 void emit_uop(Ast *ast) {
@@ -358,7 +362,10 @@ void compile(Ast *ast) {
         emit_tmpvar(ast);
         break;
     case AST_IDENTIFIER:
-        printf("_vs_%s", ast->var->name);
+        if (!ast->var->ext) {
+            printf("_vs_");
+        }
+        printf("%s", ast->var->name);
         break;
     case AST_RETURN:
         if (ast->ret_expr != NULL) {
@@ -390,10 +397,28 @@ void compile(Ast *ast) {
     case AST_EXTERN_FUNC_DECL: 
         break;
     case AST_CALL:
-        if (!ast->fn_var->ext) {
-            printf("_vs_");
+        if (ast->fn->type != AST_IDENTIFIER) {
+            Type *t = var_type(ast->fn);
+            printf("((");
+            emit_type(t->ret);
+            printf("(*)(");
+            if (t->nargs == 0) {
+                printf("void");
+            } else {
+                for (int i = 0; i < t->nargs; i++) {
+                    emit_type(t->args[i]);
+                    if (i < t->nargs-1) {
+                        printf(",");
+                    }
+                }
+            }
+            printf("))(");
+            compile(ast->fn);
+            printf("))");
+        } else {
+            compile(ast->fn);
         }
-        printf("%s(", ast->fn_var->name);
+        printf("(");
         for (int i = 0; i < ast->nargs; i++) {
             Type *t = var_type(ast->args[i]);
             if (t->base == STRUCT_T && is_dynamic(t)) {
@@ -420,7 +445,7 @@ void compile(Ast *ast) {
             }
             indent();
             compile(ast->statements[i]);
-            if (ast->statements[i]->type != AST_CONDITIONAL && ast->statements[i]->type != AST_ANON_FUNC_DECL) {
+            if (ast->statements[i]->type != AST_CONDITIONAL) {
                 printf(";\n");
             }
         }
