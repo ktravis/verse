@@ -110,7 +110,8 @@ void emit_uop(Ast *ast) {
             printf("*");
         }
     } else if (ast->op == OP_ADDR) {
-        if (!is_dynamic(var_type(ast->right))) {
+        /*if (!is_dynamic(var_type(ast->right))) {*/
+        if (var_type(ast->right)->base != STRING_T) {
             printf("&");
         }
     } else {
@@ -215,6 +216,9 @@ void emit_type(Type *type) {
     case VOID_T:
         printf("void ");
         break;
+    case BASEPTR_T:
+        printf("ptr_type ");
+        break;
     case PTR_T:
         emit_type(type->inner);
         if (!is_dynamic(type->inner)) {
@@ -258,6 +262,8 @@ void emit_decl(Ast *ast) {
             StructType *st = get_struct_type(ast->decl_var->type->struct_id);
             printf(" = _init_%s()", st->name);
             ast->decl_var->initialized = 1;
+        } else if (ast->decl_var->type->base == BASEPTR_T) {
+            printf(" = NULL");
         }
     } else {
         printf(" = ");
@@ -536,7 +542,7 @@ void emit_free_struct(char *name, Var *v) {
 }
 
 void emit_free(Var *var) {
-    if ((!var->temp && !var->initialized) || (var->temp && var->consumed)) {
+    if (var->held || (!var->temp && !var->initialized) || (var->temp && var->consumed)) {
         return;
     }
     switch (var->type->base) {

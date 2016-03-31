@@ -28,9 +28,11 @@ enum {
     TOK_RBRACE,
     TOK_IF,
     TOK_ELSE,
+    TOK_WHILE,
     TOK_RETURN,
     TOK_EXTERN,
-    TOK_STRUCT
+    TOK_STRUCT,
+    TOK_HOLD
 };
 
 enum {

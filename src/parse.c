@@ -59,6 +59,7 @@ Var *make_var(char *name, Type *type) {
     var->type = type;
     var->temp = 0;
     var->initialized = 0;
+    var->held = 0;
     if (type->base == STRUCT_T) {
         var->initialized = 1;
         StructType *st = get_struct_type(type->struct_id);
@@ -161,6 +162,11 @@ Type *var_type(Ast *ast) {
 }
 
 int check_type(Type *a, Type *b) {
+    if (a->base == BASEPTR_T) {
+        return (b->base == PTR_T || b->base == BASEPTR_T);
+    } else if (b->base == BASEPTR_T) {
+        return (a->base == PTR_T);
+    }
     if (a->base == b->base) {
         if (a->base == FN_T) {
             if (a->nargs == b->nargs && check_type(a->ret, b->ret)) {
@@ -491,8 +497,9 @@ Ast *make_ast_decl(char *name, Type *type) {
     return ast;
 }
 
-Ast *parse_declaration(Tok *t, Ast *scope) {
+Ast *parse_declaration(Tok *t, Ast *scope, int held) {
     Ast *lhs = make_ast_decl(t->sval, parse_type(next_token(), scope));
+    lhs->decl_var->held = held;
     Tok *next = next_token();
     if (next == NULL) {
         error("Unexpected end of input while parsing declaration.");
@@ -612,8 +619,13 @@ Type *parse_type(Tok *t, Ast *scope) {
                 }
             }
         }
-        expect(TOK_COLON);
-        Type *ret = parse_type(next_token(), scope);
+        t = next_token();
+        Type *ret = make_type(VOID_T);
+        if (t->type == TOK_COLON) {
+            ret = parse_type(next_token(), scope);
+        } else {
+            unget_token(t);
+        }
         while (parens--) {
             expect(TOK_RPAREN);
         }
@@ -656,8 +668,14 @@ Ast *parse_extern_func_decl(Ast *scope) {
     if (i == MAX_ARGS) {
         error("OH NO THE ARGS");
     }
-    expect(TOK_COLON);
-    Type *fn_type = make_fn_type(n, arg_types, parse_type(next_token(), scope));
+    t = next_token();
+    Type *ret = make_type(VOID_T);
+    if (t->type == TOK_COLON) {
+        ret = parse_type(next_token(), scope);
+    } else {
+        unget_token(t);
+    }
+    Type *fn_type = make_fn_type(n, arg_types, ret);
     Var *fn_decl_var = make_var(fname, fn_type);
     fn_decl_var->ext = 1;
     func->fn_decl_var = fn_decl_var;
@@ -720,8 +738,16 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
     if (i == MAX_ARGS) {
         error("OH NO THE ARGS");
     }
-    expect(TOK_COLON);
-    Type *fn_type = make_fn_type(n, arg_types, parse_type(next_token(), scope));
+    t = next_token();
+    Type *ret = make_type(VOID_T);
+    if (t->type == TOK_COLON) {
+        ret = parse_type(next_token(), scope);
+    } else if (t->type == TOK_LBRACE) {
+        unget_token(t);
+    } else {
+        error("Unexpected token '%s' in function signature.", to_string(t));
+    }
+    Type *fn_type = make_fn_type(n, arg_types, ret);
     expect(TOK_LBRACE);
     Var *fn_decl_var = make_var(fname, fn_type);
     fn_decl_var->ext = 0;
@@ -735,7 +761,9 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
     func->fn_body = fn_scope;
     parser_state = prev;
 
+    /*if (parser_state == PARSE_MAIN) {*/
     global_fn_decls = astlist_append(global_fn_decls, func);
+    /*}*/
 
     return func; 
 }
@@ -795,7 +823,16 @@ Ast *parse_statement(Tok *t, Ast *scope) {
     Ast *ast;
     if (t->type == TOK_ID && peek_token() != NULL && peek_token()->type == TOK_COLON) {
         next_token();
-        ast = parse_declaration(t, scope);
+        ast = parse_declaration(t, scope, 0);
+    } else if (t->type == TOK_HOLD) {
+        t = expect(TOK_ID);
+        Tok *col = next_token();
+        if (col == NULL) {
+            error("Unexpected EOF while parsing variable declaration.");
+        } else if (col->type != TOK_COLON) {
+            error("Unexpected token '%s' while parsing variable declaration.", to_string(col));
+        }
+        ast = parse_declaration(t, scope, 1);
     } else if (t->type == TOK_FN) {
         Tok *next = next_token();
         unget_token(next);
@@ -862,26 +899,6 @@ Ast *parse_primary(Tok *t, Ast *scope) {
         Tok *next = next_token();
         if (next == NULL) {
             error("Unexpected end of input.");
-        /*} else if (next->type == TOK_LPAREN) {*/
-            /*return parse_arg_list(t, scope);*/
-        /*} else if (next->type == TOK_DOT) {*/
-            /*Ast *id = make_ast_id(NULL, t->sval);*/
-            /*next = expect(TOK_ID);*/
-            /*Ast *dot = make_ast_dot_op(id, next->sval);*/
-            /*dot->type = AST_DOT;*/
-            /*for (;;) {*/
-                /*next = next_token();*/
-                /*if (next == NULL || next->type != TOK_DOT) {*/
-                    /*unget_token(next);*/
-                    /*break;*/
-                /*}*/
-                /*dot = make_ast_dot_op(dot, expect(TOK_ID)->sval);*/
-                /*next = peek_token();*/
-                /*if (next == NULL || next->type != TOK_DOT) {*/
-                    /*break;*/
-                /*}*/
-            /*}*/
-            /*return dot;*/
         }
         unget_token(next);
         Ast *id = malloc(sizeof(Ast));
@@ -933,9 +950,6 @@ Ast *parse_conditional(Ast *scope) {
     cond->type = AST_CONDITIONAL;
     cond->cond_id = last_cond_id++;
     cond->condition = parse_expression(next_token(), 0, scope);
-    if (var_type(cond->condition)->base != BOOL_T) {
-        error("Expression of type '%s' is not a valid conditional.", type_as_str(var_type(cond->condition)));
-    }
     Tok *next = next_token();
     if (next == NULL || next->type != TOK_LBRACE) {
         error("Unexpected token '%s' while parsing conditional.", to_string(next));
@@ -1079,23 +1093,20 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);
         break;
     case AST_FUNC_DECL:
+        if (parser_state != PARSE_MAIN) {
+            error("Cannot declare a named function inside scope ('%s').", ast->fn_decl_var->name);
+        }
     case AST_ANON_FUNC_DECL:
         attach_var(ast->fn_decl_var, scope);
         attach_var(ast->fn_decl_var, ast->fn_body);
         global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);
 
-        /*printf("HEYYYYY WE'RE IN THE THING\n");*/
-        /*print_ast(ast);*/
-        /*printf("\n");*/
         PUSH_FN_SCOPE(ast);
         ast->fn_body = parse_semantics(ast->fn_body, scope);
         POP_FN_SCOPE();
         break;
     case AST_CALL: {
         Ast *arg;
-        /*printf("PARSING ast->fn semantics\n");*/
-        /*print_ast(ast->fn);*/
-        /*printf("\n");*/
         ast->fn = parse_semantics(ast->fn, scope);
         Type *t = var_type(ast->fn);
         if (t->base != FN_T) {

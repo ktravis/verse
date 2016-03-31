@@ -12,6 +12,7 @@ enum {
     FN_T,
     AUTO_T,
     STRUCT_T,
+    BASEPTR_T,
     PTR_T
 };
 

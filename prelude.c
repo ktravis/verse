@@ -11,6 +11,7 @@
     } while(0)
 
 typedef void * fn_type;
+typedef void * ptr_type;
 struct string_type {
     int len;
     int alloc;
@@ -18,6 +19,9 @@ struct string_type {
 };
 void print_str(struct string_type *str) { // should cleanup its arg
     printf("%s", str->bytes);
+}
+unsigned char validptr(ptr_type p) {
+    return (p != NULL);
 }
 struct string_type *itoa(int x) {
     struct string_type *v = malloc(sizeof(struct string_type));

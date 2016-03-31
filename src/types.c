@@ -7,6 +7,7 @@ char* type_as_str(Type *t) {
     case BOOL_T: return "bool";
     case INT_T: return "int";
     case STRING_T: return "string";
+    case BASEPTR_T: return "ptr";
     case PTR_T: {
         char *inner = type_as_str(t->inner);
         char *buf = malloc(sizeof(char) * (strlen(inner) + 2));

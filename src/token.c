@@ -5,6 +5,31 @@ static Tok *last = NULL;
 
 static int line = 1;
 
+void read_block_comment() {
+    int count = 1;
+    char c;
+    while ((c = getc(stdin)) != EOF) {
+        if (c == '/') {
+            c = getc(stdin);
+            if (c == '*') {
+                count++;
+            }
+        } else if (c == '*') {
+            c = getc(stdin);
+            if (c == '/') {
+                count--;
+                if (count == 0) {
+                    return;
+                }
+            }
+        }
+        if (c == '\n') {
+            line++;
+        }
+    }
+    error("Incompleted block comment");
+}
+
 char read_non_space() {
     char c, d;
     while ((c = getc(stdin)) != EOF) {
@@ -14,6 +39,9 @@ char read_non_space() {
                 while (c != '\n') {
                     c = getc(stdin);
                 }
+            } else if (d == '*') {
+                read_block_comment();
+                c = getc(stdin);
             } else {
                 ungetc(d, stdin);
                 break;
@@ -216,10 +244,14 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_IF);
     } else if (!strcmp(buf, "else")) {
         return make_token(TOK_ELSE);
+    } else if (!strcmp(buf, "while")) {
+        return make_token(TOK_WHILE);
     } else if (!strcmp(buf, "extern")) {
         return make_token(TOK_EXTERN);
     } else if (!strcmp(buf, "struct")) {
         return make_token(TOK_STRUCT);
+    } else if (!strcmp(buf, "hold")) {
+        return make_token(TOK_HOLD);
     }
     return NULL;
 }
@@ -268,6 +300,8 @@ int type_id(char *buf) {
         return VOID_T;
     } else if (!strcmp(buf, "auto")) {
         return AUTO_T;
+    } else if (!strcmp(buf, "ptr")) {
+        return BASEPTR_T;
     }
     return 0;
 }
@@ -350,6 +384,8 @@ const char *to_string(Tok *t) {
         return "struct";
     case TOK_TYPE:
         return type_as_str(make_type(t->tval));
+    case TOK_HOLD:
+        return "hold";
     /*case TOK_DOT:*/
         /*return ".";*/
     default:
@@ -385,6 +421,8 @@ const char *token_type(int type) {
         return "STRUCT";
     case TOK_TYPE:
         return "TYPE";
+    case TOK_HOLD:
+        return "HOLD";
     /*case TOK_DOT:*/
         /*return "DOT";*/
     default:

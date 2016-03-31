@@ -1,13 +1,19 @@
 extern fn print_str(string):void;
 extern fn itoa(int):string;
-extern fn assert(bool):void;
+extern fn assert(bool);
+extern fn validptr(ptr):bool;
+
+/* block comments ?
+ * */
+/* nest/*
+ * ed*/*/
 
 struct wut {
     x:int;
     y:string;
     z:fn(int,int):int;
 }
-fn check(x:wut):void {
+fn check(x:wut) {
     print_str("within check: " + x.y + " " + itoa(x.x) + "\n");
     x.y = x.y + "lol";
     x.x = x.x + 1;
@@ -37,6 +43,11 @@ fn main():int {
     assert(!(fn ():bool {
         return false;
     }()));
+    p:ptr;
+    assert(!validptr(p));
+    p = ^b;
+    assert(validptr(p));
+    assert(validptr(^b.x));
     print_str("Success!\n");
     return @c;
 }

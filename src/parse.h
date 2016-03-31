@@ -45,6 +45,7 @@ typedef struct Var {
     int temp;
     int consumed;
     int initialized;
+    int held;
     int ext;
     struct Var **members;
 } Var;
@@ -164,7 +165,7 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope);
 Ast *parse_arg_list(Ast *left, Ast *scope);
 Ast *parse_primary(Tok *t, Ast *scope);
 Ast *parse_binop(char op, Ast *left, Ast *right, Ast *scope);
-Ast *parse_declaration(Tok *t, Ast *scope);
+Ast *parse_declaration(Tok *t, Ast *scope, int held);
 Ast *parse_statement(Tok *t, Ast *scope);
 Ast *parse_block(Ast *scope, int bracketed);
 Ast *parse_scope(Ast *parent);
