@@ -8,7 +8,7 @@
 #include "token.h"
 
 void print_quoted_string(char *val);
-void error(char *fmt, ...);
+void error(int line, char *fmt, ...);
 int escaped_strlen(const char *str);
 
 #endif

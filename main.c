@@ -28,7 +28,7 @@ void emit_string_comparison(Ast *ast) {
     if (ast->op == OP_NEQUALS) {
         printf("!");
     } else if (ast->op != OP_EQUALS) {
-        error("Comparison of type '%s' is not valid for type 'string'.", op_to_str(ast->op));
+        error(ast->line, "Comparison of type '%s' is not valid for type 'string'.", op_to_str(ast->op));
     }
     if (ast->left->type == AST_STRING && ast->right->type == AST_STRING) {
         printf("%d", strcmp(ast->left->sval, ast->right->sval) ? 0 : 1);
@@ -89,7 +89,7 @@ void emit_string_binop(Ast *ast) {
         printf("\",%d)", (int) escaped_strlen(ast->right->sval));
         break;
     default:
-        error("Couldn't do the string binop? %d", ast->type);
+        error(-1, "Couldn't do the string binop? %d", ast->type);
     }
 }
 
@@ -116,7 +116,7 @@ void emit_uop(Ast *ast) {
             printf("&");
         }
     } else {
-        error("Unkown unary operator '%s' (%s).", op_to_str(ast->op), ast->op);
+        error(ast->line,"Unkown unary operator '%s' (%s).", op_to_str(ast->op), ast->op);
     }
     compile(ast->right);
 }
@@ -217,7 +217,7 @@ void emit_tmpvar(Ast *ast) {
         }
         }
     } else {
-        error("idk tmpvar");
+        error(-1, "idk tmpvar");
     }
 }
 
@@ -250,13 +250,13 @@ void emit_type(Type *type) {
     case STRUCT_T: {
         StructType *st = get_struct_type(type->struct_id);
         if (st == NULL) {
-            error("Cannot find struct '%d'.", type->struct_id);
+            error(-1, "Cannot find struct '%d'.", type->struct_id);
         }
         printf("struct _vs_%s ", st->name);
         break;
     }
     default:
-        error("wtf type");
+        error(-1, "wtf type");
     }
 }
 
@@ -551,7 +551,7 @@ void compile(Ast *ast) {
         printf("}\n");
         break;
     default:
-        error("No idea how to deal with this.");
+        error(ast->line, "No idea how to deal with this.");
     }
 }
 
@@ -753,7 +753,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "-a")) {
         just_ast = 1;
     }
-    Ast *root = generate_ast();
+    Ast *root = parse_scope(NULL);
     root = parse_semantics(root, root);
     if (just_ast) {
         print_ast(root);

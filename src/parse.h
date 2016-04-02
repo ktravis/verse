@@ -58,6 +58,7 @@ typedef struct VarList {
 
 typedef struct Ast {
     int type;
+    int line;
     union {
         // int / bool
         int ival;
@@ -117,7 +118,6 @@ typedef struct Ast {
             struct Ast *condition;
             struct Ast *if_body;
             struct Ast *else_body;
-            int cond_id;
         };
         // struct decl
         struct {

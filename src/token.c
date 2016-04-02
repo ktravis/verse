@@ -8,6 +8,7 @@ static int line = 1;
 void read_block_comment() {
     int count = 1;
     char c;
+    int start = line;
     while ((c = getc(stdin)) != EOF) {
         if (c == '/') {
             c = getc(stdin);
@@ -27,7 +28,7 @@ void read_block_comment() {
             line++;
         }
     }
-    error("Incompleted block comment");
+    error(start, "Incompleted block comment");
 }
 
 char read_non_space() {
@@ -173,7 +174,7 @@ Tok *next_token() {
         }
         return t;
     }
-    error("Unexpected character '%c'.", c);
+    error(line, "Unexpected character '%c'.", c);
     return NULL;
 }
 
@@ -185,7 +186,7 @@ Tok *peek_token() {
 
 void unget_token(Tok *tok) {
     if (last != NULL) {
-        error("Can't unget twice in a row.");
+        error(-1, "Can't unget twice in a row.");
     }
     last = tok;
 }
@@ -210,6 +211,7 @@ Tok *read_string(char quote) {
     char *buf = malloc(alloc);
     int len = 0;
     char c;
+    int start = line;
     while ((c = getc(stdin)) != EOF) {
         if (c == quote && (len == 0 || buf[len-1] != '\\')) {
             Tok *t = make_token(TOK_STR);
@@ -223,7 +225,7 @@ Tok *read_string(char quote) {
             buf = realloc(buf, alloc);
         }
     }
-    error("EOF encountered while reading string literal.");
+    error(start, "EOF encountered while reading string literal.");
     return NULL;
 }
 
@@ -465,7 +467,7 @@ const char *op_to_str(int op) {
 Tok *expect(int type) {
     Tok *t = next_token();
     if (t == NULL || t->type != type) {
-        error("Expected token of type '%s', got '%s'.", token_type(type), to_string(t));
+        error(line, "Expected token of type '%s', got '%s'.", token_type(type), to_string(t));
     }
     return t;
 }
