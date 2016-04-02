@@ -32,7 +32,8 @@ enum {
     TOK_RETURN,
     TOK_EXTERN,
     TOK_STRUCT,
-    TOK_HOLD
+    TOK_HOLD,
+    TOK_RELEASE
 };
 
 enum {

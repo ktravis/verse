@@ -252,6 +252,8 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_STRUCT);
     } else if (!strcmp(buf, "hold")) {
         return make_token(TOK_HOLD);
+    } else if (!strcmp(buf, "release")) {
+        return make_token(TOK_RELEASE);
     }
     return NULL;
 }
@@ -386,6 +388,8 @@ const char *to_string(Tok *t) {
         return type_as_str(make_type(t->tval));
     case TOK_HOLD:
         return "hold";
+    case TOK_RELEASE:
+        return "release";
     /*case TOK_DOT:*/
         /*return ".";*/
     default:
@@ -423,6 +427,8 @@ const char *token_type(int type) {
         return "TYPE";
     case TOK_HOLD:
         return "HOLD";
+    case TOK_RELEASE:
+        return "RELEASE";
     /*case TOK_DOT:*/
         /*return "DOT";*/
     default:

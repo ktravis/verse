@@ -20,6 +20,7 @@ enum {
     AST_UOP,
     AST_IDENTIFIER,
     AST_TEMP_VAR,
+    AST_RELEASE,
     AST_DECL,
     AST_FUNC_DECL,
     AST_ANON_FUNC_DECL,
@@ -133,6 +134,10 @@ typedef struct Ast {
             struct Ast *fn_scope;
             struct Ast *ret_expr;
         };
+        // release
+        struct {
+            struct Ast *release_target;
+        };
     };
 } Ast;
 
@@ -141,7 +146,7 @@ typedef struct AstList {
     struct AstList *next;
 } AstList;
 
-Var *make_var(char *name, Type *type);
+Var *make_var(char *name, Type *type, int held);
 void attach_var(Var *var, Ast *scope);
 Var *find_local_var(char *name, Ast *scope);
 Var *find_var(char *name, Ast *scope);

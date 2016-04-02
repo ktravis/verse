@@ -22,6 +22,25 @@ VarList *varlist_append(VarList *list, Var *v) {
     return vl;
 }
 
+VarList *varlist_remove(VarList *list, char *name) {
+    if (list != NULL) {
+        if (!strcmp(list->item->name, name)) {
+            return list->next;
+        }
+        VarList *curr = NULL;
+        VarList *last = list;
+        while (last->next != NULL) {
+            curr = last->next;
+            if (!strcmp(curr->item->name, name)) {
+                last->next = curr->next;
+                break;
+            }
+            last = curr;
+        }
+    }
+    return list;
+}
+
 Var *varlist_find(VarList *list, char *name) {
     Var *v = NULL;
     while (list != NULL) {
@@ -51,7 +70,7 @@ void print_locals(Ast *scope) {
     printf("\n");
 }
 
-Var *make_var(char *name, Type *type) {
+Var *make_var(char *name, Type *type, int held) {
     Var *var = malloc(sizeof(Var));
     var->name = malloc(strlen(name)+1);
     strcpy(var->name, name);
@@ -59,17 +78,24 @@ Var *make_var(char *name, Type *type) {
     var->type = type;
     var->temp = 0;
     var->initialized = 0;
-    var->held = 0;
+    var->held = held;
     if (type->base == STRUCT_T) {
         var->initialized = 1;
         StructType *st = get_struct_type(type->struct_id);
         var->members = malloc(sizeof(Var*)*st->nmembers);
         for (int i = 0; i < st->nmembers; i++) {
             int l = strlen(name)+strlen(st->member_names[i])+1;
-            char *member_name = malloc((l+1)*sizeof(char));
-            sprintf(member_name, "%s.%s", name, st->member_names[i]);
-            member_name[l] = 0;
-            var->members[i] = make_var(member_name, st->member_types[i]);
+            char *member_name;
+            if (held) {
+                member_name = malloc((l+2)*sizeof(char));
+                sprintf(member_name, "%s->%s", name, st->member_names[i]);
+                member_name[l+1] = 0;
+            } else {
+                member_name = malloc((l+1)*sizeof(char));
+                sprintf(member_name, "%s.%s", name, st->member_names[i]);
+                member_name[l] = 0;
+            }
+            var->members[i] = make_var(member_name, st->member_types[i], 0); // TODO
             var->members[i]->initialized = 1; // maybe wrong?
         }
     } else {
@@ -80,6 +106,10 @@ Var *make_var(char *name, Type *type) {
 
 void attach_var(Var *var, Ast *scope) {
     scope->locals = varlist_append(scope->locals, var);
+}
+
+void release_var(Var *var, Ast *scope) {
+    scope->locals = varlist_remove(scope->locals, var->name);
 }
 
 Var *make_temp_var(Type *type, Ast *scope) {
@@ -350,6 +380,15 @@ Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
     default:
         error("Unknown unary operator '%s' (%d).", op_to_str(ast->op), ast->op);
     }
+    if (is_dynamic(var_type(ast->right))) {
+        if (ast->op == OP_AT) {
+            if (ast->right->type != AST_TEMP_VAR) {
+                ast->right = make_ast_tmpvar(ast->right, make_temp_var(var_type(ast->right), scope));
+            }
+            Ast *tmp = make_ast_tmpvar(ast, ast->right->tmpvar);
+            return tmp;
+        }
+    }
     return ast;
 }
 
@@ -490,15 +529,15 @@ Ast *parse_arg_list(Ast *left, Ast *scope) {
     return func; 
 }
 
-Ast *make_ast_decl(char *name, Type *type) {
+Ast *make_ast_decl(char *name, Type *type, int held) {
     Ast *ast = malloc(sizeof(Ast));
     ast->type = AST_DECL;
-    ast->decl_var = make_var(name, type);
+    ast->decl_var = make_var(name, type, held);
     return ast;
 }
 
 Ast *parse_declaration(Tok *t, Ast *scope, int held) {
-    Ast *lhs = make_ast_decl(t->sval, parse_type(next_token(), scope));
+    Ast *lhs = make_ast_decl(t->sval, parse_type(next_token(), scope), held);
     lhs->decl_var->held = held;
     Tok *next = next_token();
     if (next == NULL) {
@@ -676,7 +715,7 @@ Ast *parse_extern_func_decl(Ast *scope) {
         unget_token(t);
     }
     Type *fn_type = make_fn_type(n, arg_types, ret);
-    Var *fn_decl_var = make_var(fname, fn_type);
+    Var *fn_decl_var = make_var(fname, fn_type, 0);
     fn_decl_var->ext = 1;
     func->fn_decl_var = fn_decl_var;
     return func; 
@@ -723,7 +762,7 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
             error("Declared variable '%s' already exists.", t->sval);
         }
         expect(TOK_COLON);
-        func->fn_decl_args[i] = make_var(t->sval, parse_type(next_token(), scope));
+        func->fn_decl_args[i] = make_var(t->sval, parse_type(next_token(), scope), 0);
         attach_var(func->fn_decl_args[i], fn_scope);
         func->fn_decl_args[i]->initialized = 1;
         arg_types[i] = func->fn_decl_args[i]->type;
@@ -749,7 +788,7 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
     }
     Type *fn_type = make_fn_type(n, arg_types, ret);
     expect(TOK_LBRACE);
-    Var *fn_decl_var = make_var(fname, fn_type);
+    Var *fn_decl_var = make_var(fname, fn_type, 0);
     fn_decl_var->ext = 0;
 
     func->anon = anonymous;
@@ -833,6 +872,10 @@ Ast *parse_statement(Tok *t, Ast *scope) {
             error("Unexpected token '%s' while parsing variable declaration.", to_string(col));
         }
         ast = parse_declaration(t, scope, 1);
+    } else if (t->type == TOK_RELEASE) {
+        ast = malloc(sizeof(Ast));
+        ast->type = AST_RELEASE;
+        ast->release_target = parse_expression(next_token(), 0, scope);
     } else if (t->type == TOK_FN) {
         Tok *next = next_token();
         unget_token(next);
@@ -1043,10 +1086,26 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         ast->var = v;
         break;
     }
-    /*case AST_DOT:*/
-        
-    /*case AST_TEMP_VAR: // shouldn't happen*/
-        /*break;*/
+    case AST_RELEASE: {
+        // TODO consider only BASEPTR_T being a valid release target
+        ast->release_target = parse_semantics(ast->release_target, scope);
+        Type *t = var_type(ast->release_target);
+        if (ast->release_target->type == AST_IDENTIFIER) {
+            if (!ast->release_target->var->held && t->base != PTR_T && t->base != BASEPTR_T) {
+                error("Cannot release the non-held variable '%s'.", ast->release_target->var->name);
+            }
+            // TODO instead mark that var has been released for better errors in
+            // the future
+            release_var(ast->release_target->var, scope);
+        } else if (ast->release_target->type == AST_DOT) {
+            if (t->base != PTR_T && t->base != BASEPTR_T) {
+                error("Struct member release target must be a pointer.");
+            }
+        } else {
+            error("Unexpected target of release statement (must be variable or dot op).");
+        }
+        break;
+     }
     case AST_DECL: {
         Ast *init = ast->init;
         if (ast->decl_var->type->base == AUTO_T && init == NULL) {
