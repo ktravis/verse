@@ -30,7 +30,10 @@ enum {
     AST_SCOPE,
     AST_RETURN,
     AST_STRUCT_DECL,
-    AST_BLOCK
+    AST_BLOCK,
+    AST_WHILE,
+    AST_BREAK,
+    AST_CONTINUE
 };
 
 enum {
@@ -137,6 +140,10 @@ typedef struct Ast {
         // release
         struct {
             struct Ast *release_target;
+        };
+        struct {
+            struct Ast *while_condition;
+            struct Ast *while_body;
         };
     };
 } Ast;

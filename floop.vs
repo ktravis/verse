@@ -1,5 +1,5 @@
 extern fn print_str(string);
-/*extern fn itoa(int):string;*/
+extern fn itoa(int):string;
 extern fn validptr(ptr):bool;
 
 struct list {
@@ -25,14 +25,14 @@ fn clear_list(l:^list) {
     }
     release l;
 }
-/*fn thing():^int {*/
-    /*hold z:int = 1337;*/
-    /*return ^z;*/
-/*}*/
+fn thing():^int {
+    hold z:int = 1337;
+    return ^z;
+}
 fn main():int {
-    /*hold x:string = "test"; */
-    /*y:^int = thing();*/
-    /*print_str(itoa(@y));*/
+    hold x:string = "test"; 
+    y:^int = thing();
+    print_str(itoa(@y));
 
     hold a:list;
     a.name = "last";
@@ -42,7 +42,7 @@ fn main():int {
     print_list(b);
     clear_list(b);
 
-    /*release x;*/
-    /*release y;*/
+    release x;
+    release y;
     return 0;
 }

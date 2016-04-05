@@ -20,6 +20,19 @@ fn check(x:wut) {
     print_str("within check: " + x.y + " " + itoa(x.x) + "\n");
 }
 
+fn iter_fib(n:int):int {
+    last:int = 0;
+    i:int = 1;
+    tmp:int = 0;
+    while n > 0 {
+        tmp = i;
+        i = i + last;
+        last = tmp;
+        n = n - 1;
+    }
+    return i;
+}
+
 fn main():int {
     b:wut;
     b.x = 1;

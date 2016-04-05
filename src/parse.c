@@ -12,6 +12,7 @@ static VarList *global_fn_vars = NULL;
 static AstList *global_fn_decls = NULL;
 static AstList *global_struct_decls = NULL;
 static int parser_state = PARSE_MAIN;
+static int loop_state = 0;
 static Ast *current_fn_scope = NULL;
 
 VarList *varlist_append(VarList *list, Var *v) {
@@ -883,6 +884,15 @@ Ast *parse_statement(Tok *t, Ast *scope) {
         return parse_struct_decl(scope);
     } else if (t->type == TOK_LBRACE) {
         return parse_scope(scope);
+    } else if (t->type == TOK_WHILE) {
+        ast = ast_alloc(AST_WHILE);
+        ast->while_condition = parse_expression(next_token(), 0, scope);
+        Tok *next = next_token();
+        if (next == NULL || next->type != TOK_LBRACE) {
+            error(lineno(), "Unexpected token '%s' while parsing while loop.", to_string(next));
+        }
+        ast->while_body = parse_block(scope, 1);
+        return ast;
     } else if (t->type == TOK_IF) {
         return parse_conditional(scope);
     } else if (t->type == TOK_RETURN) {
@@ -890,6 +900,10 @@ Ast *parse_statement(Tok *t, Ast *scope) {
             error(lineno(), "Return statement outside of function body.");
         }
         ast = parse_return_statement(t, scope);
+    } else if (t->type == TOK_BREAK) {
+        ast = ast_alloc(AST_BREAK);
+    } else if (t->type == TOK_CONTINUE) {
+        ast = ast_alloc(AST_CONTINUE);
     } else {
         ast = parse_expression(t, 0, scope);
     }
@@ -1171,6 +1185,16 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             ast->else_body = parse_semantics(ast->else_body, scope);
         }
         break;
+    case AST_WHILE:
+        ast->while_condition = parse_semantics(ast->while_condition, scope);
+        if (var_type(ast->while_condition)->base != BOOL_T) {
+            error(ast->line, "Non-boolean ('%s') condition for while loop.", type_as_str(var_type(ast->while_condition)));
+        }
+        int _old = loop_state;
+        loop_state = 1;
+        ast->while_body = parse_semantics(ast->while_body, scope);
+        loop_state = _old;
+        break;
     case AST_SCOPE:
         ast->body = parse_semantics(ast->body, ast);
         break;
@@ -1193,6 +1217,16 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         }
         break;
     }
+    case AST_BREAK:
+        if (!loop_state) {
+            error(lineno(), "Break statement outside of loop.");
+        }
+        break;
+    case AST_CONTINUE:
+        if (!loop_state) {
+            error(lineno(), "Continue statement outside of loop.");
+        }
+        break;
     case AST_BLOCK:
         for (int i = 0; i < ast->num_statements; i++) {
             ast->statements[i] = parse_semantics(ast->statements[i], scope);

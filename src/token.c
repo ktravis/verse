@@ -256,6 +256,12 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_HOLD);
     } else if (!strcmp(buf, "release")) {
         return make_token(TOK_RELEASE);
+    } else if (!strcmp(buf, "while")) {
+        return make_token(TOK_WHILE);
+    } else if (!strcmp(buf, "break")) {
+        return make_token(TOK_BREAK);
+    } else if (!strcmp(buf, "continue")) {
+        return make_token(TOK_CONTINUE);
     }
     return NULL;
 }
@@ -384,6 +390,8 @@ const char *to_string(Tok *t) {
     case TOK_OP:
     case TOK_UOP:
         return op_to_str(t->op);
+    case TOK_RETURN:
+        return "return";
     case TOK_STRUCT:
         return "struct";
     case TOK_TYPE:
@@ -392,6 +400,12 @@ const char *to_string(Tok *t) {
         return "hold";
     case TOK_RELEASE:
         return "release";
+    case TOK_WHILE:
+        return "while";
+    case TOK_BREAK:
+        return "break";
+    case TOK_CONTINUE:
+        return "continue";
     /*case TOK_DOT:*/
         /*return ".";*/
     default:
@@ -423,6 +437,8 @@ const char *token_type(int type) {
         return "UOP";
     case TOK_FN:
         return "FN";
+    case TOK_RETURN:
+        return "RETURN";
     case TOK_STRUCT:
         return "STRUCT";
     case TOK_TYPE:
@@ -431,6 +447,12 @@ const char *token_type(int type) {
         return "HOLD";
     case TOK_RELEASE:
         return "RELEASE";
+    case TOK_WHILE:
+        return "WHILE";
+    case TOK_BREAK:
+        return "BREAK";
+    case TOK_CONTINUE:
+        return "CONTINUE";
     /*case TOK_DOT:*/
         /*return "DOT";*/
     default:

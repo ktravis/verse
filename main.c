@@ -436,6 +436,7 @@ void compile(Ast *ast) {
         printf("return");
         if (ast->ret_expr != NULL) {
             if (ast->ret_expr->type == AST_IDENTIFIER) {
+                printf(" ");
                 compile(ast->ret_expr);
             } else {
                 printf(" _ret");
@@ -459,6 +460,12 @@ void compile(Ast *ast) {
             _indent--;
             printf("}");
         }
+        break;
+    case AST_BREAK:
+        printf("break");
+        break;
+    case AST_CONTINUE:
+        printf("continue");
         break;
     case AST_DECL:
         emit_decl(ast);
@@ -522,7 +529,7 @@ void compile(Ast *ast) {
                 indent();
             }
             compile(ast->statements[i]);
-            if (ast->statements[i]->type != AST_CONDITIONAL && ast->statements[i]->type != AST_RELEASE) {
+            if (ast->statements[i]->type != AST_CONDITIONAL && ast->statements[i]->type != AST_RELEASE && ast->statements[i]->type != AST_WHILE) {
                 printf(";\n");
             }
         }
@@ -547,6 +554,16 @@ void compile(Ast *ast) {
             compile(ast->else_body);
             _indent--;
         }
+        indent();
+        printf("}\n");
+        break;
+    case AST_WHILE:
+        printf("while (");
+        compile(ast->while_condition);
+        printf(") {\n");
+        _indent++;
+        compile(ast->while_body);
+        _indent--;
         indent();
         printf("}\n");
         break;
