@@ -9,14 +9,8 @@ fn thing(x:int): fn<int->int> {
     };
 }
 
-.thing:
-
-y:string = "1";
-y:string = x; // x is copied into a new allocation for y
-y = x; // reuse same allocation, copy x
-x:string = "test" + y;  // "test" + y creates as temp var, which will be deleted at end of scope if not consumed
-// in declaration for a dynamic type (string, dyn array,...) if RHS is a temp var, skip allocation and assign directly (consuming temp var)
-// make space for temp var addresses during stack allocation?
-printf("x: " + x); // creates a temp var which is not copied into the function call args
-y = fmt("x: %s", x); // function call returns a temp var that is not copied when it is assigned
-fmt("big string: %s", y); // 
+things:[string]; // dynamic array / vector
+things:<string>; // dynamic array / vector (alternate)
+things:[string * 10]; // fixed array
+pair:(int,string); // tuple (immutable, mixed types)
+map:{string:int}; // hashmap ?

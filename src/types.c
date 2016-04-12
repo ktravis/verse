@@ -70,12 +70,14 @@ char* type_as_str(Type *t) {
 
 Type *make_type(int base) {
     Type *t = malloc(sizeof(Type));
+    t->held = 0;
     t->base = base;
     return t;
 }
 
 Type *make_fn_type(int nargs, Type **args, Type *ret) {
     Type *t = malloc(sizeof(Type));
+    t->held = 0;
     t->base = FN_T;
     t->nargs = nargs;
     t->args = args;

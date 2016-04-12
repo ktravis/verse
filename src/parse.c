@@ -13,6 +13,7 @@ static AstList *global_fn_decls = NULL;
 static AstList *global_struct_decls = NULL;
 static int parser_state = PARSE_MAIN;
 static int loop_state = 0;
+static int in_decl = 0;
 static Ast *current_fn_scope = NULL;
 
 VarList *varlist_append(VarList *list, Var *v) {
@@ -70,7 +71,7 @@ void print_locals(Ast *scope) {
     printf("\n");
 }
 
-Var *make_var(char *name, Type *type, int held) {
+Var *make_var(char *name, Type *type) {
     Var *var = malloc(sizeof(Var));
     var->name = malloc(strlen(name)+1);
     strcpy(var->name, name);
@@ -78,7 +79,6 @@ Var *make_var(char *name, Type *type, int held) {
     var->type = type;
     var->temp = 0;
     var->initialized = 0;
-    var->held = held;
     if (type->base == STRUCT_T) {
         var->initialized = 1;
         StructType *st = get_struct_type(type->struct_id);
@@ -86,7 +86,7 @@ Var *make_var(char *name, Type *type, int held) {
         for (int i = 0; i < st->nmembers; i++) {
             int l = strlen(name)+strlen(st->member_names[i])+1;
             char *member_name;
-            if (held) {
+            if (type->held) {
                 member_name = malloc((l+2)*sizeof(char));
                 sprintf(member_name, "%s->%s", name, st->member_names[i]);
                 member_name[l+1] = 0;
@@ -95,7 +95,7 @@ Var *make_var(char *name, Type *type, int held) {
                 sprintf(member_name, "%s.%s", name, st->member_names[i]);
                 member_name[l] = 0;
             }
-            var->members[i] = make_var(member_name, st->member_types[i], 0); // TODO
+            var->members[i] = make_var(member_name, st->member_types[i]); // TODO
             var->members[i]->initialized = 1; // maybe wrong?
         }
     } else {
@@ -154,6 +154,8 @@ Type *var_type(Ast *ast) {
         return make_type(INT_T);
     case AST_BOOL:
         return make_type(BOOL_T);
+    case AST_STRUCT:
+        return find_struct_type(ast->struct_lit_name); // TODO just save this
     case AST_IDENTIFIER:
         return ast->var->type;
     case AST_DECL:
@@ -192,6 +194,9 @@ Type *var_type(Ast *ast) {
     }
     case AST_TEMP_VAR:
         return ast->tmpvar->type;
+    case AST_HOLD: {
+        return ast->tmpvar->type;
+    }
     default:
         error(ast->line, "don't know how to infer vartype");
     }
@@ -268,9 +273,9 @@ void print_ast(Ast *ast) {
         printf(")");
         break;
     case AST_TEMP_VAR:
-        /*printf("(tmp ");*/
+        printf("(tmp ");
         print_ast(ast->expr);
-        /*printf(")");*/
+        printf(")");
         break;
     case AST_IDENTIFIER:
         printf("%s", ast->varname);
@@ -346,6 +351,10 @@ void print_ast(Ast *ast) {
         }
         printf(")");
         break;
+    case AST_HOLD:
+        printf("(hold ");
+        print_ast(ast->expr);
+        printf(")");
     default:
         error(ast->line, "Cannot print this ast.");
     }
@@ -407,7 +416,6 @@ Ast *parse_dot_op_semantics(Ast *ast, Ast *scope) {
 }
 
 // TODO nameof function that prepends _vs_, _tmp, _fn_, etc
-// this will allow DOT to work on tmpvars
 
 Var *get_ast_var(Ast *ast) {
     switch (ast->type) {
@@ -419,7 +427,7 @@ Var *get_ast_var(Ast *ast) {
                 return v->members[i];
             }
         }
-        error(ast->line, "Couldn't get member '%s' in struct %d.", ast->member_name, v->type->struct_id);
+        error(ast->line, "Couldn't get member '%s' in struct '%s' (%d).", ast->member_name, st->name, v->type->struct_id);
     }
     case AST_IDENTIFIER:
         return ast->var;
@@ -532,15 +540,15 @@ Ast *parse_arg_list(Ast *left, Ast *scope) {
     return func; 
 }
 
-Ast *make_ast_decl(char *name, Type *type, int held) {
+/*Ast *make_ast_decl(char *name, Type *type, int held) {*/
+Ast *make_ast_decl(char *name, Type *type) {
     Ast *ast = ast_alloc(AST_DECL);
-    ast->decl_var = make_var(name, type, held);
+    ast->decl_var = make_var(name, type);
     return ast;
 }
 
-Ast *parse_declaration(Tok *t, Ast *scope, int held) {
-    Ast *lhs = make_ast_decl(t->sval, parse_type(next_token(), scope), held);
-    lhs->decl_var->held = held;
+Ast *parse_declaration(Tok *t, Ast *scope) {
+    Ast *lhs = make_ast_decl(t->sval, parse_type(next_token(), scope));
     Tok *next = next_token();
     if (next == NULL) {
         error(lhs->line, "Unexpected end of input while parsing declaration.");
@@ -587,6 +595,8 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope) {
                 ast = make_ast_binop(t->op, ast, parse_expression(next_token(), next_priority + 1, scope));
             }
         } else if (t->type == TOK_LPAREN) {
+            ast = parse_arg_list(ast, scope);
+        } else if (t->type == TOK_LSQUARE) {
             ast = parse_arg_list(ast, scope);
         } else {
             error(lineno(), "Unexpected token '%s'.", to_string(t));
@@ -670,8 +680,25 @@ Type *parse_type(Tok *t, Ast *scope) {
             expect(TOK_RPAREN);
         }
         return make_fn_type(nargs, args, ret);
-    /*} else if (t->type == TOK_ID) {*/
-        /*// check for custom type, check for struct*/
+    /*} else if (t->type == TOK_LSQUARE) {*/
+        /*Ast *inner = parse_type(next_token(), scope);*/
+        /*Tok *next = next_token();*/
+        /*if (next == NULL) {*/
+            /*error(lineno(), "Unexpected end of file while parsing type.");*/
+        /*} else if (next->type == TOK_RSQUARE) {*/
+            /*Type *tp = make_type(DYNARRAY_T);*/
+            /*tp->inner = inner;*/
+            /*return tp;*/
+        /*} else if (next->type == TOK_OP && next->op != OP_MUL) {*/
+            /*next = expect(TOK_INT);*/
+            /*Type *tp = make_type(ARRAY_T);*/
+            /*tp->inner = inner;*/
+            /*tp->size = next->ival;*/
+            /*expect(TOK_RSQUARE);*/
+            /*return tp;*/
+        /*} else {*/
+            /*error(lineno(), "Unexpected token '%s' while parsing type.", to_string(next));*/
+        /*}*/
     } else {
         error(lineno(), "Unexpected token '%s' while parsing type.", to_string(t));
     }
@@ -715,7 +742,7 @@ Ast *parse_extern_func_decl(Ast *scope) {
         unget_token(t);
     }
     Type *fn_type = make_fn_type(n, arg_types, ret);
-    Var *fn_decl_var = make_var(fname, fn_type, 0);
+    Var *fn_decl_var = make_var(fname, fn_type);
     fn_decl_var->ext = 1;
     func->fn_decl_var = fn_decl_var;
     return func; 
@@ -760,7 +787,7 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
             error(lineno(), "Declared variable '%s' already exists.", t->sval);
         }
         expect(TOK_COLON);
-        func->fn_decl_args[i] = make_var(t->sval, parse_type(next_token(), scope), 0);
+        func->fn_decl_args[i] = make_var(t->sval, parse_type(next_token(), scope));
         attach_var(func->fn_decl_args[i], fn_scope);
         func->fn_decl_args[i]->initialized = 1;
         arg_types[i] = func->fn_decl_args[i]->type;
@@ -786,7 +813,7 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
     }
     Type *fn_type = make_fn_type(n, arg_types, ret);
     expect(TOK_LBRACE);
-    Var *fn_decl_var = make_var(fname, fn_type, 0);
+    Var *fn_decl_var = make_var(fname, fn_type);
     fn_decl_var->ext = 0;
 
     func->anon = anonymous;
@@ -858,19 +885,21 @@ Ast *parse_statement(Tok *t, Ast *scope) {
     Ast *ast;
     if (t->type == TOK_ID && peek_token() != NULL && peek_token()->type == TOK_COLON) {
         next_token();
-        ast = parse_declaration(t, scope, 0);
-    } else if (t->type == TOK_HOLD) {
-        t = expect(TOK_ID);
-        Tok *col = next_token();
-        if (col == NULL) {
-            error(lineno(), "Unexpected EOF while parsing variable declaration.");
-        } else if (col->type != TOK_COLON) {
-            error(lineno(), "Unexpected token '%s' while parsing variable declaration.", to_string(col));
-        }
-        ast = parse_declaration(t, scope, 1);
+        ast = parse_declaration(t, scope);
+    /*} else if (t->type == TOK_HOLD) {*/
+        /*t = expect(TOK_ID);*/
+        /*Tok *col = next_token();*/
+        /*if (col == NULL) {*/
+            /*error(lineno(), "Unexpected EOF while parsing variable declaration.");*/
+        /*} else if (col->type != TOK_COLON) {*/
+            /*error(lineno(), "Unexpected token '%s' while parsing variable declaration.", to_string(col));*/
+        /*}*/
+        /*ast = parse_declaration(t, scope, 1);*/
     } else if (t->type == TOK_RELEASE) {
         ast = ast_alloc(AST_RELEASE);
         ast->release_target = parse_expression(next_token(), 0, scope);
+    } else if (t->type == TOK_HOLD) {
+        error(lineno(), "Cannot start a statement with 'hold';");
     } else if (t->type == TOK_FN) {
         Tok *next = next_token();
         unget_token(next);
@@ -925,6 +954,57 @@ Ast *make_ast_dot_op(Ast *dot_left, char *member_name) {
     return ast;
 }
 
+Ast *parse_hold(Ast *scope) {
+    Tok *t = next_token();
+    if (t == NULL) {
+        error(lineno(), "Unexpected end of file while parsing hold expression.");
+    }
+    Ast *ast = ast_alloc(AST_HOLD);
+    ast->expr = parse_expression(t, 0, scope);
+    return ast;
+}
+
+Ast *parse_struct_literal(char *name, Ast *scope) {
+    Tok *t = expect(TOK_LBRACE);
+    Ast *ast = ast_alloc(AST_STRUCT);
+    int alloc = 0;
+    ast->struct_lit_name = name;
+    ast->nmembers = 0;
+    if (peek_token()->type == TOK_RBRACE) {
+        return ast;
+    }
+    for (;;) {
+        t = next_token();
+        if (t == NULL) {
+            error(lineno(), "Unexpected EOF while parsing struct literal.");
+        } else if (t->type != TOK_ID) {
+            error(lineno(), "Unexpected token '%s' while parsing struct literal.", to_string(t));
+        }
+        if (ast->nmembers >= alloc) {
+            alloc += 4;
+            ast->member_names = realloc(ast->member_names, sizeof(char *)*alloc);
+            ast->member_exprs = realloc(ast->member_exprs, sizeof(Ast *)*alloc);
+        }
+        ast->member_names[ast->nmembers] = t->sval;
+        t = next_token();
+        if (t == NULL) {
+            error(lineno(), "Unexpected EOF while parsing struct literal.");
+        } else if (t->type != TOK_OP || t->op != OP_ASSIGN) {
+            error(lineno(), "Unexpected token '%s' while parsing struct literal.", to_string(t));
+        }
+        ast->member_exprs[ast->nmembers++] = parse_expression(next_token(), 0, scope);
+        t = next_token();
+        if (t == NULL) {
+            error(lineno(), "Unexpected EOF while parsing struct literal.");
+        } else if (t->type == TOK_RBRACE) {
+            break;
+        } else if (t->type != TOK_COMMA) {
+            error(lineno(), "Unexpected token '%s' while parsing struct literal.", to_string(t));
+        }
+    }
+    return ast;
+}
+
 Ast *parse_primary(Tok *t, Ast *scope) {
     if (t == NULL) {
         error(lineno(), "Unexpected EOF while parsing primary.");
@@ -948,6 +1028,9 @@ Ast *parse_primary(Tok *t, Ast *scope) {
             error(lineno(), "Unexpected end of input.");
         }
         unget_token(next);
+        if (peek_token()->type == TOK_LBRACE) {
+            return parse_struct_literal(t->sval, scope);
+        }
         Ast *id = ast_alloc(AST_IDENTIFIER);
         id->var = NULL;
         id->varname = t->sval;
@@ -955,6 +1038,8 @@ Ast *parse_primary(Tok *t, Ast *scope) {
     }
     case TOK_FN:
         return parse_func_decl(scope, 1);
+    case TOK_HOLD:
+        return parse_hold(scope);
     case TOK_CARET: {
         Ast *ast = ast_alloc(AST_UOP);
         ast->op = OP_ADDR;
@@ -1074,12 +1159,34 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         ast->var = v;
         break;
     }
+    case AST_STRUCT: {
+        Type *t = find_struct_type(ast->struct_lit_name);
+        StructType *st = get_struct_type(t->struct_id);
+        if (t == NULL || st == NULL) {
+            error(ast->line, "Undefined struct type '%s' encountered.", ast->struct_lit_name);
+        }
+        ast->struct_lit_type = st;
+        for (int i = 0; i < ast->nmembers; i++) {
+            int found = 0;
+            for (int j = 0; j < st->nmembers; j++) {
+                if (!strcmp(ast->member_names[i], st->member_names[j])) {
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found) {
+                error(ast->line, "Struct '%s' has no member named '%s'.", st->name, ast->member_names[i]);
+            }
+            ast->member_exprs[i] = parse_semantics(ast->member_exprs[i], scope);
+        }
+        break;
+    }
     case AST_RELEASE: {
         // TODO consider only BASEPTR_T being a valid release target
         ast->release_target = parse_semantics(ast->release_target, scope);
         Type *t = var_type(ast->release_target);
         if (ast->release_target->type == AST_IDENTIFIER) {
-            if (!ast->release_target->var->held && t->base != PTR_T && t->base != BASEPTR_T) {
+            if (!t->held && t->base != PTR_T && t->base != BASEPTR_T) {
                 error(ast->line, "Cannot release the non-held variable '%s'.", ast->release_target->var->name);
             }
             // TODO instead mark that var has been released for better errors in
@@ -1093,7 +1200,38 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             error(ast->line, "Unexpected target of release statement (must be variable or dot op).");
         }
         break;
-     }
+    }
+    case AST_HOLD: {
+        /*if (!in_decl) {*/
+            /*error(ast->line, "Cannot hold outside of declaration.");*/
+        /*}*/
+        ast->expr = parse_semantics(ast->expr, scope);
+        Type *t = var_type(ast->expr);
+
+        /*Var *tmp;*/
+        /*if (ast->expr->type == AST_TEMP_VAR) {*/
+            /*tmp = ast->expr->tmpvar;*/
+        /*} else if (is_dynamic(t)) {*/
+            /*Type *tp = make_type(PTR_T);*/
+            /*tp->inner = t;*/
+            /*tp->held = 1;*/
+            /*tmp = make_temp_var(tp, scope);*/
+            /*ast->expr = make_ast_tmpvar(ast->expr, tmp);*/
+        /*}*/
+
+        if (ast->expr->type != AST_TEMP_VAR && t->base == STRING_T) {
+            ast->expr = make_ast_tmpvar(ast->expr, make_temp_var(t, scope));
+        }
+        Type *tp = make_type(PTR_T);
+        tp->inner = t;
+        tp->held = 1;
+
+        ast->tmpvar = make_temp_var(tp, scope);
+        if (t->base == VOID_T || t->base == FN_T) {
+            error(ast->line, "Cannot hold a value of type '%s'.", type_as_str(t));
+        }
+        break;
+    }
     case AST_DECL: {
         Ast *init = ast->init;
         if (ast->decl_var->type->base == AUTO_T && init == NULL) {
@@ -1104,7 +1242,11 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         }
         attach_var(ast->decl_var, scope); // should this be after the init parsing?
         if (init != NULL) {
+            if (init->type != AST_ANON_FUNC_DECL) {
+                in_decl = 1;
+            }
             init = parse_semantics(init, scope);
+            in_decl = 0;
             if (ast->decl_var->type->base == AUTO_T) {
                 ast->decl_var->type = var_type(ast->init);
             } else if (!check_type(ast->decl_var->type, var_type(init))) {

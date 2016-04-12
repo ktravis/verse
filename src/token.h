@@ -26,6 +26,8 @@ enum {
     TOK_COMMA,
     TOK_LBRACE,
     TOK_RBRACE,
+    TOK_LSQUARE,
+    TOK_RSQUARE,
     TOK_IF,
     TOK_ELSE,
     TOK_RETURN,

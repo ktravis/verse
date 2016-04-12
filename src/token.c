@@ -87,6 +87,10 @@ Tok *next_token() {
         return make_token(TOK_LPAREN);
     } else if (c == ')') {
         return make_token(TOK_RPAREN);
+    } else if (c == '[') {
+        return make_token(TOK_LSQUARE);
+    } else if (c == ']') {
+        return make_token(TOK_RSQUARE);
     } else if (c == '{') {
         return make_token(TOK_LBRACE);
     } else if (c == '}') {
@@ -381,6 +385,10 @@ const char *to_string(Tok *t) {
         return "(";
     case TOK_RPAREN:
         return ")";
+    case TOK_LSQUARE:
+        return "[";
+    case TOK_RSQUARE:
+        return "]";
     case TOK_LBRACE:
         return "{";
     case TOK_RBRACE:
@@ -431,6 +439,10 @@ const char *token_type(int type) {
         return "LPAREN";
     case TOK_RPAREN:
         return "RPAREN";
+    case TOK_LSQUARE:
+        return "LSQURE";
+    case TOK_RSQUARE:
+        return "RSQURE";
     case TOK_OP:
         return "OP";
     case TOK_UOP:

@@ -13,11 +13,14 @@ enum {
     AUTO_T,
     STRUCT_T,
     BASEPTR_T,
-    PTR_T
+    PTR_T,
+    ARRAY_T,
+    DYNARRAY_T
 };
 
 typedef struct Type {
     int base; // string, int, func, void
+    int held;
     // for functions
     int nargs;
     struct Type **args; // not sure if this should be an array of pointers, or just values.
@@ -26,6 +29,7 @@ typedef struct Type {
     int struct_id;
     //
     struct Type *inner;
+    int size;
 } Type;
 
 typedef struct StructType {

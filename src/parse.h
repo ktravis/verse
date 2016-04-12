@@ -33,7 +33,9 @@ enum {
     AST_BLOCK,
     AST_WHILE,
     AST_BREAK,
-    AST_CONTINUE
+    AST_CONTINUE,
+    AST_HOLD,
+    AST_STRUCT
 };
 
 enum {
@@ -49,7 +51,7 @@ typedef struct Var {
     int temp;
     int consumed;
     int initialized;
-    int held;
+    //int held;
     int ext;
     struct Var **members;
 } Var;
@@ -141,9 +143,18 @@ typedef struct Ast {
         struct {
             struct Ast *release_target;
         };
+        // while
         struct {
             struct Ast *while_condition;
             struct Ast *while_body;
+        };
+        // struct literal
+        struct {
+            char *struct_lit_name;
+            StructType *struct_lit_type;
+            int nmembers;
+            char **member_names;
+            struct Ast **member_exprs;
         };
     };
 } Ast;
@@ -153,7 +164,7 @@ typedef struct AstList {
     struct AstList *next;
 } AstList;
 
-Var *make_var(char *name, Type *type, int held);
+Var *make_var(char *name, Type *type);
 void attach_var(Var *var, Ast *scope);
 Var *find_local_var(char *name, Ast *scope);
 Var *find_var(char *name, Ast *scope);
@@ -177,7 +188,8 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope);
 Ast *parse_arg_list(Ast *left, Ast *scope);
 Ast *parse_primary(Tok *t, Ast *scope);
 Ast *parse_binop(char op, Ast *left, Ast *right, Ast *scope);
-Ast *parse_declaration(Tok *t, Ast *scope, int held);
+//Ast *parse_declaration(Tok *t, Ast *scope, int held);
+Ast *parse_declaration(Tok *t, Ast *scope);
 Ast *parse_statement(Tok *t, Ast *scope);
 Ast *parse_block(Ast *scope, int bracketed);
 Ast *parse_scope(Ast *parent);
