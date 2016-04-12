@@ -610,9 +610,6 @@ void emit_scope_start(Ast *scope) {
         if (list->item->temp) {
             indent();
             emit_type(list->item->type);
-            if (!list->item->type->held && list->item->type->base != STRING_T) {
-                printf("*");
-            }
             printf("_tmp%d", list->item->id);
             printf("= NULL");
             printf(";\n");
@@ -737,9 +734,6 @@ void emit_var_decl(Var *v) {
         printf("(*");
     } else {
         emit_type(v->type);
-    }
-    if (v->type->base != STRING_T) {
-        printf("*");
     }
     if (!v->ext) {
         printf("_vs_");

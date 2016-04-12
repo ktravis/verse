@@ -11,7 +11,7 @@ static VarList *global_vars = NULL;
 static VarList *global_fn_vars = NULL;
 static AstList *global_fn_decls = NULL;
 static AstList *global_struct_decls = NULL;
-static int parser_state = PARSE_MAIN;
+static int parser_state = PARSE_MAIN; // TODO unnecessary w/ PUSH_FN_SCOPE?
 static int loop_state = 0;
 static int in_decl = 0;
 static Ast *current_fn_scope = NULL;
@@ -559,16 +559,6 @@ Ast *parse_declaration(Tok *t, Ast *scope) {
     } else {
         unget_token(next);
     }
-    if (parser_state == PARSE_MAIN && lhs->init != NULL) {
-        global_vars = varlist_append(global_vars, lhs->decl_var);
-        Ast *id = ast_alloc(AST_IDENTIFIER);
-        id->varname = lhs->decl_var->name;
-        id->var = lhs->decl_var;
-        if (lhs->decl_var->type->base == AUTO_T) {
-            lhs->decl_var->type = var_type(lhs->init); // TODO probably wrong
-        }
-        lhs = make_ast_binop(OP_ASSIGN, id, lhs->init);
-    }
     return lhs; 
 }
 
@@ -819,15 +809,10 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
     func->anon = anonymous;
     func->fn_decl_var = fn_decl_var;
 
-    int prev = parser_state;
-    parser_state = PARSE_FUNC;
     fn_scope->body = parse_block(fn_scope, 1);
     func->fn_body = fn_scope;
-    parser_state = prev;
 
-    /*if (parser_state == PARSE_MAIN) {*/
     global_fn_decls = astlist_append(global_fn_decls, func);
-    /*}*/
 
     return func; 
 }
@@ -925,9 +910,6 @@ Ast *parse_statement(Tok *t, Ast *scope) {
     } else if (t->type == TOK_IF) {
         return parse_conditional(scope);
     } else if (t->type == TOK_RETURN) {
-        if (parser_state != PARSE_FUNC) {
-            error(lineno(), "Return statement outside of function body.");
-        }
         ast = parse_return_statement(t, scope);
     } else if (t->type == TOK_BREAK) {
         ast = ast_alloc(AST_BREAK);
@@ -1234,13 +1216,6 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
     }
     case AST_DECL: {
         Ast *init = ast->init;
-        if (ast->decl_var->type->base == AUTO_T && init == NULL) {
-            error(ast->line, "Cannot use type 'auto' for variable '%s' without initialization.", ast->decl_var->name);
-        }
-        if (find_local_var(ast->decl_var->name, scope) != NULL) {
-            error(ast->line, "Declared variable '%s' already exists.", ast->decl_var->name);
-        }
-        attach_var(ast->decl_var, scope); // should this be after the init parsing?
         if (init != NULL) {
             if (init->type != AST_ANON_FUNC_DECL) {
                 in_decl = 1;
@@ -1248,7 +1223,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             init = parse_semantics(init, scope);
             in_decl = 0;
             if (ast->decl_var->type->base == AUTO_T) {
-                ast->decl_var->type = var_type(ast->init);
+                ast->decl_var->type = var_type(init);
             } else if (!check_type(ast->decl_var->type, var_type(init))) {
                 error(ast->line, "Can't initialize variable '%s' of type '%s' with value of type '%s'.",
                         ast->decl_var->name, type_as_str(ast->decl_var->type), type_as_str(var_type(init)));
@@ -1257,6 +1232,22 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
                 init = make_ast_tmpvar(init, make_temp_var(var_type(init), scope));
             }
             ast->init = init;
+        } else if (ast->decl_var->type->base == AUTO_T) {
+            error(ast->line, "Cannot use type 'auto' for variable '%s' without initialization.", ast->decl_var->name);
+        }
+        if (find_local_var(ast->decl_var->name, scope) != NULL) {
+            error(ast->line, "Declared variable '%s' already exists.", ast->decl_var->name);
+        }
+        if (parser_state == PARSE_MAIN) {
+            global_vars = varlist_append(global_vars, ast->decl_var);
+            if (ast->init != NULL) {
+                Ast *id = ast_alloc(AST_IDENTIFIER);
+                id->varname = ast->decl_var->name;
+                id->var = ast->decl_var;
+                ast = make_ast_binop(OP_ASSIGN, id, ast->init);
+            }
+        } else {
+            attach_var(ast->decl_var, scope); // should this be after the init parsing?
         }
         break;
     }
@@ -1285,15 +1276,19 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         if (parser_state != PARSE_MAIN) {
             error(ast->line, "Cannot declare a named function inside scope ('%s').", ast->fn_decl_var->name);
         }
-    case AST_ANON_FUNC_DECL:
+    case AST_ANON_FUNC_DECL: {
         attach_var(ast->fn_decl_var, scope);
         attach_var(ast->fn_decl_var, ast->fn_body);
         global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);
 
+        int prev = parser_state;
+        parser_state = PARSE_FUNC;
         PUSH_FN_SCOPE(ast);
         ast->fn_body = parse_semantics(ast->fn_body, scope);
         POP_FN_SCOPE();
+        parser_state = prev;
         break;
+    }
     case AST_CALL: {
         Ast *arg;
         ast->fn = parse_semantics(ast->fn, scope);
@@ -1341,7 +1336,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         ast->body = parse_semantics(ast->body, ast);
         break;
     case AST_RETURN: {
-        if (current_fn_scope == NULL) {
+        if (current_fn_scope == NULL || parser_state != PARSE_FUNC) {
             error(ast->line, "Return statement outside of function body.");
         }
         Type *fn_ret_t = current_fn_scope->fn_decl_var->type->ret;
