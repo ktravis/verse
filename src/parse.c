@@ -164,6 +164,8 @@ Type *var_type(Ast *ast) {
         return var_type(ast->fn)->ret;
     case AST_ANON_FUNC_DECL:
         return ast->fn_decl_var->type;
+    case AST_BIND:
+        return var_type(ast->bind_expr);
     case AST_UOP:
         if (ast->op == OP_NOT) {
             return make_type(BOOL_T);
@@ -568,7 +570,7 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope) {
         t = next_token();
         if (t == NULL) {
             return ast;
-        } else if (t->type == TOK_SEMI || t->type == TOK_RPAREN || t->type == TOK_LBRACE) {
+        } else if (t->type == TOK_SEMI || t->type == TOK_RPAREN || t->type == TOK_LBRACE || t->type == TOK_RBRACE) {
             unget_token(t);
             return ast;
         }
@@ -760,7 +762,8 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
 
     Ast *fn_scope = ast_alloc(AST_SCOPE);
     fn_scope->locals = NULL;
-    fn_scope->parent = NULL;
+    fn_scope->parent = scope;
+    fn_scope->bindings = NULL;
 
     int i;
     int n = 0;
@@ -953,6 +956,7 @@ Ast *parse_struct_literal(char *name, Ast *scope) {
     ast->struct_lit_name = name;
     ast->nmembers = 0;
     if (peek_token()->type == TOK_RBRACE) {
+        next_token();
         return ast;
     }
     for (;;) {
@@ -1050,6 +1054,12 @@ Ast *parse_primary(Tok *t, Ast *scope) {
             error(lineno(), "Unexpected token '%s' encountered while parsing parenthetical expression (starting line %d).", to_string(next), ast->line);
         }
         return ast;
+    }
+    case TOK_STARTBIND: {
+        Ast *binding = ast_alloc(AST_BIND);
+        binding->bind_expr = parse_expression(next_token(), 0, scope);
+        expect(TOK_RBRACE);
+        return binding;
     }
     }
     error(lineno(), "Unexpected token '%s'.", to_string(t));
@@ -1287,6 +1297,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         ast->fn_body = parse_semantics(ast->fn_body, scope);
         POP_FN_SCOPE();
         parser_state = prev;
+        ast->bindings_var = ast->type == AST_ANON_FUNC_DECL ? make_temp_var(make_type(BASEPTR_T), scope) : NULL;
         break;
     }
     case AST_CALL: {
@@ -1335,6 +1346,16 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
     case AST_SCOPE:
         ast->body = parse_semantics(ast->body, ast);
         break;
+    case AST_BIND: {
+        // TODO check parser state, current_fn_scope type
+        AstList *b = current_fn_scope->fn_body->bindings;
+        current_fn_scope->fn_decl_var->type->binds = 1;
+        ast->bind_expr = parse_semantics(ast->bind_expr, current_fn_scope->fn_body->parent);
+        ast->bind_type = var_type(ast->bind_expr);
+        ast->offset = b == NULL ? 0 : (b->item->offset + var_size(b->item->bind_type));
+        current_fn_scope->fn_body->bindings = astlist_append(b, ast);
+        break;
+    }
     case AST_RETURN: {
         if (current_fn_scope == NULL || parser_state != PARSE_FUNC) {
             error(ast->line, "Return statement outside of function body.");
@@ -1380,7 +1401,11 @@ AstList *get_global_funcs() {
 }
 
 AstList *get_global_structs() {
-    AstList *tail = global_struct_decls;
+    return reverse_astlist(global_struct_decls);
+}
+
+AstList *reverse_astlist(AstList *list) {
+    AstList *tail = list;
     if (tail == NULL) {
         return NULL;
     }

@@ -26,5 +26,6 @@ fn main():int {
     print_str("\n-------\n");
     assert(a.x == 7);
     release a;
+    assert((vec3{}).x == 0);
     return 1;
 }

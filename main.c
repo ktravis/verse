@@ -3,13 +3,6 @@
 
 static int _indent = 0;
 
-void emit(char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    vprintf(fmt, args);
-    va_end(args);
-}
-
 void indent() {
     for (int i = 0; i < _indent; i++) {
         printf("    ");
@@ -229,8 +222,9 @@ void emit_tmpvar(Ast *ast) {
             break;
         }
         }
+    } else if (ast->expr->type == AST_ANON_FUNC_DECL) {
     } else {
-        error(-1, "idk tmpvar");
+        error(-1, "idk tmpvar (%d)", ast->expr->type);
     }
 }
 
@@ -246,7 +240,7 @@ void emit_type(Type *type) {
         printf("struct string_type *");
         break;
     case FN_T:
-        printf("fn_type ");
+        printf("struct fn_type ");
         break;
     case VOID_T:
         printf("void ");
@@ -275,15 +269,16 @@ void emit_type(Type *type) {
 
 void emit_decl(Ast *ast) {
     if (ast->decl_var->type->base == FN_T) {
-        emit_type(ast->decl_var->type->ret);
-        printf("(*_vs_%s)(", ast->decl_var->name);
-        for (int i = 0; i < ast->decl_var->type->nargs; i++) {
-            emit_type(ast->decl_var->type->args[i]);
-            if (i < ast->decl_var->type->nargs - 1) {
-                printf(",");
-            }
-        }
-        printf(")");
+        printf("struct fn_type _vs_%s", ast->decl_var->name);
+        /*emit_type(ast->decl_var->type->ret);*/
+        /*printf("(*_vs_%s)(", ast->decl_var->name);*/
+        /*for (int i = 0; i < ast->decl_var->type->nargs; i++) {*/
+            /*emit_type(ast->decl_var->type->args[i]);*/
+            /*if (i < ast->decl_var->type->nargs - 1) {*/
+                /*printf(",");*/
+            /*}*/
+        /*}*/
+        /*printf(")");*/
     } else {
         emit_type(ast->decl_var->type);
         printf("_vs_%s", ast->decl_var->name);
@@ -313,13 +308,13 @@ void emit_decl(Ast *ast) {
 
 void emit_func_decl(Ast *fn) {
     emit_type(fn->fn_decl_var->type->ret);
-    printf("_vs_%s(", fn->fn_decl_var->name);
+    printf("_vs_%s(void *_cl", fn->fn_decl_var->name);
     for (int i = 0; i < fn->fn_decl_var->type->nargs; i++) {
+        /*if (i < fn->fn_decl_var->type->nargs - 1) {*/
+            printf(",");
+        /*}*/
         emit_type(fn->fn_decl_args[i]->type);
         printf("_vs_%s", fn->fn_decl_args[i]->name);
-        if (i < fn->fn_decl_var->type->nargs - 1) {
-            printf(",");
-        }
     }
     printf(") ");
     compile(fn->fn_body);
@@ -404,11 +399,15 @@ void compile(Ast *ast) {
         break;
     case AST_STRUCT:
         printf("(struct _vs_%s){", ast->struct_lit_type->name);
-        for (int i = 0; i < ast->nmembers; i++) {
-            printf(".%s = ", ast->member_names[i]);
-            compile(ast->member_exprs[i]);
-            if (i != ast->nmembers - 1) {
-                printf(", ");
+        if (ast->nmembers == 0) {
+            printf("0");
+        } else {
+            for (int i = 0; i < ast->nmembers; i++) {
+                printf(".%s = ", ast->member_names[i]);
+                compile(ast->member_exprs[i]);
+                if (i != ast->nmembers - 1) {
+                    printf(", ");
+                }
             }
         }
         printf("}");
@@ -505,11 +504,25 @@ void compile(Ast *ast) {
     case AST_FUNC_DECL: 
         break;
     case AST_ANON_FUNC_DECL: 
-        printf("_vs_%s", ast->fn_decl_var->name);
+        if (ast->fn_body->bindings != NULL) {
+            AstList *bindings = ast->fn_body->bindings;
+            printf("(_tmp%d = malloc(%d),", ast->bindings_var->id, bindings->item->offset + var_size(bindings->item->bind_type));
+            bindings = reverse_astlist(bindings);
+            while (bindings != NULL) {
+                printf("_tmp%d[%d]=", ast->bindings_var->id, bindings->item->offset);
+                compile(bindings->item->bind_expr);
+                printf(",");
+                bindings = bindings->next;
+            }
+            printf("_vs_%s)", ast->fn_decl_var->name);
+        } else {
+            printf("_vs_%s", ast->fn_decl_var->name);
+        }
         break;
     case AST_EXTERN_FUNC_DECL: 
         break;
-    case AST_CALL:
+    case AST_CALL: {
+        // TODO this is messed up, change so only anon pass in .cl?
         if (ast->fn->type != AST_IDENTIFIER) {
             Type *t = var_type(ast->fn);
             printf("((");
@@ -526,13 +539,18 @@ void compile(Ast *ast) {
                 }
             }
             printf("))(");
-            compile(ast->fn);
-            printf("))");
-        } else {
-            compile(ast->fn);
-        }
-        printf("(");
+        compile(ast->fn);
+        printf(".fn");
+            printf("))(");
+        compile(ast->fn);
+        printf(".cl");
+        /*} else {*/
+            /*compile(ast->fn);*/
+        /*}*/
         for (int i = 0; i < ast->nargs; i++) {
+            /*if (i != ast->nargs-1) {*/
+                printf(",");
+            /*}*/
             Type *t = var_type(ast->args[i]);
             if (t->base == STRUCT_T && is_dynamic(t)) {
                 StructType *st = get_struct_type(t->struct_id);
@@ -545,12 +563,10 @@ void compile(Ast *ast) {
             if (ast->args[i]->type == AST_TEMP_VAR && is_dynamic(t)) {
                 ast->args[i]->tmpvar->consumed = 1;
             }
-            if (i != ast->nargs-1) {
-                printf(",");
-            }
         }
         printf(")");
         break;
+    }
     case AST_BLOCK:
         for (int i = 0; i < ast->num_statements; i++) {
             if (ast->statements[i]->type == AST_FUNC_DECL || ast->statements[i]->type == AST_EXTERN_FUNC_DECL || ast->statements[i]->type == AST_STRUCT_DECL) {
@@ -596,6 +612,11 @@ void compile(Ast *ast) {
         _indent--;
         indent();
         printf("}\n");
+        break;
+    case AST_BIND:
+        printf("((");
+        emit_type(ast->bind_type);
+        printf(")_cl[%d])", ast->offset);
         break;
     default:
         error(ast->line, "No idea how to deal with this.");
@@ -740,13 +761,13 @@ void emit_var_decl(Var *v) {
     }
     printf("%s", v->name);
     if (v->type->base == FN_T) {
-        printf(")(");
+        printf(")(void *_cl");
         for (int i = 0; i < v->type->nargs; i++) {
+            /*if (i < v->type->nargs - 1) {*/
+                printf(",");
+            /*}*/
             emit_type(v->type->args[i]);
             printf("a%d", i);
-            if (i < v->type->nargs - 1) {
-                printf(",");
-            }
         }
         printf(")");
     }
@@ -760,13 +781,13 @@ void emit_forward_decl(Var *v) {
     if (!v->ext) {
         printf("_vs_");
     }
-    printf("%s(", v->name);
+    printf("%s(void *_cl", v->name);
     for (int i = 0; i < v->type->nargs; i++) {
+        /*if (i < v->type->nargs - 1) {*/
+            printf(",");
+        /*}*/
         emit_type(v->type->args[i]);
         printf("a%d", i);
-        if (i < v->type->nargs - 1) {
-            printf(",");
-        }
     }
     printf(");\n");
 }

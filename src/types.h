@@ -23,6 +23,7 @@ typedef struct Type {
     int held;
     // for functions
     int nargs;
+    int binds;
     struct Type **args; // not sure if this should be an array of pointers, or just values.
     struct Type *ret;
     // for structs
@@ -47,5 +48,6 @@ Type *make_fn_type(int nargs, Type **args, Type *ret);
 StructType *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types);
 Type *find_struct_type(char *name);
 StructType *get_struct_type(int id);
+int var_size(Type *t);
 
 #endif

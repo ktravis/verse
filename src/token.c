@@ -91,6 +91,12 @@ Tok *next_token() {
         return make_token(TOK_LSQUARE);
     } else if (c == ']') {
         return make_token(TOK_RSQUARE);
+    } else if (c == '#') {
+        if ((c = getc(stdin)) == '{') {
+            return make_token(TOK_STARTBIND);
+        } else {
+            error(line, "Unexpected character sequence '#%c'", c);
+        }
     } else if (c == '{') {
         return make_token(TOK_LBRACE);
     } else if (c == '}') {
