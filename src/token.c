@@ -323,7 +323,7 @@ int type_id(char *buf) {
 int priority_of(Tok *t) {
     if (t->type == TOK_LPAREN) {
         return 13;
-    } else if (t->type == TOK_OP) {
+    } else if (t->type == TOK_OP || t->type == TOK_UOP) {
         switch (t->op) {
         case OP_ASSIGN:
             return 1;
@@ -347,9 +347,9 @@ int priority_of(Tok *t) {
             return 10;
         case OP_NOT:
             return 11;
-        case OP_ADDR: case OP_AT:
-            return 12;
         case OP_DOT:
+            return 12;
+        case OP_ADDR: case OP_AT:
             return 13;
         default:
             return -1;
@@ -491,6 +491,7 @@ const char *op_to_str(int op) {
     case OP_GTE: return ">=";
     case OP_LT: return "<";
     case OP_LTE: return "<=";
+    case OP_DOT: return ".";
     case OP_ADDR: return "^";
     case OP_AT: return "@";
     default:
