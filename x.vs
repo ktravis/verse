@@ -1,7 +1,5 @@
 // test
 // assert(false);
-extern fn assert(bool):void;
-extern fn print_str(string):void;
 
 x:int = 2;
 x1:int = 2;
@@ -12,10 +10,6 @@ fn fib(n:int):int {
         return 1;
     }
     return fib(n-1) + fib(n-2);
-}
-
-fn println(x:string):void {
-    print_str(x + "\n");
 }
 
 noodler:auto = fn():void {

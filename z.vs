@@ -1,8 +1,3 @@
-extern fn print_str(string):void;
-extern fn itoa(int):string;
-extern fn assert(bool);
-extern fn validptr(ptr):bool;
-
 /* block comments ?
  * */
 /* nest/*

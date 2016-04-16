@@ -22,5 +22,6 @@ void emit_scope_start(Ast *ast);
 void emit_scope_end(Ast *ast);
 void compile(Ast *ast);
 void emit_binop(Ast *ast);
+void emit_free_bindings(int id, TypeList *bindings);
 
 #endif

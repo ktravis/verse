@@ -1,7 +1,3 @@
-extern fn print_str(string);
-extern fn itoa(int):string;
-extern fn validptr(ptr):bool;
-
 struct list {
     name:string;
     next:^list;

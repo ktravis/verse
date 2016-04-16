@@ -83,7 +83,7 @@ Type *make_fn_type(int nargs, Type **args, Type *ret) {
     t->nargs = nargs;
     t->args = args;
     t->ret = ret;
-    t->binds = 0;
+    t->bindings = NULL;
     return t;
 }
 
@@ -149,4 +149,30 @@ int var_size(Type *t) {
     }
     error(-1, "var_size fallthrough %d", t->base);
     return -1;
+}
+
+int add_binding(Type *t, Type *b) {
+    TypeList *bindings = malloc(sizeof(TypeList));
+    bindings->next = t->bindings;
+    bindings->item = b;
+    b->offset = t->bindings == NULL ? 0 : (t->bindings->item->offset + var_size(b));
+    t->bindings = bindings;
+    return b->offset;
+}
+
+TypeList *reverse_typelist(TypeList *list) {
+    TypeList *tail = list;
+    if (tail == NULL) {
+        return NULL;
+    }
+    TypeList *head = tail;
+    TypeList *tmp = head->next;
+    head->next = NULL;
+    while (tmp != NULL) {
+        tail = head;
+        head = tmp;
+        tmp = tmp->next;
+        head->next = tail;
+    }
+    return head;
 }
