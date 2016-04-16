@@ -1,4 +1,5 @@
 #include "types.h"
+#include "util.h"
 
 static StructType *struct_defs = NULL;
 
@@ -82,6 +83,7 @@ Type *make_fn_type(int nargs, Type **args, Type *ret) {
     t->nargs = nargs;
     t->args = args;
     t->ret = ret;
+    t->bindings = NULL;
     return t;
 }
 
@@ -120,4 +122,57 @@ StructType *get_struct_type(int id) {
         s = s->next;
     }
     return s;
+}
+
+int var_size(Type *t) {
+    switch (t->base) {
+    case BOOL_T: return sizeof(unsigned char);
+    case INT_T: return sizeof(int);
+    case FN_T:
+    case STRING_T:
+    case PTR_T:
+    case BASEPTR_T:
+        return sizeof(Type*);
+    case VOID_T: return 0;
+    case AUTO_T: error(-1, "var_size called on auto_t?");
+    case STRUCT_T: {
+        StructType *st = get_struct_type(t->struct_id);
+        if (st == NULL) {
+            error(-1, "invalid struct");
+        }
+        int size = 0;
+        for (int i = 0; i < st->nmembers; i++) {
+            size += var_size(st->member_types[i]);
+        }
+        return size;
+    }
+    }
+    error(-1, "var_size fallthrough %d", t->base);
+    return -1;
+}
+
+int add_binding(Type *t, Type *b) {
+    TypeList *bindings = malloc(sizeof(TypeList));
+    bindings->next = t->bindings;
+    bindings->item = b;
+    b->offset = t->bindings == NULL ? 0 : (t->bindings->item->offset + var_size(b));
+    t->bindings = bindings;
+    return b->offset;
+}
+
+TypeList *reverse_typelist(TypeList *list) {
+    TypeList *tail = list;
+    if (tail == NULL) {
+        return NULL;
+    }
+    TypeList *head = tail;
+    TypeList *tmp = head->next;
+    head->next = NULL;
+    while (tmp != NULL) {
+        tail = head;
+        head = tmp;
+        tmp = tmp->next;
+        head->next = tail;
+    }
+    return head;
 }

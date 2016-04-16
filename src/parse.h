@@ -35,6 +35,7 @@ enum {
     AST_BREAK,
     AST_CONTINUE,
     AST_HOLD,
+    AST_BIND,
     AST_STRUCT
 };
 
@@ -60,6 +61,8 @@ typedef struct VarList {
     Var *item;
     struct VarList *next;
 } VarList;
+
+typedef struct AstList AstList;
 
 typedef struct Ast {
     int type;
@@ -88,6 +91,7 @@ typedef struct Ast {
             int anon;
             Var **fn_decl_args;
             struct Ast *fn_body;
+            Var *bindings_var;
         };
         // uop / binop
         struct {
@@ -107,6 +111,12 @@ typedef struct Ast {
             int nargs;
             struct Ast **args;
         };
+        // binding
+        struct {
+            int bind_offset;
+            int bind_id;
+            struct Ast *bind_expr;
+        };
         // block
         struct {
             struct Ast **statements; // change this to be a linked list or something
@@ -117,6 +127,8 @@ typedef struct Ast {
             struct Ast *parent;
             struct Ast *body;
             VarList *locals;
+            AstList *bindings;
+            AstList *anon_funcs;
         };
         // conditional
         struct {
@@ -164,6 +176,12 @@ typedef struct AstList {
     struct AstList *next;
 } AstList;
 
+typedef struct AstListList {
+    int id;
+    AstList *item;
+    struct AstListList *next;
+} AstListList;
+
 Var *make_var(char *name, Type *type);
 void attach_var(Var *var, Ast *scope);
 Var *find_local_var(char *name, Ast *scope);
@@ -196,6 +214,12 @@ Ast *parse_scope(Ast *parent);
 Ast *parse_conditional(Ast *scope);
 
 VarList *get_global_vars();
+AstList *reverse_astlist();
 AstList *get_init_list();
+VarList *get_global_bindings();
+AstList *get_binding_exprs(int id);
+void add_binding_expr(int id, Ast *expr);
+
+void init_builtins();
 
 #endif

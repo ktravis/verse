@@ -24,6 +24,7 @@ enum {
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_COMMA,
+    TOK_STARTBIND,
     TOK_LBRACE,
     TOK_RBRACE,
     TOK_LSQUARE,

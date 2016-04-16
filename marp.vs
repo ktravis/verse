@@ -1,7 +1,3 @@
-extern fn print_str(string);
-extern fn itoa(int):string;
-extern fn assert(bool);
-
 struct vec3 {
     x:int;
     y:int;
@@ -26,5 +22,6 @@ fn main():int {
     print_str("\n-------\n");
     assert(a.x == 7);
     release a;
+    assert((vec3{}).x == 0);
     return 1;
 }

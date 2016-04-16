@@ -9,8 +9,11 @@ static int last_var_id = 0;
 static int last_tmp_fn_id = 0;
 static VarList *global_vars = NULL;
 static VarList *global_fn_vars = NULL;
+static VarList *builtin_vars = NULL;
 static AstList *global_fn_decls = NULL;
+static VarList *global_fn_bindings = NULL;
 static AstList *global_struct_decls = NULL;
+static AstListList *binding_exprs = NULL;
 static int parser_state = PARSE_MAIN; // TODO unnecessary w/ PUSH_FN_SCOPE?
 static int loop_state = 0;
 static int in_decl = 0;
@@ -108,6 +111,10 @@ void attach_var(Var *var, Ast *scope) {
     scope->locals = varlist_append(scope->locals, var);
 }
 
+void detach_var(Var *var, Ast *scope) {
+    scope->locals = varlist_remove(scope->locals, var->name);
+}
+
 void release_var(Var *var, Ast *scope) {
     scope->locals = varlist_remove(scope->locals, var->name);
 }
@@ -126,7 +133,8 @@ Var *make_temp_var(Type *type, Ast *scope) {
     var->id = last_var_id++;
     var->temp = 1;
     var->consumed = 0;
-    var->initialized = 0;
+    var->initialized = (type->base == FN_T);
+    /*var->type->binds = (type->base == FN_T);*/
     attach_var(var, scope);
     return var;
 }
@@ -138,6 +146,9 @@ Var *find_var(char *name, Ast *scope) {
     }
     if (v == NULL) {
         v = varlist_find(global_fn_vars, name);
+    }
+    if (v == NULL) {
+        v = varlist_find(builtin_vars, name);
     }
     return v;
 }
@@ -164,6 +175,8 @@ Type *var_type(Ast *ast) {
         return var_type(ast->fn)->ret;
     case AST_ANON_FUNC_DECL:
         return ast->fn_decl_var->type;
+    case AST_BIND:
+        return var_type(ast->bind_expr);
     case AST_UOP:
         if (ast->op == OP_NOT) {
             return make_type(BOOL_T);
@@ -240,7 +253,7 @@ int is_dynamic(Type *t) {
         }
         return 0;
     }
-    return t->base == STRING_T;
+    return t->base == STRING_T || (t->base == FN_T && t->bindings != NULL);
 }
 
 void print_ast(Ast *ast) {
@@ -568,7 +581,7 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope) {
         t = next_token();
         if (t == NULL) {
             return ast;
-        } else if (t->type == TOK_SEMI || t->type == TOK_RPAREN || t->type == TOK_LBRACE) {
+        } else if (t->type == TOK_SEMI || t->type == TOK_RPAREN || t->type == TOK_LBRACE || t->type == TOK_RBRACE) {
             unget_token(t);
             return ast;
         }
@@ -760,7 +773,7 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
 
     Ast *fn_scope = ast_alloc(AST_SCOPE);
     fn_scope->locals = NULL;
-    fn_scope->parent = NULL;
+    fn_scope->parent = scope;
 
     int i;
     int n = 0;
@@ -953,6 +966,7 @@ Ast *parse_struct_literal(char *name, Ast *scope) {
     ast->struct_lit_name = name;
     ast->nmembers = 0;
     if (peek_token()->type == TOK_RBRACE) {
+        next_token();
         return ast;
     }
     for (;;) {
@@ -1051,6 +1065,12 @@ Ast *parse_primary(Tok *t, Ast *scope) {
         }
         return ast;
     }
+    case TOK_STARTBIND: {
+        Ast *binding = ast_alloc(AST_BIND);
+        binding->bind_expr = parse_expression(next_token(), 0, scope);
+        expect(TOK_RBRACE);
+        return binding;
+    }
     }
     error(lineno(), "Unexpected token '%s'.", to_string(t));
     return NULL;
@@ -1118,6 +1138,8 @@ Ast *parse_scope(Ast *parent) {
     scope->locals = NULL;
     scope->parent = parent;
     scope->body = parse_block(scope, parent == NULL ? 0 : 1);
+    /*scope->bindings = NULL;*/
+    /*scope->anon_funcs = NULL;*/
     return scope;
 }
 
@@ -1184,22 +1206,8 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         break;
     }
     case AST_HOLD: {
-        /*if (!in_decl) {*/
-            /*error(ast->line, "Cannot hold outside of declaration.");*/
-        /*}*/
         ast->expr = parse_semantics(ast->expr, scope);
         Type *t = var_type(ast->expr);
-
-        /*Var *tmp;*/
-        /*if (ast->expr->type == AST_TEMP_VAR) {*/
-            /*tmp = ast->expr->tmpvar;*/
-        /*} else if (is_dynamic(t)) {*/
-            /*Type *tp = make_type(PTR_T);*/
-            /*tp->inner = t;*/
-            /*tp->held = 1;*/
-            /*tmp = make_temp_var(tp, scope);*/
-            /*ast->expr = make_ast_tmpvar(ast->expr, tmp);*/
-        /*}*/
 
         if (ast->expr->type != AST_TEMP_VAR && t->base == STRING_T) {
             ast->expr = make_ast_tmpvar(ast->expr, make_temp_var(t, scope));
@@ -1280,6 +1288,15 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         attach_var(ast->fn_decl_var, scope);
         attach_var(ast->fn_decl_var, ast->fn_body);
         global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);
+        Var *bindings_var = NULL;
+        if (ast->type == AST_ANON_FUNC_DECL) {
+            bindings_var = malloc(sizeof(Var));
+            bindings_var->name = "";
+            bindings_var->type = make_type(BASEPTR_T);
+            bindings_var->id = last_var_id++;
+            bindings_var->temp = 1;
+            ast->fn_decl_var->type->bindings_id = bindings_var->id;
+        }
 
         int prev = parser_state;
         parser_state = PARSE_FUNC;
@@ -1287,6 +1304,11 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         ast->fn_body = parse_semantics(ast->fn_body, scope);
         POP_FN_SCOPE();
         parser_state = prev;
+        // TODO
+        detach_var(ast->fn_decl_var, ast->fn_body);
+        if (ast->fn_decl_var->type->bindings != NULL) {
+            global_fn_bindings = varlist_append(global_fn_bindings, bindings_var);
+        }
         break;
     }
     case AST_CALL: {
@@ -1309,6 +1331,9 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
                 arg = make_ast_tmpvar(arg, make_temp_var(var_type(arg), scope));
             }
             ast->args[i] = arg;
+        }
+        if (is_dynamic(var_type(ast->fn)->ret)) {
+            return make_ast_tmpvar(ast, make_temp_var(var_type(ast->fn)->ret, scope));
         }
         break;
     }
@@ -1335,6 +1360,19 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
     case AST_SCOPE:
         ast->body = parse_semantics(ast->body, ast);
         break;
+    case AST_BIND: {
+        if (current_fn_scope == NULL || current_fn_scope->type != AST_ANON_FUNC_DECL) {
+            error(ast->line, "Cannot make bindings outside of an inner function."); 
+        }
+        ast->bind_expr = parse_semantics(ast->bind_expr, current_fn_scope->fn_body->parent);
+        ast->bind_offset = add_binding(current_fn_scope->fn_decl_var->type, var_type(ast->bind_expr));
+        ast->bind_id = current_fn_scope->fn_decl_var->type->bindings_id;
+        add_binding_expr(ast->bind_id, ast->bind_expr);
+        if (is_dynamic(var_type(ast->bind_expr))) {
+            return make_ast_tmpvar(ast, make_temp_var(var_type(ast->bind_expr), scope));
+        }
+        break;
+    }
     case AST_RETURN: {
         if (current_fn_scope == NULL || parser_state != PARSE_FUNC) {
             error(ast->line, "Return statement outside of function body.");
@@ -1380,7 +1418,11 @@ AstList *get_global_funcs() {
 }
 
 AstList *get_global_structs() {
-    AstList *tail = global_struct_decls;
+    return reverse_astlist(global_struct_decls);
+}
+
+AstList *reverse_astlist(AstList *list) {
+    AstList *tail = list;
     if (tail == NULL) {
         return NULL;
     }
@@ -1398,4 +1440,61 @@ AstList *get_global_structs() {
 
 VarList *get_global_vars() {
     return global_vars;
+}
+
+VarList *get_global_bindings() {
+    return global_fn_bindings;
+}
+
+void init_builtins() {
+    Type **args = malloc(sizeof(Type*));
+    args[0] = make_type(BOOL_T);
+    Var *v = make_var("assert", make_fn_type(1, args, make_type(VOID_T)));
+    builtin_vars = varlist_append(builtin_vars, v);
+
+    args = malloc(sizeof(Type*));
+    args[0] = make_type(STRING_T);
+    v = make_var("print_str", make_fn_type(1, args, make_type(VOID_T)));
+    builtin_vars = varlist_append(builtin_vars, v);
+
+    args = malloc(sizeof(Type*));
+    args[0] = make_type(STRING_T);
+    v = make_var("println", make_fn_type(1, args, make_type(VOID_T)));
+    builtin_vars = varlist_append(builtin_vars, v);
+
+    args = malloc(sizeof(Type*));
+    args[0] = make_type(INT_T);
+    v = make_var("itoa", make_fn_type(1, args, make_type(STRING_T)));
+    builtin_vars = varlist_append(builtin_vars, v);
+
+    args = malloc(sizeof(Type*));
+    args[0] = make_type(BASEPTR_T);
+    v = make_var("validptr", make_fn_type(1, args, make_type(BOOL_T)));
+    builtin_vars = varlist_append(builtin_vars, v);
+}
+
+AstList *get_binding_exprs(int id) {
+    AstListList *l = binding_exprs;
+    while (l != NULL) {
+        if (l->id == id) {
+            return l->item;
+        }
+        l = l->next;
+    }
+    error(-1, "Couldn't find binding exprs %d.", id);
+    return NULL;
+}
+void add_binding_expr(int id, Ast *expr) {
+    AstListList *l = binding_exprs;
+    while (l != NULL) {
+        if (l->id == id) {
+            astlist_append(l->item, expr);
+            return;
+        }
+        l = l->next;
+    }
+    binding_exprs = malloc(sizeof(AstListList));
+    binding_exprs->id = id;
+    binding_exprs->item = astlist_append(NULL, expr);
+    binding_exprs->next = NULL;
 }
