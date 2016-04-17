@@ -1,22 +1,13 @@
 // test
 // assert(false);
+/* block comments ?
+ * */
+/* nest/*
+ * ed*/*/
 
 x:int = 2;
 x1:int = 2;
 x2:string = 'hi';
-
-fn fib(n:int):int {
-    if n < 2 {
-        return 1;
-    }
-    return fib(n-1) + fib(n-2);
-}
-
-noodler:auto = fn():void {
-    println("NOOOOOOOOOOOODLE");
-    println("NOOOOOOOOOOOODLE");
-    println("NOOOOOOOOOOOODLE");
-};
 
 fn main():int {
     assert(2 == 2);
@@ -42,7 +33,6 @@ fn main():int {
     } else {
         assert(false);
     }
-    assert(fib(8) == 34);
     println(x);
 
     blah:auto = fn(x:int, y:int):auto {
@@ -62,6 +52,5 @@ fn main():int {
     assert(x1 == 3);
 
     println("Tests passed.");
-    noodler();
     return 0;
 }

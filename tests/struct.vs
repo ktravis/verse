@@ -23,5 +23,5 @@ fn main():int {
     assert(a.x == 7);
     release a;
     assert((vec3{}).x == 0);
-    return 1;
+    return 0;
 }

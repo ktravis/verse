@@ -81,6 +81,7 @@ Var *make_var(char *name, Type *type) {
     var->id = last_var_id++;
     var->type = type;
     var->temp = 0;
+    var->consumed = 0;
     var->initialized = 0;
     if (type->base == STRUCT_T) {
         var->initialized = 1;
@@ -134,7 +135,6 @@ Var *make_temp_var(Type *type, Ast *scope) {
     var->temp = 1;
     var->consumed = 0;
     var->initialized = (type->base == FN_T);
-    /*var->type->binds = (type->base == FN_T);*/
     attach_var(var, scope);
     return var;
 }
@@ -1284,9 +1284,9 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         if (parser_state != PARSE_MAIN) {
             error(ast->line, "Cannot declare a named function inside scope ('%s').", ast->fn_decl_var->name);
         }
-    case AST_ANON_FUNC_DECL: {
         attach_var(ast->fn_decl_var, scope);
         attach_var(ast->fn_decl_var, ast->fn_body);
+    case AST_ANON_FUNC_DECL: {
         global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);
         Var *bindings_var = NULL;
         if (ast->type == AST_ANON_FUNC_DECL) {
@@ -1295,6 +1295,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             bindings_var->type = make_type(BASEPTR_T);
             bindings_var->id = last_var_id++;
             bindings_var->temp = 1;
+            bindings_var->consumed = 0;
             ast->fn_decl_var->type->bindings_id = bindings_var->id;
         }
 
@@ -1317,6 +1318,9 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         Type *t = var_type(ast->fn);
         if (t->base != FN_T) {
             error(ast->line, "Cannot perform call on non-function type '%s'", type_as_str(t));
+        }
+        if (ast->fn->type == AST_ANON_FUNC_DECL) {
+            ast->fn = make_ast_tmpvar(ast->fn, make_temp_var(t, scope));
         }
         if (ast->nargs != t->nargs) {
             error(ast->line, "Incorrect argument count to function (expected %d, got %d)", t->nargs, ast->nargs);
@@ -1488,13 +1492,14 @@ void add_binding_expr(int id, Ast *expr) {
     AstListList *l = binding_exprs;
     while (l != NULL) {
         if (l->id == id) {
-            astlist_append(l->item, expr);
+            l->item = astlist_append(l->item, expr);
             return;
         }
         l = l->next;
     }
-    binding_exprs = malloc(sizeof(AstListList));
-    binding_exprs->id = id;
-    binding_exprs->item = astlist_append(NULL, expr);
-    binding_exprs->next = NULL;
+    l = malloc(sizeof(AstListList));
+    l->id = id;
+    l->item = astlist_append(NULL, expr);
+    l->next = binding_exprs;
+    binding_exprs = l;
 }

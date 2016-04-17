@@ -517,7 +517,7 @@ void compile(Ast *ast) {
     case AST_FUNC_DECL: 
         break;
     case AST_ANON_FUNC_DECL: 
-        if (ast->fn_decl_var->type->bindings != NULL) {
+        if (ast->tmpvar->type->bindings != NULL) {
             int id = ast->fn_decl_var->type->bindings_id;
             TypeList *bindings = ast->fn_decl_var->type->bindings;
             AstList *bind_exprs = get_binding_exprs(id);
@@ -821,17 +821,8 @@ void emit_free_locals(Ast *scope) {
                 v->type->held || (!v->temp && !v->initialized) || (v->temp && v->consumed)))) {
             continue;
         }
-        /*if (v->type->bindings != NULL) {*/
-            /*printf("FREE LOCAL %s (%d) : %s (temp=%d,cons=%d)\n", v->name, v->id, type_as_str(v->type), v->temp, v->consumed);*/
-        /*}*/
         emit_free(v);
     }
-    /*while (scope->anon_funcs != NULL) {*/
-        /*emit_free_bindings(scope->anon_funcs->item->fn_body->bindings);*/
-        /*indent();*/
-        /*printf("free(_cl_%d);\n", scope->anon_funcs->item->bindings_var->id);*/
-        /*scope->anon_funcs = scope->anon_funcs->next;*/
-    /*}*/
 }
 
 void emit_scope_end(Ast *scope) {
