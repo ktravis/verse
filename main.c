@@ -9,14 +9,6 @@ void indent() {
     }
 }
 
-void label(char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    vprintf(fmt, args);
-    printf("\n");
-    va_end(args);
-}
-
 void emit_string_comparison(Ast *ast) {
     if (ast->op == OP_NEQUALS) {
         printf("!");
@@ -283,15 +275,6 @@ void emit_type(Type *type) {
 void emit_decl(Ast *ast) {
     if (ast->decl_var->type->base == FN_T) {
         printf("fn_type _vs_%s", ast->decl_var->name);
-        /*emit_type(ast->decl_var->type->ret);*/
-        /*printf("(*_vs_%s)(", ast->decl_var->name);*/
-        /*for (int i = 0; i < ast->decl_var->type->nargs; i++) {*/
-            /*emit_type(ast->decl_var->type->args[i]);*/
-            /*if (i < ast->decl_var->type->nargs - 1) {*/
-                /*printf(",");*/
-            /*}*/
-        /*}*/
-        /*printf(")");*/
     } else {
         emit_type(ast->decl_var->type);
         printf("_vs_%s", ast->decl_var->name);
@@ -813,9 +796,6 @@ void emit_free_locals(Ast *scope) {
         Var *v = scope->locals->item;
         scope->locals = scope->locals->next;
         // TODO got to be a better way to handle this here
-        /*if (is_dynamic(v->type) || v->type->bindings != NULL) {*/
-            /*printf("FREE LOCAL %s (%d) : %s (temp=%d,cons=%d)\n", v->name, v->id, type_as_str(v->type), v->temp, v->consumed);*/
-        /*}*/
         // TODO maybe remove the detach_var and check for temp?
         if (v->consumed || (v->type->base != FN_T && ((v->type->base == BASEPTR_T || v->type->base == PTR_T) ||
                 v->type->held || (!v->temp && !v->initialized) || (v->temp && v->consumed)))) {
