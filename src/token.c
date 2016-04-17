@@ -48,7 +48,7 @@ char read_non_space() {
                 break;
             }
         }
-        if (!(c == ' ' || c == '\n' || c == '\r')) {
+        if (!(c == ' ' || c == '\t' || c == '\n' || c == '\r')) {
             break;
         } else if (c == '\n') {
             line++;
