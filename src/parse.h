@@ -89,7 +89,7 @@ typedef struct Ast {
         struct {
             Var *fn_decl_var;
             int anon;
-            Var **fn_decl_args;
+            VarList *fn_decl_args;
             struct Ast *fn_body;
             Var *bindings_var;
         };
@@ -109,7 +109,7 @@ typedef struct Ast {
             struct Ast *fn;
             //Var *fn_var;
             int nargs;
-            struct Ast **args;
+            AstList *args;
         };
         // binding
         struct {

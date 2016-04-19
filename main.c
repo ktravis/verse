@@ -305,12 +305,14 @@ void emit_decl(Ast *ast) {
 void emit_func_decl(Ast *fn) {
     emit_type(fn->fn_decl_var->type->ret);
     printf("_vs_%s(", fn->fn_decl_var->name);
-    for (int i = 0; i < fn->fn_decl_var->type->nargs; i++) {
-        emit_type(fn->fn_decl_args[i]->type);
-        printf("_vs_%s", fn->fn_decl_args[i]->name);
-        if (i < fn->fn_decl_var->type->nargs - 1) {
+    VarList *args = fn->fn_decl_args;
+    while (args != NULL) {
+        emit_type(args->item->type);
+        printf("_vs_%s", args->item->name);
+        if (args->next != NULL) {
             printf(",");
         }
+        args = args->next;
     }
     printf(") ");
     compile(fn->fn_body);
@@ -541,11 +543,13 @@ void compile(Ast *ast) {
             if (t->nargs == 0) {
                 printf("void");
             } else {
-                for (int i = 0; i < t->nargs; i++) {
-                    emit_type(t->args[i]);
-                    if (i < t->nargs-1) {
+                TypeList *args = t->args;
+                while (args != NULL) {
+                    emit_type(args->item);
+                    if (args->next != NULL) {
                         printf(",");
                     }
+                    args = args->next;
                 }
             }
             printf("))(");
@@ -555,22 +559,24 @@ void compile(Ast *ast) {
             /*compile(ast->fn);*/
         /*}*/
         printf("(");
-        for (int i = 0; i < ast->nargs; i++) {
-            Type *t = var_type(ast->args[i]);
+        AstList *args = ast->args;
+        while (args != NULL) {
+            Type *t = var_type(args->item);
             if (t->base == STRUCT_T && is_dynamic(t)) {
                 StructType *st = get_struct_type(t->struct_id);
                 printf("_copy_%s(", st->name);
-                compile(ast->args[i]);
+                compile(args->item);
                 printf(")");
             } else {
-                compile(ast->args[i]);
+                compile(args->item);
             }
-            if (ast->args[i]->type == AST_TEMP_VAR && is_dynamic(t)) {
-                ast->args[i]->tmpvar->consumed = 1;
+            if (args->item->type == AST_TEMP_VAR && is_dynamic(t)) {
+                args->item->tmpvar->consumed = 1;
             }
-            if (i != ast->nargs-1) {
+            if (args->next != NULL) {
                 printf(",");
             }
+            args = args->next;
         }
         printf(")");
         break;
@@ -828,12 +834,14 @@ void emit_var_decl(Var *v) {
     printf("%s", v->name);
     if (v->type->base == FN_T) {
         printf(")(");
-        for (int i = 0; i < v->type->nargs; i++) {
-            emit_type(v->type->args[i]);
+        TypeList *args = v->type->args;
+        for (int i = 0; args != NULL; i++) {
+            emit_type(args->item);
             printf("a%d", i);
-            if (i < v->type->nargs - 1) {
+            if (args->next != NULL) {
                 printf(",");
             }
+            args = args->next;
         }
         printf(")");
     }
@@ -848,12 +856,14 @@ void emit_forward_decl(Var *v) {
         printf("_vs_");
     }
     printf("%s(", v->name);
-    for (int i = 0; i < v->type->nargs; i++) {
-        emit_type(v->type->args[i]);
+    TypeList *args = v->type->args;
+    for (int i = 0; args != NULL; i++) {
+        emit_type(args->item);
         printf("a%d", i);
-        if (i < v->type->nargs - 1) {
+        if (args->next != NULL) {
             printf(",");
         }
+        args = args->next;
     }
     printf(");\n");
 }

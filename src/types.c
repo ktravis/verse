@@ -20,12 +20,14 @@ char* type_as_str(Type *t) {
     case FN_T: {
          char *parts[10]; // TODO duh
          size_t size = 6; // fn + ( + ) + : + \0
-         for (int i = 0; i < t->nargs; i++) {
-             parts[i] = type_as_str(t->args[i]);
+         TypeList *args = t->args;
+         for (int i = 0; args != NULL; i++) {
+             parts[i] = type_as_str(args->item);
              size += strlen(parts[i]);
              if (i < t->nargs - 1) {
                  size += 1; // + ','
              }
+             args = args->next;
          }
          char *ret = type_as_str(t->ret);
          size_t retlen = strlen(ret);
@@ -34,13 +36,15 @@ char* type_as_str(Type *t) {
          strncpy(buf, "fn(", 3);
          char *m = buf + 3;
          // TODO not sure args is correct
-         for (int i = 0; i < t->nargs; i++) {
+         args = t->args;
+         for (int i = 0; args != NULL; i++) {
              size_t n = strlen(parts[i]);
              strncpy(m, parts[i], n);
              m += n;
-             if (t->args[i]->base == FN_T) {
+             if (args->item->base == FN_T) {
                  free(parts[i]);
              }
+             args = args->next;
          }
          strncpy(m, "):", 2);
          m += 2;
@@ -76,7 +80,7 @@ Type *make_type(int base) {
     return t;
 }
 
-Type *make_fn_type(int nargs, Type **args, Type *ret) {
+Type *make_fn_type(int nargs, TypeList *args, Type *ret) {
     Type *t = malloc(sizeof(Type));
     t->held = 0;
     t->base = FN_T;
@@ -158,6 +162,13 @@ int add_binding(Type *t, Type *b) {
     b->offset = t->bindings == NULL ? 0 : (t->bindings->item->offset + var_size(b));
     t->bindings = bindings;
     return b->offset;
+}
+
+TypeList *typelist_append(TypeList *list, Type *t) {
+    TypeList *tl = malloc(sizeof(TypeList));
+    tl->item = t;
+    tl->next = list;
+    return tl;
 }
 
 TypeList *reverse_typelist(TypeList *list) {

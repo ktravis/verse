@@ -57,6 +57,23 @@ Var *varlist_find(VarList *list, char *name) {
     return v;
 }
 
+VarList *reverse_varlist(VarList *list) {
+    VarList *tail = list;
+    if (tail == NULL) {
+        return NULL;
+    }
+    VarList *head = tail;
+    VarList *tmp = head->next;
+    head->next = NULL;
+    while (tmp != NULL) {
+        tail = head;
+        head = tmp;
+        tmp = tmp->next;
+        head->next = tail;
+    }
+    return head;
+}
+
 AstList *astlist_append(AstList *list, Ast *ast) {
     AstList *l = malloc(sizeof(AstList));
     l->item = ast;
@@ -225,10 +242,14 @@ int check_type(Type *a, Type *b) {
     if (a->base == b->base) {
         if (a->base == FN_T) {
             if (a->nargs == b->nargs && check_type(a->ret, b->ret)) {
-                for (int i = 0; i < a->nargs; i++) {
-                    if (!check_type(a->args[i], b->args[i])) {
+                TypeList *a_args = a->args;
+                TypeList *b_args = b->args;
+                while (a_args != NULL) {
+                    if (!check_type(a_args->item, b_args->item)) {
                         return 0;
                     }
+                    a_args = a_args->next;
+                    b_args = b_args->next;
                 }
                 return 1;
             }
@@ -308,22 +329,25 @@ void print_ast(Ast *ast) {
         printf("(extern fn %s)", ast->fn_decl_var->name);
         break;
     case AST_ANON_FUNC_DECL:
-    case AST_FUNC_DECL:
+    case AST_FUNC_DECL: {
+        VarList *args = ast->fn_decl_args;
         printf("(fn ");
         if (!ast->anon) {
             printf("%s", ast->fn_decl_var->name);
         }
         printf("(");
-        for (int i = 0; i < ast->fn_decl_var->type->nargs; i++) {
-            printf("%s", ast->fn_decl_args[i]->name);
-            if (i < ast->fn_decl_var->type->nargs - 1) {
+        while (args != NULL) {
+            printf("%s", args->item->name);
+            if (args->next != NULL) {
                 printf(",");
             }
+            args = args->next;
         }
         printf("):%s ", type_as_str(ast->fn_decl_var->type->ret));
         print_ast(ast->fn_body);
         printf(")");
         break;
+    }
     case AST_RETURN:
         printf("(return");
         if (ast->ret_expr != NULL) {
@@ -332,17 +356,20 @@ void print_ast(Ast *ast) {
         }
         printf(")");
         break;
-    case AST_CALL:
+    case AST_CALL: {
+        AstList *args = ast->args;
         print_ast(ast->fn);
         printf("(");
-        for (int i = 0; i < ast->nargs; i++) {
-            print_ast(ast->args[i]);
-            if (i + 1 < ast->nargs) {
+        while (args != NULL) {
+            print_ast(args->item);
+            if (args->next != NULL) {
                 printf(",");
             }
+            args = args->next;
         }
         printf(")");
         break;
+    }
     case AST_BLOCK:
         for (int i = 0; i < ast->num_statements; i++) {
             print_ast(ast->statements[i]);
@@ -527,17 +554,16 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right) {
 
 Ast *parse_arg_list(Ast *left, Ast *scope) {
     Ast *func = ast_alloc(AST_CALL);
-    func->args = malloc(sizeof(Ast*) * (MAX_ARGS + 1));
+    func->args = NULL;
     func->fn = left;
-    int i;
     int n = 0;
     Tok *t;
-    for (i = 0; i < MAX_ARGS; i++) {
+    for (;;) {
         t = next_token();
         if (t->type == TOK_RPAREN) {
             break;
         }
-        func->args[i] = parse_expression(t, 0, scope);
+        func->args = astlist_append(func->args, parse_expression(t, 0, scope));
         n++;
         t = next_token();
         if (t->type == TOK_RPAREN) {
@@ -546,14 +572,11 @@ Ast *parse_arg_list(Ast *left, Ast *scope) {
             error(lineno(), "Unexpected token '%s' in argument list.", to_string(t));
         }
     }
-    if (i == MAX_ARGS) {
-        error(lineno(), "OH NO THE ARGS");
-    }
+    func->args = reverse_astlist(func->args);
     func->nargs = n;
     return func; 
 }
 
-/*Ast *make_ast_decl(char *name, Type *type, int held) {*/
 Ast *make_ast_decl(char *name, Type *type) {
     Ast *ast = ast_alloc(AST_DECL);
     ast->decl_var = make_var(name, type);
@@ -651,15 +674,16 @@ Type *parse_type(Tok *t, Ast *scope) {
         if (ptr) {
             error(lineno(), "Cannot make a pointer to a function.");
         }
-        Type **args = malloc(sizeof(Type*)*MAX_ARGS);
+        TypeList *args = NULL;
         int nargs = 0;
         expect(TOK_LPAREN);
         t = next_token();
         if (t == NULL) {
             error(lineno(), "Unexpected EOF while parsing type.");
         } else if (t->type != TOK_RPAREN) {
-            for (nargs = 0; nargs < MAX_ARGS;) {
-                args[nargs++] = parse_type(t, scope);
+            for (;;) {
+                args = typelist_append(args, parse_type(t, scope));
+                nargs++;
                 t = next_token();
                 if (t == NULL) {
                     error(lineno(), "Unexpected EOF while parsing type.");
@@ -671,6 +695,7 @@ Type *parse_type(Tok *t, Ast *scope) {
                     error(lineno(), "Unexpected token '%s' while parsing type.", to_string(t));
                 }
             }
+            args = reverse_typelist(args);
         }
         t = next_token();
         Type *ret = make_type(VOID_T);
@@ -717,15 +742,14 @@ Ast *parse_extern_func_decl(Ast *scope) {
 
     Ast *func = ast_alloc(AST_EXTERN_FUNC_DECL); 
 
-    int i;
     int n = 0;
-    Type** arg_types = malloc(sizeof(Type*) * (MAX_ARGS + 1));
-    for (i = 0; i < MAX_ARGS; i++) {
+    TypeList* arg_types = NULL;
+    for (;;) {
         t = next_token();
         if (t->type == TOK_RPAREN) {
             break;
         }
-        arg_types[i] = parse_type(t, scope);
+        arg_types = typelist_append(arg_types, parse_type(t, scope));
         n++;
         t = next_token();
         if (t->type == TOK_RPAREN) {
@@ -734,9 +758,7 @@ Ast *parse_extern_func_decl(Ast *scope) {
             error(lineno(), "Unexpected token '%s' in argument list.", to_string(t));
         }
     }
-    if (i == MAX_ARGS) {
-        error(lineno(), "OH NO THE ARGS");
-    }
+    arg_types = reverse_typelist(arg_types);
     t = next_token();
     Type *ret = make_type(VOID_T);
     if (t->type == TOK_COLON) {
@@ -769,16 +791,15 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
     expect(TOK_LPAREN);
 
     Ast *func = ast_alloc(anonymous ? AST_ANON_FUNC_DECL : AST_FUNC_DECL);
-    func->fn_decl_args = malloc(sizeof(Var*) * (MAX_ARGS + 1));
+    func->fn_decl_args = NULL;
 
     Ast *fn_scope = ast_alloc(AST_SCOPE);
     fn_scope->locals = NULL;
     fn_scope->parent = scope;
 
-    int i;
     int n = 0;
-    Type** arg_types = malloc(sizeof(Type*) * (MAX_ARGS + 1));
-    for (i = 0; i < MAX_ARGS; i++) {
+    TypeList* arg_types = NULL;
+    for (;;) {
         t = next_token();
         if (t->type == TOK_RPAREN) {
             break;
@@ -790,10 +811,10 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
             error(lineno(), "Declared variable '%s' already exists.", t->sval);
         }
         expect(TOK_COLON);
-        func->fn_decl_args[i] = make_var(t->sval, parse_type(next_token(), scope));
-        attach_var(func->fn_decl_args[i], fn_scope);
-        func->fn_decl_args[i]->initialized = 1;
-        arg_types[i] = func->fn_decl_args[i]->type;
+        func->fn_decl_args = varlist_append(func->fn_decl_args, make_var(t->sval, parse_type(next_token(), scope)));
+        attach_var(func->fn_decl_args->item, fn_scope);
+        func->fn_decl_args->item->initialized = 1;
+        arg_types = typelist_append(arg_types, func->fn_decl_args->item->type);
         n++;
         t = next_token();
         if (t->type == TOK_RPAREN) {
@@ -802,9 +823,8 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
             error(lineno(), "Unexpected token '%s' in argument list.", to_string(t));
         }
     }
-    if (i == MAX_ARGS) {
-        error(lineno(), "OH NO THE ARGS");
-    }
+    func->fn_decl_args = reverse_varlist(func->fn_decl_args);
+    arg_types = reverse_typelist(arg_types);
     t = next_token();
     Type *ret = make_type(VOID_T);
     if (t->type == TOK_COLON) {
@@ -1325,16 +1345,20 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         if (ast->nargs != t->nargs) {
             error(ast->line, "Incorrect argument count to function (expected %d, got %d)", t->nargs, ast->nargs);
         }
-        for (int i = 0; i < ast->nargs; i++) {
-            arg = ast->args[i];
-            arg = parse_semantics(ast->args[i], scope);
-            if (!check_type(var_type(arg), t->args[i])) {
-                error(arg->line, "Incorrect argument to function, expected type '%s', and got '%s'.", type_as_str(t->args[i]), type_as_str(var_type(arg)));
+        AstList *args = ast->args;
+        TypeList *arg_types = t->args;
+        for (int i = 0; args != NULL; i++) {
+            arg = args->item;
+            arg = parse_semantics(arg, scope);
+            if (!check_type(var_type(arg), arg_types->item)) {
+                error(arg->line, "Incorrect argument to function, expected type '%s', and got '%s'.", type_as_str(arg_types->item), type_as_str(var_type(arg)));
             }
             if (arg->type != AST_TEMP_VAR && var_type(arg)->base != STRUCT_T && is_dynamic(var_type(arg))) {
                 arg = make_ast_tmpvar(arg, make_temp_var(var_type(arg), scope));
             }
-            ast->args[i] = arg;
+            args->item = arg;
+            args = args->next;
+            arg_types = arg_types->next;
         }
         if (is_dynamic(var_type(ast->fn)->ret)) {
             return make_ast_tmpvar(ast, make_temp_var(var_type(ast->fn)->ret, scope));
@@ -1451,29 +1475,19 @@ VarList *get_global_bindings() {
 }
 
 void init_builtins() {
-    Type **args = malloc(sizeof(Type*));
-    args[0] = make_type(BOOL_T);
-    Var *v = make_var("assert", make_fn_type(1, args, make_type(VOID_T)));
+    Var *v = make_var("assert", make_fn_type(1, typelist_append(NULL, make_type(BOOL_T)), make_type(VOID_T)));
     builtin_vars = varlist_append(builtin_vars, v);
 
-    args = malloc(sizeof(Type*));
-    args[0] = make_type(STRING_T);
-    v = make_var("print_str", make_fn_type(1, args, make_type(VOID_T)));
+    v = make_var("print_str", make_fn_type(1, typelist_append(NULL, make_type(STRING_T)), make_type(VOID_T)));
     builtin_vars = varlist_append(builtin_vars, v);
 
-    args = malloc(sizeof(Type*));
-    args[0] = make_type(STRING_T);
-    v = make_var("println", make_fn_type(1, args, make_type(VOID_T)));
+    v = make_var("println", make_fn_type(1, typelist_append(NULL, make_type(STRING_T)), make_type(VOID_T)));
     builtin_vars = varlist_append(builtin_vars, v);
 
-    args = malloc(sizeof(Type*));
-    args[0] = make_type(INT_T);
-    v = make_var("itoa", make_fn_type(1, args, make_type(STRING_T)));
+    v = make_var("itoa", make_fn_type(1, typelist_append(NULL, make_type(INT_T)), make_type(STRING_T)));
     builtin_vars = varlist_append(builtin_vars, v);
 
-    args = malloc(sizeof(Type*));
-    args[0] = make_type(BASEPTR_T);
-    v = make_var("validptr", make_fn_type(1, args, make_type(BOOL_T)));
+    v = make_var("validptr", make_fn_type(1, typelist_append(NULL, make_type(BASEPTR_T)), make_type(BOOL_T)));
     builtin_vars = varlist_append(builtin_vars, v);
 }
 

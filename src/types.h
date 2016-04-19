@@ -26,7 +26,7 @@ typedef struct Type {
     // for functions
     int nargs;
     //int binds;
-    struct Type **args; // not sure if this should be an array of pointers, or just values.
+    TypeList *args;
     struct Type *ret;
     // for structs
     int struct_id;
@@ -55,12 +55,13 @@ typedef struct StructType {
 
 char *type_as_str(Type *t);
 Type *make_type(int base);
-Type *make_fn_type(int nargs, Type **args, Type *ret);
+Type *make_fn_type(int nargs, TypeList *args, Type *ret);
 StructType *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types);
 Type *find_struct_type(char *name);
 StructType *get_struct_type(int id);
 int var_size(Type *t);
 int add_binding(Type *t, Type *b);
 TypeList *reverse_typelist(TypeList *list);
+TypeList *typelist_append(TypeList *list, Type *t);
 
 #endif
