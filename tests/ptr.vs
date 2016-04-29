@@ -1,7 +1,7 @@
-struct list {
+type list : struct {
     name:string;
     next:^list;
-}
+};
 fn prepend(n:string, to:^list):^list {
     // maybe allow 'hold l:list;' for shorthand declaration of structs
     l:list;

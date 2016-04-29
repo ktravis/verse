@@ -6,6 +6,7 @@
 
 enum {
     INT_T = 1,
+    UINT_T,
     BOOL_T,
     STRING_T,
     VOID_T,
@@ -15,25 +16,35 @@ enum {
     BASEPTR_T,
     PTR_T,
     ARRAY_T,
-    DYNARRAY_T
+    DYNARRAY_T,
+    DERIVED_T
 };
 
 typedef struct TypeList TypeList;
 
 typedef struct Type {
+    char *name;
+
+    int named;
     int base; // string, int, func, void
     int held;
-    // for functions
-    int nargs;
-    //int binds;
-    TypeList *args;
-    struct Type *ret;
-    // for structs
-    int struct_id;
-    //
-    struct Type *inner;
     int size;
-
+    // for structs / derived
+    int id;
+    union {
+        struct {
+            // for functions
+            int nargs;
+            TypeList *args;
+            struct Type *ret;
+        };
+        struct Type *inner;
+        struct {
+            int nmembers;
+            char **member_names;
+            struct Type **member_types;
+        };
+    };
     TypeList *bindings;
     int offset;
     int bindings_id;
@@ -44,24 +55,20 @@ typedef struct TypeList {
     struct TypeList *next;
 } TypeList;
 
-typedef struct StructType {
-    char *name;
-    int nmembers;
-    char **member_names;
-    Type **member_types;
-    struct StructType *next;
-    int id;
-} StructType;
-
-char *type_as_str(Type *t);
-Type *make_type(int base);
+//char *type_as_str(Type *t);
+Type *make_type(char *name, int base, int size);
+Type *make_ptr_type(Type *inner);
 Type *make_fn_type(int nargs, TypeList *args, Type *ret);
-StructType *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types);
-Type *find_struct_type(char *name);
-StructType *get_struct_type(int id);
-int var_size(Type *t);
+Type *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types);
+Type *find_type(int id);
+Type *find_type_by_name(char *name);
+//Type *find_struct_type(char *name);
+//Type *get_struct_type(int id);
+//int var_size(Type *t);
 int add_binding(Type *t, Type *b);
 TypeList *reverse_typelist(TypeList *list);
 TypeList *typelist_append(TypeList *list, Type *t);
+Type *define_type(Type *t);
+void remove_type(int id);
 
 #endif

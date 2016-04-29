@@ -1,8 +1,8 @@
-struct wut {
+type wut : struct {
     x:int;
     y:string;
     z:fn(int,int):int;
-}
+};
 fn check(x:wut) {
     print_str("within check: " + x.y + " " + itoa(x.x) + "\n");
     x.y = x.y + "lol";

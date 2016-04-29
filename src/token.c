@@ -104,13 +104,19 @@ Tok *next_token() {
     } else if (c == ',') {
         return make_token(TOK_COMMA);
     } else if (c == '.') {
-        /*return make_token(TOK_DOT);*/
         Tok *t = make_token(TOK_OP);
         t->op = OP_DOT;
         return t;
     } else if (c == ';') {
         return make_token(TOK_SEMI);
     } else if (c == ':') {
+        int d = getc(stdin);
+        if (d == ':') {
+            Tok *t = make_token(TOK_OP);
+            t->op = OP_CAST;
+            return t;
+        }
+        ungetc(d, stdin);
         return make_token(TOK_COLON);
     } else if (c == '^') {
         return make_token(TOK_CARET);
@@ -260,6 +266,8 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_WHILE);
     } else if (!strcmp(buf, "extern")) {
         return make_token(TOK_EXTERN);
+    } else if (!strcmp(buf, "type")) {
+        return make_token(TOK_TYPE);
     } else if (!strcmp(buf, "struct")) {
         return make_token(TOK_STRUCT);
     } else if (!strcmp(buf, "hold")) {
@@ -297,14 +305,14 @@ Tok *read_identifier(char c) {
     Tok *t = check_reserved(buf);
     if (t == NULL) {
         t = malloc(sizeof(Tok));
-        int tid = type_id(buf);
-        if (tid) {
-            t->type = TOK_TYPE;
-            t->tval = tid;
-        } else {
+        /*int tid = type_id(buf);*/
+        /*if (tid) {*/
+            /*t->type = TOK_TYPE;*/
+            /*t->tval = tid;*/
+        /*} else {*/
             t->type = TOK_ID;
             t->sval = buf;
-        }
+        /*}*/
     }
     return t;
 }
@@ -353,10 +361,12 @@ int priority_of(Tok *t) {
             return 10;
         case OP_NOT:
             return 11;
+        case OP_CAST:
+            return 12; // TODO this priority might be wrong
         case OP_DOT:
-            return 12;
-        case OP_ADDR: case OP_AT:
             return 13;
+        case OP_ADDR: case OP_AT:
+            return 14;
         default:
             return -1;
         }
@@ -409,7 +419,9 @@ const char *to_string(Tok *t) {
     case TOK_STRUCT:
         return "struct";
     case TOK_TYPE:
-        return type_as_str(make_type(t->tval));
+        return "type";
+    /*case TOK_TYPE:*/
+        /*return type_as_str(make_type(t->tval));*/
     case TOK_HOLD:
         return "hold";
     case TOK_RELEASE:
@@ -500,6 +512,7 @@ const char *op_to_str(int op) {
     case OP_DOT: return ".";
     case OP_ADDR: return "^";
     case OP_AT: return "@";
+    case OP_CAST: return "::";
     default:
         return "BAD OP";
     }

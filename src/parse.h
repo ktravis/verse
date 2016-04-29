@@ -19,9 +19,11 @@ enum {
     AST_BINOP,
     AST_UOP,
     AST_IDENTIFIER,
+    AST_COPY,
     AST_TEMP_VAR,
     AST_RELEASE,
     AST_DECL,
+    AST_TYPE,
     AST_FUNC_DECL,
     AST_ANON_FUNC_DECL,
     AST_EXTERN_FUNC_DECL,
@@ -29,14 +31,15 @@ enum {
     AST_CONDITIONAL,
     AST_SCOPE,
     AST_RETURN,
-    AST_STRUCT_DECL,
+    AST_TYPE_DECL,
     AST_BLOCK,
     AST_WHILE,
     AST_BREAK,
     AST_CONTINUE,
     AST_HOLD,
     AST_BIND,
-    AST_STRUCT
+    AST_STRUCT,
+    AST_CAST,
 };
 
 enum {
@@ -99,6 +102,11 @@ typedef struct Ast {
             struct Ast *left;
             struct Ast *right;
         };
+        // cast
+        struct {
+            struct Ast *cast_left;
+            Type *cast_type;
+        };
         // dot
         struct {
             struct Ast *dot_left;
@@ -136,16 +144,18 @@ typedef struct Ast {
             struct Ast *if_body;
             struct Ast *else_body;
         };
-        // struct decl
+        // type decl
         struct {
-            char *struct_name;
-            Type *struct_type;
+            char *type_name;
+            Type *target_type;
         };
         // temp var
         struct {
             Var *tmpvar;
             struct Ast *expr;
         };
+        // copy
+        struct Ast *copy_expr;
         // return
         struct {
             struct Ast *fn_scope;
@@ -163,7 +173,7 @@ typedef struct Ast {
         // struct literal
         struct {
             char *struct_lit_name;
-            StructType *struct_lit_type;
+            Type *struct_lit_type;
             int nmembers;
             char **member_names;
             struct Ast **member_exprs;
@@ -190,10 +200,12 @@ Var *find_var(char *name, Ast *scope);
 void print_ast(Ast *ast);
 Type *var_type(Ast *ast);
 int is_dynamic(Type *t);
+int check_type(Type *a, Type *b);
+int can_cast(Type *from, Type *to);
 
 Ast *find_or_make_string(char *str);
 AstList *get_global_funcs();
-AstList *get_global_structs();
+TypeList *get_global_structs();
 Ast *generate_ast();
 Ast *parse_semantics(Ast *ast, Ast *scope);
 Var *get_ast_var(Ast *ast);
@@ -212,6 +224,7 @@ Ast *parse_statement(Tok *t, Ast *scope);
 Ast *parse_block(Ast *scope, int bracketed);
 Ast *parse_scope(Ast *parent);
 Ast *parse_conditional(Ast *scope);
+Type *parse_struct_type(Ast *scope);
 
 VarList *get_global_vars();
 AstList *reverse_astlist();
@@ -221,5 +234,6 @@ AstList *get_binding_exprs(int id);
 void add_binding_expr(int id, Ast *expr);
 
 void init_builtins();
+void init_types();
 
 #endif

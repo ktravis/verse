@@ -38,7 +38,7 @@ enum {
     TOK_RELEASE,
     TOK_WHILE,
     TOK_BREAK,
-    TOK_CONTINUE
+    TOK_CONTINUE,
 };
 
 enum {
@@ -61,14 +61,15 @@ enum {
     OP_LT,
     OP_LTE,
     OP_ADDR,
-    OP_AT
+    OP_AT,
+    OP_CAST
 };
 
 typedef struct Tok {
     int type;
     union {
         int ival;
-        int tval;
+        //int tval;
         char *sval;
         int op;
     };
