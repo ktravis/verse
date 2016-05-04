@@ -78,7 +78,7 @@ Tok *next_token() {
         return NULL;
     }
     if (isdigit(c)) {
-        return read_integer(c);
+        return read_number(c);
     } else if (isalpha(c) || c == '_') {
         return read_identifier(c);
     } else if (c == '\"' || c == '\'') {
@@ -207,11 +207,36 @@ void unget_token(Tok *tok) {
     last = tok;
 }
 
-Tok *read_integer(char c) {
+double read_decimal(char c) {
+    double d = 0;
+    double n = 10;
+
+    for (;;) {
+        if (!isdigit(c)) {
+            ungetc(c, stdin);
+            break;
+        }
+        d += (c - '0') / n;
+        n *= 10;
+        c = getc(stdin);
+    }
+    return d;
+}
+
+Tok *read_number(char c) {
     int n = c - '0';
     for (;;) {
         char c = getc(stdin);
         if (!isdigit(c)) {
+            if (c == '.') {
+                Tok *t = make_token(TOK_FLOAT);
+                c = getc(stdin);
+                if (!isdigit(c)) {
+                    error(line, "Unexpected non-numeric character '%c' while reading float.", c);
+                }
+                t->fval = n + read_decimal(c);
+                return t;
+            }
             ungetc(c, stdin);
             break;
         }
@@ -304,15 +329,8 @@ Tok *read_identifier(char c) {
     buf[len] = 0;
     Tok *t = check_reserved(buf);
     if (t == NULL) {
-        t = malloc(sizeof(Tok));
-        /*int tid = type_id(buf);*/
-        /*if (tid) {*/
-            /*t->type = TOK_TYPE;*/
-            /*t->tval = tid;*/
-        /*} else {*/
-            t->type = TOK_ID;
-            t->sval = buf;
-        /*}*/
+        t = make_token(TOK_ID);
+        t->sval = buf;
     }
     return t;
 }
@@ -330,6 +348,18 @@ int type_id(char *buf) {
         return AUTO_T;
     } else if (!strcmp(buf, "ptr")) {
         return BASEPTR_T;
+    }
+    return 0;
+}
+
+int valid_unary_op(int op) {
+    switch (op) {
+    case OP_NOT:
+    case OP_PLUS:
+    case OP_MINUS:
+    case OP_ADDR:
+    case OP_AT:
+        return 1;
     }
     return 0;
 }

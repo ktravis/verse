@@ -1,12 +1,15 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+#include <limits.h>
+#include <float.h>
 #include <stdlib.h>
 #include <string.h>
 
 enum {
     INT_T = 1,
     UINT_T,
+    FLOAT_T,
     BOOL_T,
     STRING_T,
     VOID_T,
@@ -17,7 +20,7 @@ enum {
     PTR_T,
     ARRAY_T,
     DYNARRAY_T,
-    DERIVED_T
+    //DERIVED_T
 };
 
 typedef struct TypeList TypeList;
@@ -55,17 +58,30 @@ typedef struct TypeList {
     struct TypeList *next;
 } TypeList;
 
-//char *type_as_str(Type *t);
+
+Type *base_type(int t);
+
 Type *make_type(char *name, int base, int size);
 Type *make_ptr_type(Type *inner);
 Type *make_fn_type(int nargs, TypeList *args, Type *ret);
 Type *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types);
 Type *find_type(int id);
 Type *find_type_by_name(char *name);
-//Type *find_struct_type(char *name);
-//Type *get_struct_type(int id);
-//int var_size(Type *t);
+
 int add_binding(Type *t, Type *b);
+
+int can_cast(Type *from, Type *to);
+int is_numeric(Type *t);
+int is_dynamic(Type *t);
+int check_type(Type *a, Type *b);
+int type_equality_comparable(Type *a, Type *b);
+
+int precision_loss_uint(Type *t, unsigned long ival);
+int precision_loss_int(Type *t, long ival);
+int precision_loss_float(Type *t, double ival);
+
+Type *promote_number_type(Type *a, Type *b);
+
 TypeList *reverse_typelist(TypeList *list);
 TypeList *typelist_append(TypeList *list, Type *t);
 Type *define_type(Type *t);

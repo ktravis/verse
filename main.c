@@ -87,51 +87,56 @@ void emit_dot_op(Ast *ast) {
 }
 
 void emit_uop(Ast *ast) {
-    if (ast->op == OP_NOT) {
-        printf("!");
-    } else if (ast->op == OP_AT) {
-        printf("*");
-    } else if (ast->op == OP_ADDR) {
-        printf("&");
-    } else {
+    switch (ast->op) {
+    case OP_NOT:
+        printf("!"); break;
+    case OP_ADDR:
+        printf("&"); break;
+    case OP_AT:
+        printf("*"); break;
+    case OP_MINUS:
+        printf("-"); break;
+    case OP_PLUS:
+        printf("+"); break;
+    default:
         error(ast->line,"Unkown unary operator '%s' (%s).", op_to_str(ast->op), ast->op);
     }
     compile(ast->right);
 }
 
-void emit_binop(Ast *ast) {
-    if (ast->op == OP_ASSIGN) {
-        if (is_dynamic(var_type(ast->left))) {
-            if (ast->left->type == AST_DOT) {
+void emit_assignment(Ast *ast) {
+    if (is_dynamic(var_type(ast->left))) {
+        if (ast->left->type == AST_DOT) {
+            compile(ast->right);
+            printf(";\n");
+            indent();
+            printf("SWAP(");
+            compile(ast->left);
+            printf(",_tmp%d)", ast->right->tmpvar->id);
+        } else {
+            Var *l = get_ast_var(ast->left);
+            if (l->initialized) {
                 compile(ast->right);
                 printf(";\n");
                 indent();
-                printf("SWAP(");
-                compile(ast->left);
-                printf(",_tmp%d)", ast->right->tmpvar->id);
+                printf("SWAP(_vs_%s,_tmp%d)", l->name, ast->right->tmpvar->id);
             } else {
-                Var *l = get_ast_var(ast->left);
-                if (l->initialized) {
-                    compile(ast->right);
-                    printf(";\n");
-                    indent();
-                    printf("SWAP(_vs_%s,_tmp%d)", l->name, ast->right->tmpvar->id);
-                } else {
-                    printf("_vs_%s = ", l->name);
-                    compile(ast->right);
-                    l->initialized = 1;
-                }
+                printf("_vs_%s = ", l->name);
+                compile(ast->right);
+                l->initialized = 1;
             }
-        } else {
-            compile(ast->left);
-            printf(" = ");
-            compile(ast->right);
         }
-        if (ast->right->type == AST_TEMP_VAR) {
-            ast->right->tmpvar->consumed = 1;
-        }
-        return;
+    } else {
+        compile(ast->left);
+        printf(" = ");
+        compile(ast->right);
     }
+    if (ast->right->type == AST_TEMP_VAR) {
+        ast->right->tmpvar->consumed = 1;
+    }
+}
+
+void emit_binop(Ast *ast) {
     if (is_comparison(ast->op)) {
         emit_comparison(ast);
         return;
@@ -223,9 +228,18 @@ void emit_tmpvar(Ast *ast) {
 void emit_type(Type *type) {
     switch (type->base) {
     case UINT_T:
-        printf("unsigned ");
+        printf("u");
     case INT_T:
-        printf("int ");
+        printf("int%d_t ", type->size * 8);
+        break;
+    case FLOAT_T:
+        if (type->size == 4) { // TODO double-check these are always the right size
+            printf("float ");
+        } else if (type->size == 8) {
+            printf("double ");
+        } else {
+            error(-1, "Cannot compile floating-point type of size %d.", type->size);
+        }
         break;
     case BOOL_T:
         printf("unsigned char ");
@@ -279,8 +293,10 @@ void emit_decl(Ast *ast) {
                 printf("_init_%d(&_vs_%s)", ast->decl_var->type->id, ast->decl_var->name);
             }
             ast->decl_var->initialized = 1;
-        } else if (ast->decl_var->type->base == BASEPTR_T) {
+        } else if (ast->decl_var->type->base == BASEPTR_T || ast->decl_var->type->base == PTR_T)  {
             printf(" = NULL");
+        } else if (is_numeric(ast->decl_var->type)) {
+            printf(" = 0");
         }
     } else {
         printf(" = ");
@@ -403,10 +419,13 @@ void emit_struct_decl(Type *st) {
 void compile(Ast *ast) {
     switch (ast->type) {
     case AST_INTEGER:
-        printf("%d", ast->ival);
+        printf("%ld", ast->ival);
+        break;
+    case AST_FLOAT: // TODO this is truncated
+        printf("%F", ast->fval);
         break;
     case AST_BOOL:
-        printf("%d", ast->ival);
+        printf("%d", (unsigned char)ast->ival);
         break;
     case AST_STRING:
         printf("init_string(\"");
@@ -437,13 +456,25 @@ void compile(Ast *ast) {
     case AST_UOP:
         emit_uop(ast);
         break;
+    case AST_ASSIGN:
+        emit_assignment(ast);
+        break;
     case AST_BINOP:
         emit_binop(ast);
         break;
     case AST_CAST:
+        if (ast->cast_type->base == STRUCT_T) {
+            printf("*");
+        }
         printf("((");
         emit_type(ast->cast_type);
+        if (ast->cast_type->base == STRUCT_T) {
+            printf("*");
+        }
         printf(")");
+        if (ast->cast_type->base == STRUCT_T) {
+            printf("&");
+        }
         compile(ast->cast_left);
         printf(")");
         break;

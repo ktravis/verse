@@ -5,7 +5,6 @@
     current_fn_scope = (x);
 #define POP_FN_SCOPE() current_fn_scope = __old_fn_scope;
 
-static int last_var_id = 0;
 static int last_tmp_fn_id = 0;
 static VarList *global_vars = NULL;
 static VarList *global_fn_vars = NULL;
@@ -19,76 +18,6 @@ static int loop_state = 0;
 static int in_decl = 0;
 static Ast *current_fn_scope = NULL;
 
-static Type *auto_type = NULL;
-static Type *void_type = NULL;
-static Type *int_type = NULL;
-static Type *uint_type = NULL;
-static Type *bool_type = NULL;
-static Type *string_type = NULL;
-static Type *baseptr_type = NULL;
-
-VarList *varlist_append(VarList *list, Var *v) {
-    VarList *vl = malloc(sizeof(VarList));
-    vl->item = v;
-    vl->next = list;
-    return vl;
-}
-
-VarList *varlist_remove(VarList *list, char *name) {
-    if (list != NULL) {
-        if (!strcmp(list->item->name, name)) {
-            return list->next;
-        }
-        VarList *curr = NULL;
-        VarList *last = list;
-        while (last->next != NULL) {
-            curr = last->next;
-            if (!strcmp(curr->item->name, name)) {
-                last->next = curr->next;
-                break;
-            }
-            last = curr;
-        }
-    }
-    return list;
-}
-
-Var *varlist_find(VarList *list, char *name) {
-    Var *v = NULL;
-    while (list != NULL) {
-        if (!strcmp(list->item->name, name)) {
-            v = list->item;
-            break;
-        }
-        list = list->next;
-    }
-    return v;
-}
-
-VarList *reverse_varlist(VarList *list) {
-    VarList *tail = list;
-    if (tail == NULL) {
-        return NULL;
-    }
-    VarList *head = tail;
-    VarList *tmp = head->next;
-    head->next = NULL;
-    while (tmp != NULL) {
-        tail = head;
-        head = tmp;
-        tmp = tmp->next;
-        head->next = tail;
-    }
-    return head;
-}
-
-AstList *astlist_append(AstList *list, Ast *ast) {
-    AstList *l = malloc(sizeof(AstList));
-    l->item = ast;
-    l->next = list;
-    return l;
-}
-
 void print_locals(Ast *scope) {
     VarList *v = scope->locals;
     printf("locals: ");
@@ -99,36 +28,15 @@ void print_locals(Ast *scope) {
     printf("\n");
 }
 
-Var *make_var(char *name, Type *type) {
+Var *make_temp_var(Type *type, Ast *scope) {
     Var *var = malloc(sizeof(Var));
-    var->name = malloc(strlen(name)+1);
-    strcpy(var->name, name);
-    var->id = last_var_id++;
+    var->name = "";
     var->type = type;
-    var->temp = 0;
+    var->id = new_var_id();
+    var->temp = 1;
     var->consumed = 0;
-    var->initialized = 0;
-    if (type->base == STRUCT_T) {
-        var->initialized = 1;
-        var->members = malloc(sizeof(Var*)*type->nmembers);
-        for (int i = 0; i < type->nmembers; i++) {
-            int l = strlen(name)+strlen(type->member_names[i])+1;
-            char *member_name;
-            if (type->held) {
-                member_name = malloc((l+2)*sizeof(char));
-                sprintf(member_name, "%s->%s", name, type->member_names[i]);
-                member_name[l+1] = 0;
-            } else {
-                member_name = malloc((l+1)*sizeof(char));
-                sprintf(member_name, "%s.%s", name, type->member_names[i]);
-                member_name[l] = 0;
-            }
-            var->members[i] = make_var(member_name, type->member_types[i]); // TODO
-            var->members[i]->initialized = 1; // maybe wrong?
-        }
-    } else {
-        var->members = NULL;
-    }
+    var->initialized = (type->base == FN_T);
+    attach_var(var, scope);
     return var;
 }
 
@@ -142,31 +50,6 @@ void detach_var(Var *var, Ast *scope) {
 
 void release_var(Var *var, Ast *scope) {
     scope->locals = varlist_remove(scope->locals, var->name);
-}
-
-Ast *ast_alloc(int type) {
-    Ast *ast = malloc(sizeof(Ast));
-    ast->type = type;
-    ast->line = lineno();
-    return ast;
-}
-
-Ast *make_ast_copy(Ast *ast) {
-    Ast *cp = ast_alloc(AST_COPY);
-    cp->copy_expr = ast;
-    return cp;
-}
-
-Var *make_temp_var(Type *type, Ast *scope) {
-    Var *var = malloc(sizeof(Var));
-    var->name = "";
-    var->type = type;
-    var->id = last_var_id++;
-    var->temp = 1;
-    var->consumed = 0;
-    var->initialized = (type->base == FN_T);
-    attach_var(var, scope);
-    return var;
 }
 
 Var *find_var(char *name, Ast *scope) {
@@ -187,306 +70,6 @@ Var *find_local_var(char *name, Ast *scope) {
     return varlist_find(scope->locals, name);
 }
 
-Type *var_type(Ast *ast) {
-    switch (ast->type) {
-    case AST_STRING:
-        return string_type;
-    case AST_INTEGER:
-        return int_type;
-    case AST_BOOL:
-        return bool_type;
-    case AST_STRUCT:
-        return find_type_by_name(ast->struct_lit_name); // TODO just save this
-    case AST_IDENTIFIER:
-        return ast->var->type;
-    case AST_CAST:
-        return ast->cast_type;
-    case AST_DECL:
-        return ast->decl_var->type;
-    case AST_CALL:
-        return var_type(ast->fn)->ret;
-    case AST_ANON_FUNC_DECL:
-        return ast->fn_decl_var->type;
-    case AST_BIND:
-        return var_type(ast->bind_expr);
-    case AST_UOP:
-        if (ast->op == OP_NOT) {
-            return bool_type;
-        } else if (ast->op == OP_ADDR) {
-            return make_ptr_type(var_type(ast->right));
-        } else if (ast->op == OP_AT) {
-            return var_type(ast->right)->inner;
-        } else {
-            error(ast->line, "don't know how to infer vartype of operator '%s' (%d).", op_to_str(ast->op), ast->op);
-        }
-        break;
-    case AST_BINOP:
-        if (is_comparison(ast->op)) {
-            return bool_type;
-        }
-        return var_type(ast->left);
-    case AST_DOT: {
-        Type *t = var_type(ast->dot_left);
-        if (t->base == PTR_T) {
-            t = t->inner;
-        }
-        for (int i = 0; i < t->nmembers; i++) {
-            if (!strcmp(ast->member_name, t->member_names[i])) {
-                return t->member_types[i];
-            }
-        }
-        error(ast->line, "No member named '%s' in struct '%s'.", ast->member_name, t->name);
-    }
-    case AST_TEMP_VAR:
-        return ast->tmpvar->type;
-    case AST_COPY:
-        return var_type(ast->copy_expr);
-    case AST_HOLD: {
-        return ast->tmpvar->type;
-    }
-    default:
-        error(ast->line, "don't know how to infer vartype (%d)", ast->type);
-    }
-    return void_type;
-}
-
-int can_cast(Type *from, Type *to) {
-    switch (from->base) {
-    case BASEPTR_T:
-        return (to->base == PTR_T || to->base == BASEPTR_T);
-    case PTR_T:
-        return to->base == BASEPTR_T || check_type(from->inner, to->inner);
-    case FN_T:
-        if (from->nargs == to->nargs && check_type(from->ret, to->ret)) {
-            TypeList *from_args = from->args;
-            TypeList *to_args = to->args;
-            while (from_args != NULL) {
-                if (!check_type(from_args->item, to_args->item)) {
-                    return 0;
-                }
-                from_args = from_args->next;
-                to_args = to_args->next;
-            }
-            return 1;
-        }
-        return 0;
-    case STRUCT_T:
-        for (int i = 0; i < to->nmembers; i++) {
-            if (!check_type(from->member_types[i], to->member_types[i])) {
-                return 0;
-            }
-        }
-        return 1;
-    default:
-        return from->base == to->base && from->size <= to->size;
-    }
-    return 0;
-}
-
-int check_type(Type *a, Type *b) {
-    if (a->base == BASEPTR_T) {
-        return (b->base == PTR_T || b->base == BASEPTR_T);
-    } else if (b->base == BASEPTR_T) {
-        return (a->base == PTR_T);
-    }
-    if (a->named || b->named) {
-        return a->id == b->id;
-    }
-    if (a->base == b->base) {
-        if (a->base == FN_T) {
-            if (a->nargs == b->nargs && check_type(a->ret, b->ret)) {
-                TypeList *a_args = a->args;
-                TypeList *b_args = b->args;
-                while (a_args != NULL) {
-                    if (!check_type(a_args->item, b_args->item)) {
-                        return 0;
-                    }
-                    a_args = a_args->next;
-                    b_args = b_args->next;
-                }
-                return 1;
-            }
-            return 0;
-        } else if (a->base == STRUCT_T) {
-            if (a->nmembers != b->nmembers) {
-                return 0;
-            }
-            for (int i = 0; i < a->nmembers; i++) {
-                if (!check_type(a->member_types[i], b->member_types[i])) {
-                    return 0;
-                }
-            }
-            return 1;
-        } else if (a->base == PTR_T) {
-            return check_type(a->inner, b->inner);
-        }
-        return 1;
-    }
-    return 0;
-}
-
-int is_dynamic(Type *t) {
-    if (t->base == STRUCT_T) {
-        for (int i = 0; i < t->nmembers; i++) {
-            if (is_dynamic(t->member_types[i])) {
-                return 1;
-            }
-        }
-        return 0;
-    }
-    return t->base == STRING_T || (t->base == FN_T && t->bindings != NULL);
-}
-
-int is_literal(Ast *ast) {
-    switch (ast->type) {
-    case AST_STRING:
-    case AST_INTEGER:
-    case AST_BOOL:
-    case AST_STRUCT:
-    case AST_ANON_FUNC_DECL:
-        return 1;
-    case AST_TEMP_VAR:
-        return is_literal(ast->expr);
-    }
-    return 0;
-}
-
-void print_ast(Ast *ast) {
-    switch (ast->type) {
-    case AST_INTEGER:
-        printf("%d", ast->ival);
-        break;
-    case AST_BOOL:
-        printf("%s", ast->ival == 1 ? "true" : "false");
-        break;
-    case AST_STRING:
-        printf("\"");
-        print_quoted_string(ast->sval);
-        printf("\"");
-        break;
-    case AST_DOT:
-        print_ast(ast->dot_left);
-        printf(".%s", ast->member_name);
-        break;
-    case AST_UOP:
-        printf("(%s ", op_to_str(ast->op));
-        print_ast(ast->right);
-        printf(")");
-        break;
-    case AST_BINOP:
-        printf("(%s ", op_to_str(ast->op));
-        print_ast(ast->left);
-        printf(" ");
-        print_ast(ast->right);
-        printf(")");
-        break;
-    case AST_TEMP_VAR:
-        printf("(tmp ");
-        print_ast(ast->expr);
-        printf(")");
-        break;
-    case AST_IDENTIFIER:
-        printf("%s", ast->varname);
-        break;
-    case AST_DECL:
-        printf("(decl %s %s", ast->decl_var->name, ast->decl_var->type->name);
-        if (ast->init != NULL) {
-            printf(" ");
-            print_ast(ast->init);
-        }
-        printf(")");
-        break;
-    case AST_TYPE_DECL:
-        printf("(type %s %s)", ast->type_name, ast->target_type->name);
-        break;
-    case AST_EXTERN_FUNC_DECL:
-        printf("(extern fn %s)", ast->fn_decl_var->name);
-        break;
-    case AST_ANON_FUNC_DECL:
-    case AST_FUNC_DECL: {
-        VarList *args = ast->fn_decl_args;
-        printf("(fn ");
-        if (!ast->anon) {
-            printf("%s", ast->fn_decl_var->name);
-        }
-        printf("(");
-        while (args != NULL) {
-            printf("%s", args->item->name);
-            if (args->next != NULL) {
-                printf(",");
-            }
-            args = args->next;
-        }
-        printf("):%s ", ast->fn_decl_var->type->ret->name);
-        print_ast(ast->fn_body);
-        printf(")");
-        break;
-    }
-    case AST_RETURN:
-        printf("(return");
-        if (ast->ret_expr != NULL) {
-            printf(" ");
-            print_ast(ast->ret_expr);
-        }
-        printf(")");
-        break;
-    case AST_CALL: {
-        AstList *args = ast->args;
-        print_ast(ast->fn);
-        printf("(");
-        while (args != NULL) {
-            print_ast(args->item);
-            if (args->next != NULL) {
-                printf(",");
-            }
-            args = args->next;
-        }
-        printf(")");
-        break;
-    }
-    case AST_BLOCK:
-        for (int i = 0; i < ast->num_statements; i++) {
-            print_ast(ast->statements[i]);
-        }
-        break;
-    case AST_SCOPE:
-        printf("{ ");
-        print_ast(ast->body);
-        printf(" }");
-        break;
-    case AST_CONDITIONAL:
-        printf("(if ");
-        print_ast(ast->condition);
-        printf(" ");
-        print_ast(ast->if_body);
-        if (ast->else_body != NULL) {
-            printf(" ");
-            print_ast(ast->else_body);
-        }
-        printf(")");
-        break;
-    case AST_HOLD:
-        printf("(hold ");
-        print_ast(ast->expr);
-        printf(")");
-    default:
-        error(ast->line, "Cannot print this ast.");
-    }
-}
-
-Ast *make_ast_string(char *str) {
-    Ast *ast = ast_alloc(AST_STRING);
-    ast->sval = str;
-    return ast;
-}
-
-Ast *make_ast_tmpvar(Ast *ast, Var *tmpvar) {
-    Ast *tmp = ast_alloc(AST_TEMP_VAR);
-    tmp->tmpvar = tmpvar;
-    tmp->expr = ast;
-    return tmp;
-}
-
 Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
     ast->right = parse_semantics(ast->right, scope);
     switch (ast->op) {
@@ -505,8 +88,22 @@ Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
             error(ast->line, "Cannot take the address of a non-variable.");
         }
         break;
+    case OP_MINUS:
+    case OP_PLUS: {
+        Type *t = var_type(ast->right);
+        if (!is_numeric(t)) { // TODO try implicit cast to base type
+            error(ast->line, "Cannot perform '%s' operation on non-numeric type '%s'.", op_to_str(ast->op), t->name);
+        }
+        break;
+    }
     default:
         error(ast->line, "Unknown unary operator '%s' (%d).", op_to_str(ast->op), ast->op);
+    }
+    if (is_literal(ast->right)) {
+        if (ast->type == AST_TEMP_VAR) {
+            detach_var(ast->tmpvar, scope);
+        }
+        return eval_const_uop(ast);
     }
     if (is_dynamic(var_type(ast->right))) {
         if (ast->op == OP_AT) {
@@ -529,50 +126,36 @@ Ast *parse_dot_op_semantics(Ast *ast, Ast *scope) {
     return ast;
 }
 
-// TODO nameof function that prepends _vs_, _tmp, _fn_, etc
+Ast *parse_assignment_semantics(Ast *ast, Ast *scope) {
+    ast->left = parse_semantics(ast->left, scope);
+    ast->right = parse_semantics(ast->right, scope);
 
-Var *get_ast_var(Ast *ast) {
-    switch (ast->type) {
-    case AST_DOT: {
-        Var *v = get_ast_var(ast->dot_left);
-        Type *t = v->type;
-        for (int i = 0; i < t->nmembers; i++) {
-            if (!strcmp(t->member_names[i], ast->member_name)) {
-                return v->members[i];
-            }
-        }
-        error(ast->line, "Couldn't get member '%s' in struct '%s' (%d).", ast->member_name, t->name, t->id);
+    if (ast->left->type != AST_IDENTIFIER && ast->left->type != AST_DOT) {
+        error(ast->line, "LHS of assignment is not an lvalue.");
     }
-    case AST_IDENTIFIER:
-        return ast->var;
-    case AST_TEMP_VAR:
-        return ast->tmpvar;
-    case AST_DECL:
-        return ast->decl_var;
+    if (!check_type(var_type(ast->left), var_type(ast->right))) {
+        error(ast->line, "LHS of operation '%s' has type '%s', while RHS has type '%s'.",
+                op_to_str(ast->op), ast->left->var->type->name,
+                var_type(ast->right)->name);
     }
-    error(ast->line, "Can't get_ast_var(%d)", ast->type);
-    return NULL;
+    if (ast->right->type != AST_TEMP_VAR && !is_literal(ast->right)) {
+        ast->right = make_ast_tmpvar(ast->right, make_temp_var(var_type(ast->right), scope));
+    }
+    return ast;
 }
 
 Ast *parse_binop_semantics(Ast *ast, Ast *scope) {
-    int op = ast->op;
-    Ast *left = parse_semantics(ast->left, scope);
-    Ast *right = parse_semantics(ast->right, scope);
-    ast->left = left;
-    ast->right = right;
-    if (op == '=' && left->type != AST_IDENTIFIER && left->type != AST_DOT) {
-        error(ast->line, "LHS of assignment is not an identifier.");
-    }
-    if (!check_type(var_type(left), var_type(right))) {
-        error(ast->line, "LHS of operation '%s' has type '%s', while RHS has type '%s'.",
-                op_to_str(op), left->var->type->name,
-                var_type(right)->name);
-    }
-    switch (op) {
+    ast->left = parse_semantics(ast->left, scope);
+    ast->right = parse_semantics(ast->right, scope);
+
+    Type *lt = var_type(ast->left);
+    Type *rt = var_type(ast->right);
+
+    switch (ast->op) {
     case OP_PLUS:
-        if (var_type(left)->base != INT_T && var_type(left)->base != STRING_T) {
-            error(ast->line, "Operator '%s' is valid only for integer or string arguments, not for type '%s'.",
-                    op_to_str(op), var_type(left)->name);
+        if (!(is_numeric(lt) && is_numeric(rt)) && !(lt->base == STRING_T && rt->base == STRING_T)) {
+            error(ast->line, "Operator '%s' is valid only for numeric or string arguments, not for type '%s'.",
+                    op_to_str(ast->op), lt->name);
         }
         break;
     case OP_MINUS:
@@ -585,46 +168,47 @@ Ast *parse_binop_semantics(Ast *ast, Ast *scope) {
     case OP_GTE:
     case OP_LT:
     case OP_LTE:
-        if (var_type(left)->base != INT_T) {
-            error(ast->line, "Operator '%s' is not valid for non-integer arguments of type '%s'.",
-                    op_to_str(op), var_type(left)->name);
+        if (!is_numeric(lt)) {
+            error(ast->line, "LHS of operator '%s' has invalid non-numeric type '%s'.",
+                    op_to_str(ast->op), lt->name);
+        } else if (!is_numeric(rt)) {
+            error(ast->line, "RHS of operator '%s' has invalid non-numeric type '%s'.",
+                    op_to_str(ast->op), rt->name);
         }
         break;
     case OP_AND:
     case OP_OR:
-        if (var_type(left)->base != BOOL_T) {
+        if (lt->base != BOOL_T) {
             error(ast->line, "Operator '%s' is not valid for non-bool arguments of type '%s'.",
-                    op_to_str(op), var_type(left)->name);
+                    op_to_str(ast->op), lt->name);
         }
         break;
     case OP_EQUALS:
     case OP_NEQUALS:
+        if (!type_equality_comparable(lt, rt)) {
+            error(ast->line, "Cannot compare equality of non-comparable types '%s' and '%s'.", lt->name, rt->name);
+        }
         break;
     }
-    if (!is_comparison(ast->op) && is_dynamic(var_type(ast->left))) {
-        if (ast->op == OP_ASSIGN) {
-            if (ast->right->type != AST_TEMP_VAR && !is_literal(ast->right)) {
-                ast->right = make_ast_tmpvar(ast->right, make_temp_var(var_type(ast->right), scope));
-            }
-            /*get_ast_var(ast->left)->initialized = 1;*/
-        } else {
-            /*if (ast->left->type != AST_TEMP_VAR) {*/
-                /*ast->left = make_ast_tmpvar(ast->left, make_temp_var(var_type(ast->left), scope));*/
-            /*}*/
-            /*Ast *tmp = make_ast_tmpvar(ast, ast->left->tmpvar);*/
-            /*return tmp;*/
-            return make_ast_tmpvar(ast, make_temp_var(var_type(ast->left), scope));
+    if (is_literal(ast->left) && is_literal(ast->right)) {
+        Type *t = var_type(ast);
+        // TODO tmpvars are getting left behind when const string binops resolve
+        if (ast->left->type == AST_TEMP_VAR) {
+            detach_var(ast->left->tmpvar, scope);
         }
+        if (ast->right->type == AST_TEMP_VAR) {
+            detach_var(ast->right->tmpvar, scope);
+        }
+        ast = eval_const_binop(ast);
+        if (is_dynamic(t)) {
+            ast = make_ast_tmpvar(ast, make_temp_var(t, scope));
+        }
+        return ast;
+    }
+    if (!is_comparison(ast->op) && is_dynamic(lt)) {
+        return make_ast_tmpvar(ast, make_temp_var(lt, scope));
     }
     return ast;
-}
-
-Ast *make_ast_binop(int op, Ast *left, Ast *right) {
-    Ast *binop = ast_alloc(AST_BINOP);
-    binop->op = op;
-    binop->left = left;
-    binop->right = right;
-    return binop;
 }
 
 Ast *parse_arg_list(Ast *left, Ast *scope) {
@@ -650,12 +234,6 @@ Ast *parse_arg_list(Ast *left, Ast *scope) {
     func->args = reverse_astlist(func->args);
     func->nargs = n;
     return func; 
-}
-
-Ast *make_ast_decl(char *name, Type *type) {
-    Ast *ast = ast_alloc(AST_DECL);
-    ast->decl_var = make_var(name, type);
-    return ast;
 }
 
 Ast *parse_declaration(Tok *t, Ast *scope) {
@@ -688,7 +266,9 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope) {
             unget_token(t);
             return ast;
         } else if (t->type == TOK_OP) {
-            if (t->op == OP_DOT) {
+            if (t->op == OP_ASSIGN) {
+                ast = make_ast_assign(ast, parse_expression(next_token(), next_priority + 1, scope));
+            } else if (t->op == OP_DOT) {
                 Tok *next = expect(TOK_ID);
                 ast = make_ast_dot_op(ast, next->sval);
                 ast->type = AST_DOT;
@@ -774,7 +354,7 @@ Type *parse_type(Tok *t, Ast *scope) {
             args = reverse_typelist(args);
         }
         t = next_token();
-        Type *ret = void_type;
+        Type *ret = base_type(VOID_T);
         if (t->type == TOK_COLON) {
             ret = parse_type(next_token(), scope);
         } else {
@@ -817,7 +397,7 @@ Ast *parse_extern_func_decl(Ast *scope) {
     }
     arg_types = reverse_typelist(arg_types);
     t = next_token();
-    Type *ret = void_type;
+    Type *ret = base_type(VOID_T);
     if (t->type == TOK_COLON) {
         ret = parse_type(next_token(), scope);
     } else {
@@ -883,7 +463,7 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
     func->fn_decl_args = reverse_varlist(func->fn_decl_args);
     arg_types = reverse_typelist(arg_types);
     t = next_token();
-    Type *ret = void_type;
+    Type *ret = base_type(VOID_T);
     if (t->type == TOK_COLON) {
         ret = parse_type(next_token(), scope);
     } else if (t->type == TOK_LBRACE) {
@@ -1041,20 +621,6 @@ Ast *parse_statement(Tok *t, Ast *scope) {
     return ast;
 }
 
-Ast *make_ast_id(Var *var, char *name) {
-    Ast *id = ast_alloc(AST_IDENTIFIER);
-    id->var = NULL;
-    id->varname = name;
-    return id;
-}
-
-Ast *make_ast_dot_op(Ast *dot_left, char *member_name) {
-    Ast *ast = ast_alloc(AST_DOT);
-    ast->dot_left = dot_left;
-    ast->member_name = member_name;
-    return ast;
-}
-
 Ast *parse_hold(Ast *scope) {
     Tok *t = next_token();
     if (t == NULL) {
@@ -1117,11 +683,13 @@ Ast *parse_primary(Tok *t, Ast *scope) {
         ast->ival = t->ival;
         return ast;
     }
-    case TOK_BOOL: {
-        Ast *ast = ast_alloc(AST_BOOL);
-        ast->ival = t->ival;
+    case TOK_FLOAT: {
+        Ast *ast = ast_alloc(AST_FLOAT);
+        ast->fval = t->fval;
         return ast;
     }
+    case TOK_BOOL:
+        return make_ast_bool(t->ival);
     case TOK_STR:
         return make_ast_string(t->sval);
     case TOK_ID: {
@@ -1145,6 +713,16 @@ Ast *parse_primary(Tok *t, Ast *scope) {
     case TOK_CARET: {
         Ast *ast = ast_alloc(AST_UOP);
         ast->op = OP_ADDR;
+        ast->left = NULL;
+        ast->right = parse_expression(next_token(), priority_of(t), scope);
+        return ast;
+    }
+    case TOK_OP: {
+        if (!valid_unary_op(t->op)) {
+            error(lineno(), "'%s' is not a valid unary operator.", op_to_str(t->op));
+        }
+        Ast *ast = ast_alloc(AST_UOP);
+        ast->op = t->op;
         ast->left = NULL;
         ast->right = parse_expression(next_token(), priority_of(t), scope);
         return ast;
@@ -1244,20 +822,21 @@ Ast *parse_scope(Ast *parent) {
     scope->locals = NULL;
     scope->parent = parent;
     scope->body = parse_block(scope, parent == NULL ? 0 : 1);
-    /*scope->bindings = NULL;*/
-    /*scope->anon_funcs = NULL;*/
     return scope;
 }
 
 Ast *parse_semantics(Ast *ast, Ast *scope) {
     switch (ast->type) {
     case AST_INTEGER:
+    case AST_FLOAT:
     case AST_BOOL:
         break;
     case AST_STRING:
-        return make_ast_tmpvar(ast, make_temp_var(string_type, scope));
+        return make_ast_tmpvar(ast, make_temp_var(base_type(STRING_T), scope));
     case AST_DOT:
         return parse_dot_op_semantics(ast, scope);
+    case AST_ASSIGN:
+        return parse_assignment_semantics(ast, scope);
     case AST_BINOP:
         return parse_binop_semantics(ast, scope);
     case AST_UOP:
@@ -1348,9 +927,33 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             in_decl = 0;
             if (ast->decl_var->type->base == AUTO_T) {
                 ast->decl_var->type = var_type(init);
-            } else if (!check_type(ast->decl_var->type, var_type(init))) {
-                error(ast->line, "Can't initialize variable '%s' of type '%s' with value of type '%s'.",
-                        ast->decl_var->name, ast->decl_var->type->name, var_type(init)->name);
+            }
+            if (is_literal(init) && is_numeric(ast->decl_var->type)) {
+                int b = ast->decl_var->type->base;
+                if (init->type == AST_FLOAT && (b == UINT_T || b == INT_T)) {
+                    error(ast->line, "Cannot implicitly cast float literal '%f' to integer type '%s'.", init->fval, ast->decl_var->type->name);
+                }
+                if (b == UINT_T) {
+                    if (init->ival < 0) {
+                        error(ast->line, "Cannot assign negative integer literal '%d' to unsigned type '%s'.", init->ival, ast->decl_var->type->name);
+                    }
+                    if (precision_loss_uint(ast->decl_var->type, init->ival)) {
+                        error(ast->line, "Cannot assign value '%ld' to type '%s' without cast, loss of precision will occur.", init->ival, ast->decl_var->type->name);
+                    }
+                } else if (b == INT_T) {
+                    if (precision_loss_int(ast->decl_var->type, init->ival)) {
+                        error(ast->line, "Cannot assign value '%ld' to type '%s' without cast, loss of precision will occur.", init->ival, ast->decl_var->type->name);
+                    }
+                } else if (b == FLOAT_T) {
+                    if (precision_loss_float(ast->decl_var->type, init->type == AST_INTEGER ? init->ival : init->fval)) {
+                        error(ast->line, "Cannot assign value '%ld' to type '%s' without cast, loss of precision will occur.", init->fval, ast->decl_var->type->name);
+                    }
+                } else {
+                    error(-1, "wtf");
+                }
+            }
+            if (!check_type(ast->decl_var->type, var_type(init))) {
+                init = try_implicit_cast(ast->decl_var->type, init);
             }
             if (init->type != AST_TEMP_VAR && is_dynamic(var_type(init))) {
                 if (!is_literal(init)) {
@@ -1375,7 +978,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
                 Ast *id = ast_alloc(AST_IDENTIFIER);
                 id->varname = ast->decl_var->name;
                 id->var = ast->decl_var;
-                ast = make_ast_binop(OP_ASSIGN, id, ast->init);
+                ast = make_ast_assign(id, ast->init);
             }
         } else {
             attach_var(ast->decl_var, scope); // should this be after the init parsing?
@@ -1415,8 +1018,8 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         if (ast->type == AST_ANON_FUNC_DECL) {
             bindings_var = malloc(sizeof(Var));
             bindings_var->name = "";
-            bindings_var->type = baseptr_type;
-            bindings_var->id = last_var_id++;
+            bindings_var->type = base_type(BASEPTR_T);
+            bindings_var->id = new_var_id();
             bindings_var->temp = 1;
             bindings_var->consumed = 0;
             ast->fn_decl_var->type->bindings_id = bindings_var->id;
@@ -1424,6 +1027,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
 
         int prev = parser_state;
         parser_state = PARSE_FUNC;
+        // TODO need a check here for no return
         PUSH_FN_SCOPE(ast);
         ast->fn_body = parse_semantics(ast->fn_body, scope);
         POP_FN_SCOPE();
@@ -1453,7 +1057,11 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             arg = args->item;
             arg = parse_semantics(arg, scope);
             if (!check_type(var_type(arg), arg_types->item)) {
-                error(arg->line, "Incorrect argument to function, expected type '%s', and got '%s'.", arg_types->item->name, var_type(arg)->name);
+                if (is_literal(arg)) {
+                    arg = try_implicit_cast(arg_types->item, arg);
+                } else {
+                    error(arg->line, "Incorrect argument to function, expected type '%s', and got '%s'.", arg_types->item->name, var_type(arg)->name);
+                }
             }
             if (arg->type != AST_TEMP_VAR && var_type(arg)->base != STRUCT_T && is_dynamic(var_type(arg))) {
                 if (!is_literal(arg)) {
@@ -1513,7 +1121,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         Type *fn_ret_t = current_fn_scope->fn_decl_var->type->ret;
         Type *ret_t = NULL;
         if (ast->ret_expr == NULL) {
-            ret_t = void_type;
+            ret_t = base_type(VOID_T);
         } else {
             ast->ret_expr = parse_semantics(ast->ret_expr, scope);
             ret_t = var_type(ast->ret_expr);
@@ -1557,23 +1165,6 @@ TypeList *get_global_structs() {
     return reverse_typelist(global_struct_decls);
 }
 
-AstList *reverse_astlist(AstList *list) {
-    AstList *tail = list;
-    if (tail == NULL) {
-        return NULL;
-    }
-    AstList *head = tail;
-    AstList *tmp = head->next;
-    head->next = NULL;
-    while (tmp != NULL) {
-        tail = head;
-        head = tmp;
-        tmp = tmp->next;
-        head->next = tail;
-    }
-    return head;
-}
-
 VarList *get_global_vars() {
     return global_vars;
 }
@@ -1583,19 +1174,19 @@ VarList *get_global_bindings() {
 }
 
 void init_builtins() {
-    Var *v = make_var("assert", make_fn_type(1, typelist_append(NULL, bool_type), void_type));
+    Var *v = make_var("assert", make_fn_type(1, typelist_append(NULL, base_type(BOOL_T)), base_type(VOID_T)));
     builtin_vars = varlist_append(builtin_vars, v);
 
-    v = make_var("print_str", make_fn_type(1, typelist_append(NULL, string_type), void_type));
+    v = make_var("print_str", make_fn_type(1, typelist_append(NULL, base_type(STRING_T)), base_type(VOID_T)));
     builtin_vars = varlist_append(builtin_vars, v);
 
-    v = make_var("println", make_fn_type(1, typelist_append(NULL, string_type), void_type));
+    v = make_var("println", make_fn_type(1, typelist_append(NULL, base_type(STRING_T)), base_type(VOID_T)));
     builtin_vars = varlist_append(builtin_vars, v);
 
-    v = make_var("itoa", make_fn_type(1, typelist_append(NULL, int_type), string_type));
+    v = make_var("itoa", make_fn_type(1, typelist_append(NULL, base_type(INT_T)), base_type(STRING_T)));
     builtin_vars = varlist_append(builtin_vars, v);
 
-    v = make_var("validptr", make_fn_type(1, typelist_append(NULL, baseptr_type), bool_type));
+    v = make_var("validptr", make_fn_type(1, typelist_append(NULL, base_type(BASEPTR_T)), base_type(BOOL_T)));
     builtin_vars = varlist_append(builtin_vars, v);
 }
 
@@ -1624,25 +1215,4 @@ void add_binding_expr(int id, Ast *expr) {
     l->item = astlist_append(NULL, expr);
     l->next = binding_exprs;
     binding_exprs = l;
-}
-
-void init_types() {
-    auto_type = define_type(make_type("auto", AUTO_T, -1));
-    auto_type->named = 1;
-    void_type = define_type(make_type("void", VOID_T, 0));
-    void_type->named = 1;
-
-    int_type = define_type(make_type("int", INT_T, 4));
-    int_type->named = 1;
-    uint_type = define_type(make_type("uint", UINT_T, 4));
-    uint_type->named = 1;
-
-    bool_type = define_type(make_type("bool", BOOL_T, 1));
-    bool_type->named = 1;
-
-    string_type = define_type(make_type("string", STRING_T, 16)); // should be checked that non-pointer is used in bindings
-    string_type->named = 1;
-
-    baseptr_type = define_type(make_type("ptr", BASEPTR_T, 8)); // should be checked that non-pointer is used in bindings
-    baseptr_type->named = 1;
 }

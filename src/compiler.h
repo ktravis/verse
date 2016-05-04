@@ -6,11 +6,11 @@
 #include <stdlib.h>
 #include <strings.h>
 
+#include "ast.h"
+#include "var.h"
 #include "parse.h"
 #include "types.h"
 
-void emit(char *fmt, ...);
-void label(char *fmt, ...);
 void emit_data_section();
 void emit_free(Var *var);
 void emit_free_locals(Ast *scope);

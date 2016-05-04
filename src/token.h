@@ -11,12 +11,12 @@
 enum {
     TOK_STR,
     TOK_INT,
+    TOK_FLOAT,
     TOK_BOOL,
     TOK_COLON,
     TOK_SEMI,
     TOK_CARET,
     TOK_ID,
-    //TOK_DOT,
     TOK_FN,
     TOK_TYPE,
     TOK_OP,
@@ -69,7 +69,7 @@ typedef struct Tok {
     int type;
     union {
         int ival;
-        //int tval;
+        double fval;
         char *sval;
         int op;
     };
@@ -85,7 +85,8 @@ Tok *peek_token();
 
 void unget_token(Tok *tok);
 
-Tok *read_integer(char c);
+double read_decimal(char c);
+Tok *read_number(char c);
 Tok *read_string(char quote);
 Tok *read_identifier(char c);
 Tok *check_reserved(char *buf);
@@ -95,6 +96,7 @@ const char *to_string(Tok *t);
 const char *token_type(int type);
 const char *op_to_str(int op);
 int is_comparison(int op);
+int valid_unary_op(int op);
 
 Tok *expect(int type);
 
