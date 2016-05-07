@@ -95,6 +95,8 @@ Ast *eval_const_uop(Ast *ast) {
     return NULL;
 }
 
+// TODO static array .length is const!
+
 Ast *eval_const_binop(Ast *ast) {
     // Need to make sure types are checked prior to this
     if (ast->left->type == AST_FLOAT || ast->left->type == AST_INTEGER) {

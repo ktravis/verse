@@ -64,6 +64,13 @@ Type *var_type(Ast *ast) {
         if (t->base == PTR_T) {
             t = t->inner;
         }
+        if (t->base == ARRAY_T) {
+            if (!strcmp(ast->member_name, "length")) {
+                return base_type(INT_T);
+            } else { // data
+                return make_ptr_type(t->inner);
+            }
+        }
         for (int i = 0; i < t->nmembers; i++) {
             if (!strcmp(ast->member_name, t->member_names[i])) {
                 return t->member_types[i];
@@ -82,6 +89,12 @@ Type *var_type(Ast *ast) {
         error(ast->line, "don't know how to infer vartype (%d)", ast->type);
     }
     return base_type(VOID_T);
+}
+
+int is_lvalue(Ast *ast) {
+    return ast->type == AST_IDENTIFIER ||
+        ast->type == AST_DOT ||
+        (ast->type == AST_UOP && ast->op == OP_AT);
 }
 
 int is_literal(Ast *ast) {

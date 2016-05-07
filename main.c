@@ -78,11 +78,23 @@ void emit_string_binop(Ast *ast) {
 }
 
 void emit_dot_op(Ast *ast) {
-    compile(ast->dot_left);
-    if (var_type(ast->dot_left)->base == PTR_T || (ast->dot_left->type == AST_IDENTIFIER && ast->dot_left->var->type->held)) {
-        printf("->%s", ast->member_name);
+    Type *t = var_type(ast->dot_left);
+    if (t->base == ARRAY_T || (t->base == PTR_T && t->inner->base == ARRAY_T)) {
+        if (!strcmp(ast->member_name, "length")) {
+            printf("%ld", t->base == ARRAY_T ? t->length : t->inner->length);
+        } else if (!strcmp(ast->member_name, "data")) {
+            if (t->base == PTR_T) {
+                printf("*");
+            }
+            compile(ast->dot_left);
+        }
     } else {
-        printf(".%s", ast->member_name);
+        compile(ast->dot_left);
+        if (t->base == PTR_T) {// || (ast->dot_left->type == AST_IDENTIFIER && ast->dot_left->var->type->held)) {
+            printf("->%s", ast->member_name);
+        } else {
+            printf(".%s", ast->member_name);
+        }
     }
 }
 
@@ -219,6 +231,7 @@ void emit_tmpvar(Ast *ast) {
     if (ast->tmpvar->type->base == FN_T) {
         compile(ast->expr);
     } else {
+        ast->tmpvar->initialized = 1;
         printf("(_tmp%d = ", ast->tmpvar->id);
         compile(ast->expr);
         printf(")");
@@ -260,6 +273,9 @@ void emit_type(Type *type) {
         emit_type(type->inner);
         printf("*");
         break;
+    case ARRAY_T:
+        emit_type(type->inner);
+        break;
     case STRUCT_T: {
         if (type->named) {
             printf("struct _vs_%s ", type->name);
@@ -280,6 +296,10 @@ void emit_decl(Ast *ast) {
         emit_type(ast->decl_var->type);
         printf("_vs_%s", ast->decl_var->name);
     }
+    if (ast->decl_var->type->base == ARRAY_T) {
+        printf("[%ld]", ast->decl_var->type->length);
+    }
+    // TODO need to make tempvar for function arg of array type (to copy)
     if (ast->init == NULL) {
         if (ast->decl_var->type->base == STRING_T) {
             printf(" = (struct string_type){0}");
@@ -297,10 +317,20 @@ void emit_decl(Ast *ast) {
             printf(" = NULL");
         } else if (is_numeric(ast->decl_var->type)) {
             printf(" = 0");
+        } else if (ast->decl_var->type->base == ARRAY_T) {
+            printf(" = {0}");
         }
     } else {
-        printf(" = ");
-        compile(ast->init);
+        if (ast->decl_var->type->base == ARRAY_T) {
+            printf(";\n");
+            indent();
+            printf("memcpy(_vs_%s,", ast->decl_var->name);
+            compile(ast->init);
+            printf(",%ld)", ast->decl_var->type->length * ast->decl_var->type->inner->size);
+        } else {
+            printf(" = ");
+            compile(ast->init);
+        }
         if (ast->init->type == AST_TEMP_VAR) {
             ast->init->tmpvar->consumed = 1;
         }
@@ -314,6 +344,9 @@ void emit_func_decl(Ast *fn) {
     VarList *args = fn->fn_decl_args;
     while (args != NULL) {
         emit_type(args->item->type);
+        if (args->item->type->base == ARRAY_T) {
+            printf("*"); // We fill in the size at compile-time.
+        }
         printf("_vs_%s", args->item->name);
         if (args->next != NULL) {
             printf(",");
@@ -726,8 +759,6 @@ void emit_free_struct(char *name, Type *st, int is_ptr) {
             _indent++;
             indent();
             printf("free(%s%s%s.bytes);\n", name, sep, st->member_names[i]);
-            /*indent();*/
-            /*printf("free(%s%s%s);\n", name, sep, st->member_names[i]);*/
             _indent--;
             indent();
             printf("}\n");
@@ -782,13 +813,15 @@ void emit_free(Var *var) {
         break;
     }
     case STRING_T:
+        // TODO if tmpvar is only conditionally initialized this will be invalid
+        // while loop needs to be its own scope, otherwise using a string in
+        // a while loop will cause potentially massive leak as tmpvar pointer
+        // gets overwritten...
         if (var->temp) {
             indent();
             printf("if (_tmp%d.bytes != NULL) {\n", var->id); // maybe skip these
             indent();
             printf("    free(_tmp%d.bytes);\n", var->id);
-            /*indent();*/
-            /*printf("    free(_tmp%d);\n", var->id);*/
             indent();
             printf("}\n");
         } else {
@@ -796,8 +829,6 @@ void emit_free(Var *var) {
             printf("if (_vs_%s.bytes != NULL) {\n", var->name);
             indent();
             printf("    free(_vs_%s.bytes);\n", var->name);
-            /*indent();*/
-            /*printf("    free(_vs_%s);\n", var->name);*/
             indent();
             printf("}\n");
         }
@@ -857,13 +888,13 @@ void emit_free_bindings(int id, TypeList *bindings) {
 }
 
 void emit_free_locals(Ast *scope) {
-    while (scope->locals != NULL) {
-        Var *v = scope->locals->item;
-        scope->locals = scope->locals->next;
+    VarList *locals = scope->locals;
+    while (locals != NULL) {
+        Var *v = locals->item;
+        locals = locals->next;
         // TODO got to be a better way to handle this here
-        // TODO maybe remove the detach_var and check for temp?
         if (v->consumed || (v->type->base != FN_T && ((v->type->base == BASEPTR_T || v->type->base == PTR_T) ||
-                v->type->held || (!v->temp && !v->initialized) || (v->temp && v->consumed)))) {
+                v->type->held || !v->initialized || (v->temp && v->consumed)))) {
             continue;
         }
         emit_free(v);
@@ -871,7 +902,9 @@ void emit_free_locals(Ast *scope) {
 }
 
 void emit_scope_end(Ast *scope) {
-    emit_free_locals(scope);
+    if (!scope->has_return) {
+        emit_free_locals(scope);
+    }
     _indent--;
     indent();
     printf("}\n");

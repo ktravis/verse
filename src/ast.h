@@ -117,6 +117,8 @@ typedef struct Ast {
             VarList *locals;
             AstList *bindings;
             AstList *anon_funcs;
+            unsigned char has_return;
+            unsigned char is_function;
         };
         // conditional
         struct {
@@ -191,6 +193,7 @@ Var *get_ast_var(Ast *ast);
 AstList *astlist_append(AstList *list, Ast *ast);
 AstList *reverse_astlist();
 
+int is_lvalue(Ast *ast);
 int is_literal(Ast *ast);
 Ast *cast_literal(Type *t, Ast *ast);
 Ast *try_implicit_cast(Type *t, Ast *ast);

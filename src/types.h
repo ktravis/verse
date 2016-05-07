@@ -20,6 +20,7 @@ enum {
     PTR_T,
     ARRAY_T,
     DYNARRAY_T,
+    SLICE_T,
     //DERIVED_T
 };
 
@@ -32,6 +33,7 @@ typedef struct Type {
     int base; // string, int, func, void
     int held;
     int size;
+    long length;
     // for structs / derived
     int id;
     union {
@@ -63,6 +65,8 @@ Type *base_type(int t);
 
 Type *make_type(char *name, int base, int size);
 Type *make_ptr_type(Type *inner);
+Type *make_array_type(Type *inner, long length);
+Type *make_slice_type(Type *inner);
 Type *make_fn_type(int nargs, TypeList *args, Type *ret);
 Type *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types);
 Type *find_type(int id);

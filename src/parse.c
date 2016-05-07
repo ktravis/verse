@@ -54,6 +54,9 @@ void release_var(Var *var, Ast *scope) {
 
 Var *find_var(char *name, Ast *scope) {
     Var *v = find_local_var(name, scope);
+    if (v == NULL && !scope->is_function && scope->parent != NULL) {
+        v = find_var(name, scope->parent);
+    }
     if (v == NULL) {
         v = varlist_find(global_vars, name);
     }
@@ -78,7 +81,7 @@ Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
             error(ast->line, "Cannot perform logical negation on type '%s'.", var_type(ast->right)->name);
         }
         break;
-    case OP_AT:
+    case OP_AT: // TODO precedence is wrong, see @x.data
         if (var_type(ast->right)->base != PTR_T) {
             error(ast->line, "Cannot dereference a non-pointer type.");
         }
@@ -120,7 +123,11 @@ Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
 Ast *parse_dot_op_semantics(Ast *ast, Ast *scope) {
     ast->dot_left = parse_semantics(ast->dot_left, scope);
     Type *t = var_type(ast->dot_left);
-    if (t->base != STRUCT_T && !(t->base == PTR_T && t->inner->base == STRUCT_T)) {
+    if (t->base == ARRAY_T || (t->base == PTR_T && t->inner->base == STRUCT_T)) {
+        if (strcmp(ast->member_name, "length") && strcmp(ast->member_name, "data")) {
+            error(ast->line, "Cannot dot access member '%s' on array (only length or data).", ast->member_name);
+        }
+    } else if (t->base != STRUCT_T && !(t->base == PTR_T && t->inner->base == STRUCT_T)) {
         error(ast->line, "Cannot use dot operator on non-struct type '%s'.", var_type(ast->dot_left)->name);
     }
     return ast;
@@ -130,7 +137,7 @@ Ast *parse_assignment_semantics(Ast *ast, Ast *scope) {
     ast->left = parse_semantics(ast->left, scope);
     ast->right = parse_semantics(ast->right, scope);
 
-    if (ast->left->type != AST_IDENTIFIER && ast->left->type != AST_DOT) {
+    if (!is_lvalue(ast->left)) {
         error(ast->line, "LHS of assignment is not an lvalue.");
     }
     if (!check_type(var_type(ast->left), var_type(ast->right))) {
@@ -138,7 +145,7 @@ Ast *parse_assignment_semantics(Ast *ast, Ast *scope) {
                 op_to_str(ast->op), ast->left->var->type->name,
                 var_type(ast->right)->name);
     }
-    if (ast->right->type != AST_TEMP_VAR && !is_literal(ast->right)) {
+    if (ast->right->type != AST_TEMP_VAR && is_dynamic(var_type(ast->right)) && !is_literal(ast->right)) {
         ast->right = make_ast_tmpvar(ast->right, make_temp_var(var_type(ast->right), scope));
     }
     return ast;
@@ -317,6 +324,36 @@ Type *parse_type(Tok *t, Ast *scope) {
             expect(TOK_RPAREN);
         }
         return type;
+    } else if (t->type == TOK_LSQUARE) {
+        Type *type = NULL;
+        t = next_token();
+        long length = -1;
+        int slice = 0;
+        if (t == NULL) {
+            error(lineno(), "Unexpected EOF while parsing type.");
+        } else if (t->type != TOK_RSQUARE) {
+            if (t->type == TOK_INT) {
+                length = t->ival;
+            } else if (t->type == TOK_COLON) {
+                slice = 1;
+            } else {
+                error(lineno(), "Unexpected token '%s' while parsing type.", to_string(t));
+            }
+            expect(TOK_RSQUARE);
+        }
+        type = parse_type(next_token(), scope);
+        if (slice) {
+            type = make_slice_type(type);
+        } else {
+            type = make_array_type(type, length);
+        }
+        if (ptr) {
+            type = make_ptr_type(type);
+        }
+        while (parens--) {
+            expect(TOK_RPAREN);
+        }
+        return type;
     } else if (t->type == TOK_STRUCT) {
         Type *type = parse_struct_type(scope);
         if (ptr) {
@@ -433,6 +470,8 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
     Ast *fn_scope = ast_alloc(AST_SCOPE);
     fn_scope->locals = NULL;
     fn_scope->parent = scope;
+    fn_scope->has_return = 0;
+    fn_scope->is_function = 1;
 
     int n = 0;
     TypeList* arg_types = NULL;
@@ -604,7 +643,7 @@ Ast *parse_statement(Tok *t, Ast *scope) {
         if (next == NULL || next->type != TOK_LBRACE) {
             error(lineno(), "Unexpected token '%s' while parsing while loop.", to_string(next));
         }
-        ast->while_body = parse_block(scope, 1);
+        ast->while_body = parse_scope(scope);
         return ast;
     } else if (t->type == TOK_IF) {
         return parse_conditional(scope);
@@ -821,6 +860,8 @@ Ast *parse_scope(Ast *parent) {
     Ast *scope = ast_alloc(AST_SCOPE);
     scope->locals = NULL;
     scope->parent = parent;
+    scope->has_return = 0;
+    scope->is_function = 0;
     scope->body = parse_block(scope, parent == NULL ? 0 : 1);
     return scope;
 }
@@ -927,6 +968,8 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             in_decl = 0;
             if (ast->decl_var->type->base == AUTO_T) {
                 ast->decl_var->type = var_type(init);
+            } else if (ast->decl_var->type->length == -1) {
+                ast->decl_var->type->length = var_type(init)->length;
             }
             if (is_literal(init) && is_numeric(ast->decl_var->type)) {
                 int b = ast->decl_var->type->base;
@@ -964,6 +1007,8 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             ast->init = init;
         } else if (ast->decl_var->type->base == AUTO_T) {
             error(ast->line, "Cannot use type 'auto' for variable '%s' without initialization.", ast->decl_var->name);
+        } else if (ast->decl_var->type->base == ARRAY_T && ast->decl_var->type->length == -1) {
+            error(ast->line, "Cannot use unspecified array type for variable '%s' without initialization.", ast->decl_var->name);
         }
         if (find_local_var(ast->decl_var->name, scope) != NULL) {
             error(ast->line, "Declared variable '%s' already exists.", ast->decl_var->name);
@@ -1027,7 +1072,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
 
         int prev = parser_state;
         parser_state = PARSE_FUNC;
-        // TODO need a check here for no return
+        // TODO need a check here for no return or return of wrong type
         PUSH_FN_SCOPE(ast);
         ast->fn_body = parse_semantics(ast->fn_body, scope);
         POP_FN_SCOPE();
@@ -1115,9 +1160,11 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         break;
     }
     case AST_RETURN: {
+        // TODO don't need to copy string being returned?
         if (current_fn_scope == NULL || parser_state != PARSE_FUNC) {
             error(ast->line, "Return statement outside of function body.");
         }
+        scope->has_return = 1;
         Type *fn_ret_t = current_fn_scope->fn_decl_var->type->ret;
         Type *ret_t = NULL;
         if (ast->ret_expr == NULL) {

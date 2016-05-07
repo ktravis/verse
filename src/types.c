@@ -76,6 +76,25 @@ Type *make_ptr_type(Type *inner) {
     return type;
 }
 
+Type *make_array_type(Type *inner, long length) {
+    char *name = malloc((strlen(inner->name) + 2 + snprintf(NULL, 0, "%ld", length)) * sizeof(char));
+    sprintf(name, "[%ld]%s", length, inner->name);
+    Type *type = make_type(name, ARRAY_T, length * inner->size);
+    type->inner = inner;
+    type->named = 0;
+    type->length = length;
+    return type;
+}
+
+Type *make_slice_type(Type *inner) {
+    char *name = malloc((strlen(inner->name) + 3) * sizeof(char));
+    sprintf(name, "[:]%s", inner->name);
+    Type *type = make_type(name, SLICE_T, 16);
+    type->inner = inner;
+    type->named = 0;
+    return type;
+}
+
 Type *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types) {
     int named = (name != NULL);
     if (!named) {
@@ -179,7 +198,9 @@ int can_cast(Type *from, Type *to) {
     case BASEPTR_T:
         return (to->base == PTR_T || to->base == BASEPTR_T);
     case PTR_T:
-        return to->base == BASEPTR_T || check_type(from->inner, to->inner);
+        return to->base == BASEPTR_T ||
+            (to->base == INT_T && to->size == 8) ||
+            (to->base == PTR_T && check_type(from->inner, to->inner));
     case FN_T:
         if (from->nargs == to->nargs && check_type(from->ret, to->ret)) {
             TypeList *from_args = from->args;
@@ -201,6 +222,10 @@ int can_cast(Type *from, Type *to) {
             }
         }
         return 1;
+    case INT_T:
+        if (from->size == 8 && (to->base == PTR_T || to->base == BASEPTR_T)) {
+            return 1;
+        } // DO want fallthrough here
     default:
         return from->base == to->base;
     }
@@ -266,6 +291,11 @@ int check_type(Type *a, Type *b) {
                 return 1;
             }
             return 0;
+        } else if (a->base == ARRAY_T) {
+            return check_type(a->inner, b->inner) && (
+                    (a->length == b->length && a->length != -1) ||
+                    a->length == -1 ||
+                    b->length == -1);
         } else if (a->base == STRUCT_T) {
             if (a->nmembers != b->nmembers) {
                 return 0;
