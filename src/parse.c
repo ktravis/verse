@@ -123,7 +123,7 @@ Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
 Ast *parse_dot_op_semantics(Ast *ast, Ast *scope) {
     ast->dot_left = parse_semantics(ast->dot_left, scope);
     Type *t = var_type(ast->dot_left);
-    if (t->base == ARRAY_T || (t->base == PTR_T && t->inner->base == STRUCT_T)) {
+    if (t->base == ARRAY_T || (t->base == PTR_T && t->inner->base == ARRAY_T)) {
         if (strcmp(ast->member_name, "length") && strcmp(ast->member_name, "data")) {
             error(ast->line, "Cannot dot access member '%s' on array (only length or data).", ast->member_name);
         }
