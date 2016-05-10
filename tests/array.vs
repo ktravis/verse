@@ -30,5 +30,17 @@ fn main():int {
     println("Array y:");
     print_array(y);
     i = 0;
+
+
+    // multi-dimensional arrays?
+    m:[3][3]int;
+    while i < m.length {
+        j:int;
+        while j < m[i].length {
+            println("UM " + itoa(i) + ", " + itoa(j));
+            j = j + 1;
+        }
+        i = i + 1;
+    }
     return 0;
 }

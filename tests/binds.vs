@@ -11,8 +11,16 @@ fn main():int {
             return #{itoa(c) + "hiiii"};
         };
     };
+    y:auto = fn ():auto {
+        c:[5]int;
+        c[2] = 123;
+        return fn ():int {
+            return #{c[2]};
+        };
+    };
     println("woo");
     assert(a == 2);
     println(x()());
+    assert(y()() == 123);
     return 0;
 }

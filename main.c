@@ -274,12 +274,8 @@ void emit_type(Type *type) {
         printf("*");
         break;
     case ARRAY_T:
-        /*emit_type(type->inner);*/
-        printf("struct array_type ");
-        break;
     case STATIC_ARRAY_T:
-        emit_type(type->inner);
-        printf("*");
+        printf("struct array_type ");
         break;
     case STRUCT_T: {
         if (type->named) {
@@ -295,17 +291,17 @@ void emit_type(Type *type) {
 }
 
 void emit_decl(Ast *ast) {
-    if (ast->decl_var->type->base == STATIC_ARRAY_T && ast->init == NULL) {
-        emit_type(ast->decl_var->type->inner);
-        printf("_vs_%s", ast->decl_var->name);
-    } else {
+    /*if (ast->decl_var->type->base == STATIC_ARRAY_T && ast->init == NULL) {*/
+        /*emit_type(ast->decl_var->type->inner);*/
+        /*printf("_vs_%s", ast->decl_var->name);*/
+    /*} else {*/
         emit_type(ast->decl_var->type);
         printf("_vs_%s", ast->decl_var->name);
-    }
+    /*}*/
     if (ast->init == NULL) {
-        if (ast->decl_var->type->base == STATIC_ARRAY_T) {
-            printf("[%ld]", ast->decl_var->type->length);
-        }
+        /*if (ast->decl_var->type->base == STATIC_ARRAY_T) {*/
+            /*printf("[%ld]", ast->decl_var->type->length);*/
+        /*}*/
         if (ast->decl_var->type->base == STRING_T) {
             printf(" = (struct string_type){0}");
             ast->decl_var->initialized = 1;
@@ -318,6 +314,8 @@ void emit_decl(Ast *ast) {
                 printf("_init_%d(&_vs_%s)", ast->decl_var->type->id, ast->decl_var->name);
             }
             ast->decl_var->initialized = 1;
+        } else if (ast->decl_var->type->base == STATIC_ARRAY_T) {
+            printf(" = (struct array_type){.data=alloca(%ld),.length=%ld}", ast->decl_var->type->inner->size * ast->decl_var->type->length, ast->decl_var->type->length);
         } else if (ast->decl_var->type->base == BASEPTR_T || ast->decl_var->type->base == PTR_T)  {
             printf(" = NULL");
         } else if (is_numeric(ast->decl_var->type)) {
@@ -326,26 +324,8 @@ void emit_decl(Ast *ast) {
             printf(" = {0}");
         }
     } else {
-        // TODO should this copy?!
-        if (ast->decl_var->type->base == STATIC_ARRAY_T) {
-            printf(" = ");
-            if (var_type(ast->init)->base != STATIC_ARRAY_T) {
-                printf("(");
-                compile(ast->init);
-                printf(").data");
-            } else {
-                compile(ast->init);
-            }
-        } else {
-            printf(" = ");
-            if (var_type(ast->init)->base == STATIC_ARRAY_T) {
-                printf("(struct array_type){.data=");
-                compile(ast->init);
-                printf(",.length=%ld}", var_type(ast->init)->length);
-            } else {
-                compile(ast->init);
-            }
-        }
+        printf(" = ");
+        compile(ast->init);
         if (ast->init->type == AST_TEMP_VAR) {
             ast->init->tmpvar->consumed = 1;
         }
@@ -359,9 +339,6 @@ void emit_func_decl(Ast *fn) {
     VarList *args = fn->fn_decl_args;
     while (args != NULL) {
         emit_type(args->item->type);
-        if (args->item->type->base == STATIC_ARRAY_T) {
-            printf("*"); // We fill in the size at compile-time.
-        }
         printf("_vs_%s", args->item->name);
         if (args->next != NULL) {
             printf(",");
@@ -530,9 +507,7 @@ void compile(Ast *ast) {
     case AST_SLICE:
         printf("(struct array_type){.data=");
         compile(ast->slice_inner);
-        if (var_type(ast->slice_inner)->base != STATIC_ARRAY_T) {
-            printf(".data");
-        }
+        printf(".data");
         if (ast->slice_offset != NULL) {
             printf("+");
             compile(ast->slice_offset);
@@ -703,10 +678,6 @@ void compile(Ast *ast) {
                 printf("_copy_%s(", t->name);
                 compile(args->item);
                 printf(")");
-            } else if (var_type(args->item)->base == STATIC_ARRAY_T) {
-                printf("(struct array_type){.data=");
-                compile(args->item);
-                printf(",.length=%ld}", var_type(args->item)->length);
             } else {
                 compile(args->item);
             }
@@ -722,7 +693,7 @@ void compile(Ast *ast) {
         break;
     }
     case AST_INDEX:
-        if (var_type(ast->left)->base == ARRAY_T) {
+        if (is_array(var_type(ast->left))) {
             printf("((");
             emit_type(var_type(ast->left)->inner);
             printf("*)");
