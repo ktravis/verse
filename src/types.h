@@ -24,7 +24,7 @@ enum {
     //DERIVED_T
 };
 
-typedef struct TypeList TypeList;
+struct TypeList;
 
 typedef struct Type {
     char *name;
@@ -40,7 +40,7 @@ typedef struct Type {
         struct {
             // for functions
             int nargs;
-            TypeList *args;
+            struct TypeList *args;
             struct Type *ret;
         };
         struct Type *inner;
@@ -50,7 +50,7 @@ typedef struct Type {
             struct Type **member_types;
         };
     };
-    TypeList *bindings;
+    struct TypeList *bindings;
     int offset;
     int bindings_id;
 } Type;

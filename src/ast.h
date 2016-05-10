@@ -45,7 +45,7 @@ enum {
     AST_CAST,
 };
 
-typedef struct AstList AstList;
+struct AstList;
 
 typedef struct Ast {
     int type;
@@ -99,7 +99,7 @@ typedef struct Ast {
             struct Ast *fn;
             //Var *fn_var;
             int nargs;
-            AstList *args;
+            struct AstList *args;
         };
         // slice
         struct {
@@ -124,8 +124,8 @@ typedef struct Ast {
             struct Ast *parent;
             struct Ast *body;
             VarList *locals;
-            AstList *bindings;
-            AstList *anon_funcs;
+            struct AstList *bindings;
+            struct AstList *anon_funcs;
             unsigned char has_return;
             unsigned char is_function;
         };
