@@ -365,7 +365,7 @@ int valid_unary_op(int op) {
 }
 
 int priority_of(Tok *t) {
-    if (t->type == TOK_LPAREN) {
+    if (t->type == TOK_LPAREN || t->type == TOK_LSQUARE) {
         return 13;
     } else if (t->type == TOK_OP || t->type == TOK_UOP) {
         switch (t->op) {

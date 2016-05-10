@@ -19,8 +19,8 @@ enum {
     BASEPTR_T,
     PTR_T,
     ARRAY_T,
-    DYNARRAY_T,
-    SLICE_T,
+    STATIC_ARRAY_T,
+    DYN_ARRAY_T,
     //DERIVED_T
 };
 
@@ -65,8 +65,8 @@ Type *base_type(int t);
 
 Type *make_type(char *name, int base, int size);
 Type *make_ptr_type(Type *inner);
-Type *make_array_type(Type *inner, long length);
-Type *make_slice_type(Type *inner);
+Type *make_static_array_type(Type *inner, long length);
+Type *make_array_type(Type *inner);
 Type *make_fn_type(int nargs, TypeList *args, Type *ret);
 Type *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types);
 Type *find_type(int id);
@@ -77,8 +77,11 @@ int add_binding(Type *t, Type *b);
 int can_cast(Type *from, Type *to);
 int is_numeric(Type *t);
 int is_dynamic(Type *t);
+int is_array(Type *t);
 int check_type(Type *a, Type *b);
+int type_can_coerce(Type *from, Type *to);
 int type_equality_comparable(Type *a, Type *b);
+long array_size(Type *t);
 
 int precision_loss_uint(Type *t, unsigned long ival);
 int precision_loss_int(Type *t, long ival);

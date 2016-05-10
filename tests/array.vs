@@ -1,20 +1,34 @@
+fn print_array(a:[]int) {
+    i:int;
+    while i < a.length {
+        println("a[" + itoa(i) + "] = " + itoa(a[i]));
+        i = i + 1;
+    }
+}
+fn do_stuff(a:[]int):[]int {
+    i:int;
+    while i < a.length {
+        a[i] = a[i] * 2;
+        i = i + 1;
+    }
+    return a;
+}
 fn main():int {
     x:[3]int;
-    y:[]int = x;
-    println(itoa(y.length));
     i:int;
     while i < x.length {
-        v:int = @((x.data::int64 + (i*4))::^int);
-        println("x[" + itoa(i) + "] = " + itoa(v));
+        /*println("x[" + itoa(i) + "] = " + itoa(x[i]));*/
+        x[i] = i;
         i = i + 1;
     }
-    z:^int = y.data;
-    /*@z = 2;*/
+    println("Array x:");
+    print_array(do_stuff(x));
+    /*println("Array x[1:2]:");*/
+    /*print_array(x[1:2]);*/
+    y:[]int = x;
+    do_stuff(x);
+    println("Array y:");
+    print_array(y);
     i = 0;
-    while i < y.length {
-        v:int = @((y.data::int64 + (i*4))::^int);
-        println("y[" + itoa(i) + "] = " + itoa(v));
-        i = i + 1;
-    }
     return 0;
 }

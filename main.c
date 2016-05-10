@@ -79,9 +79,9 @@ void emit_string_binop(Ast *ast) {
 
 void emit_dot_op(Ast *ast) {
     Type *t = var_type(ast->dot_left);
-    if (t->base == ARRAY_T || (t->base == PTR_T && t->inner->base == ARRAY_T)) {
+    if (t->base == STATIC_ARRAY_T || (t->base == PTR_T && t->inner->base == STATIC_ARRAY_T)) {
         if (!strcmp(ast->member_name, "length")) {
-            printf("%ld", t->base == ARRAY_T ? t->length : t->inner->length);
+            printf("%ld", array_size(t));
         } else if (!strcmp(ast->member_name, "data")) {
             if (t->base == PTR_T) {
                 printf("*");
@@ -274,7 +274,12 @@ void emit_type(Type *type) {
         printf("*");
         break;
     case ARRAY_T:
+        /*emit_type(type->inner);*/
+        printf("struct array_type ");
+        break;
+    case STATIC_ARRAY_T:
         emit_type(type->inner);
+        printf("*");
         break;
     case STRUCT_T: {
         if (type->named) {
@@ -290,17 +295,17 @@ void emit_type(Type *type) {
 }
 
 void emit_decl(Ast *ast) {
-    if (ast->decl_var->type->base == FN_T) {
-        printf("fn_type _vs_%s", ast->decl_var->name);
+    if (ast->decl_var->type->base == STATIC_ARRAY_T && ast->init == NULL) {
+        emit_type(ast->decl_var->type->inner);
+        printf("_vs_%s", ast->decl_var->name);
     } else {
         emit_type(ast->decl_var->type);
         printf("_vs_%s", ast->decl_var->name);
     }
-    if (ast->decl_var->type->base == ARRAY_T) {
-        printf("[%ld]", ast->decl_var->type->length);
-    }
-    // TODO need to make tempvar for function arg of array type (to copy)
     if (ast->init == NULL) {
+        if (ast->decl_var->type->base == STATIC_ARRAY_T) {
+            printf("[%ld]", ast->decl_var->type->length);
+        }
         if (ast->decl_var->type->base == STRING_T) {
             printf(" = (struct string_type){0}");
             ast->decl_var->initialized = 1;
@@ -317,19 +322,29 @@ void emit_decl(Ast *ast) {
             printf(" = NULL");
         } else if (is_numeric(ast->decl_var->type)) {
             printf(" = 0");
-        } else if (ast->decl_var->type->base == ARRAY_T) {
+        } else if (is_array(ast->decl_var->type)) {
             printf(" = {0}");
         }
     } else {
-        if (ast->decl_var->type->base == ARRAY_T) {
-            printf(";\n");
-            indent();
-            printf("memcpy(_vs_%s,", ast->decl_var->name);
-            compile(ast->init);
-            printf(",%ld)", ast->decl_var->type->length * ast->decl_var->type->inner->size);
+        // TODO should this copy?!
+        if (ast->decl_var->type->base == STATIC_ARRAY_T) {
+            printf(" = ");
+            if (var_type(ast->init)->base != STATIC_ARRAY_T) {
+                printf("(");
+                compile(ast->init);
+                printf(").data");
+            } else {
+                compile(ast->init);
+            }
         } else {
             printf(" = ");
-            compile(ast->init);
+            if (var_type(ast->init)->base == STATIC_ARRAY_T) {
+                printf("(struct array_type){.data=");
+                compile(ast->init);
+                printf(",.length=%ld}", var_type(ast->init)->length);
+            } else {
+                compile(ast->init);
+            }
         }
         if (ast->init->type == AST_TEMP_VAR) {
             ast->init->tmpvar->consumed = 1;
@@ -344,7 +359,7 @@ void emit_func_decl(Ast *fn) {
     VarList *args = fn->fn_decl_args;
     while (args != NULL) {
         emit_type(args->item->type);
-        if (args->item->type->base == ARRAY_T) {
+        if (args->item->type->base == STATIC_ARRAY_T) {
             printf("*"); // We fill in the size at compile-time.
         }
         printf("_vs_%s", args->item->name);
@@ -460,6 +475,7 @@ void compile(Ast *ast) {
     case AST_BOOL:
         printf("%d", (unsigned char)ast->ival);
         break;
+    // TODO strlen is wrong for escaped chars \t etc
     case AST_STRING:
         printf("init_string(\"");
         print_quoted_string(ast->sval);
@@ -510,6 +526,30 @@ void compile(Ast *ast) {
         }
         compile(ast->cast_left);
         printf(")");
+        break;
+    case AST_SLICE:
+        printf("(struct array_type){.data=");
+        compile(ast->slice_inner);
+        if (var_type(ast->slice_inner)->base != STATIC_ARRAY_T) {
+            printf(".data");
+        }
+        if (ast->slice_offset != NULL) {
+            printf("+");
+            compile(ast->slice_offset);
+        }
+        printf(",.length=");
+        if (ast->slice_length != NULL) {
+            printf("(");
+            compile(ast->slice_length);
+            printf(")*%d", var_type(ast->slice_inner)->inner->size);
+        } else {
+            printf("%ld", var_type(ast->slice_inner)->length); 
+        }
+        if (ast->slice_offset != NULL) {
+            printf("-");
+            compile(ast->slice_offset);
+        }
+        printf("}");
         break;
     case AST_TEMP_VAR:
         emit_tmpvar(ast);
@@ -663,6 +703,10 @@ void compile(Ast *ast) {
                 printf("_copy_%s(", t->name);
                 compile(args->item);
                 printf(")");
+            } else if (var_type(args->item)->base == STATIC_ARRAY_T) {
+                printf("(struct array_type){.data=");
+                compile(args->item);
+                printf(",.length=%ld}", var_type(args->item)->length);
             } else {
                 compile(args->item);
             }
@@ -677,6 +721,22 @@ void compile(Ast *ast) {
         printf(")");
         break;
     }
+    case AST_INDEX:
+        if (var_type(ast->left)->base == ARRAY_T) {
+            printf("((");
+            emit_type(var_type(ast->left)->inner);
+            printf("*)");
+            compile(ast->left);
+            printf(".data)[");
+            compile(ast->right);
+            printf("]");
+        } else {
+            compile(ast->left);
+            printf("[");
+            compile(ast->right);
+            printf("]");
+        }
+        break;
     case AST_BLOCK:
         for (int i = 0; i < ast->num_statements; i++) {
             if (ast->statements[i]->type == AST_FUNC_DECL || ast->statements[i]->type == AST_EXTERN_FUNC_DECL) {

@@ -76,20 +76,20 @@ Type *make_ptr_type(Type *inner) {
     return type;
 }
 
-Type *make_array_type(Type *inner, long length) {
+Type *make_static_array_type(Type *inner, long length) {
     char *name = malloc((strlen(inner->name) + 2 + snprintf(NULL, 0, "%ld", length)) * sizeof(char));
     sprintf(name, "[%ld]%s", length, inner->name);
-    Type *type = make_type(name, ARRAY_T, length * inner->size);
+    Type *type = make_type(name, STATIC_ARRAY_T, length * inner->size);
     type->inner = inner;
     type->named = 0;
     type->length = length;
     return type;
 }
 
-Type *make_slice_type(Type *inner) {
-    char *name = malloc((strlen(inner->name) + 3) * sizeof(char));
-    sprintf(name, "[:]%s", inner->name);
-    Type *type = make_type(name, SLICE_T, 16);
+Type *make_array_type(Type *inner) {
+    char *name = malloc((strlen(inner->name) + 2) * sizeof(char));
+    sprintf(name, "[]%s", inner->name);
+    Type *type = make_type(name, ARRAY_T, 16);
     type->inner = inner;
     type->named = 0;
     return type;
@@ -193,6 +193,19 @@ Type *define_type(Type *t) {
     return t;
 }
 
+long array_size(Type *type) {
+    Type *t = type;
+    if (type->base == PTR_T) {
+        t = type->inner;
+    }
+    switch (t->base) {
+    case STATIC_ARRAY_T:
+        return t->length;
+    }
+    error(-1, "Not an array, man ('%s').", type->name);
+    return -1;
+}
+
 int can_cast(Type *from, Type *to) {
     switch (from->base) {
     case BASEPTR_T:
@@ -267,6 +280,10 @@ int precision_loss_float(Type *t, double fval) {
     return 1;
 }
 
+int is_array(Type *t) {
+    return t->base == ARRAY_T || t->base == STATIC_ARRAY_T || t->base == DYN_ARRAY_T;
+}
+
 int check_type(Type *a, Type *b) {
     if (a->base == BASEPTR_T) {
         return (b->base == PTR_T || b->base == BASEPTR_T);
@@ -291,11 +308,13 @@ int check_type(Type *a, Type *b) {
                 return 1;
             }
             return 0;
-        } else if (a->base == ARRAY_T) {
+        } else if (a->base == STATIC_ARRAY_T) {
             return check_type(a->inner, b->inner) && (
                     (a->length == b->length && a->length != -1) ||
                     a->length == -1 ||
                     b->length == -1);
+        } else if (a->base == DYN_ARRAY_T) {
+            return check_type(a->inner, b->inner);
         } else if (a->base == STRUCT_T) {
             if (a->nmembers != b->nmembers) {
                 return 0;
@@ -312,6 +331,10 @@ int check_type(Type *a, Type *b) {
         return 1;
     }
     return 0;
+}
+
+int type_can_coerce(Type *from, Type *to) {
+    return is_array(from) && to->base == ARRAY_T;
 }
 
 int type_equality_comparable(Type *a, Type *b) {
@@ -394,7 +417,7 @@ Type *base_type(int t) {
     case STRUCT_T:
     case PTR_T:
     case ARRAY_T:
-    case DYNARRAY_T:
+    case DYN_ARRAY_T:
     default:
         error(-1, "cmon man");
     }

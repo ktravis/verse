@@ -29,6 +29,8 @@ enum {
     AST_ANON_FUNC_DECL,
     AST_EXTERN_FUNC_DECL,
     AST_CALL,
+    AST_INDEX,
+    AST_SLICE,
     AST_CONDITIONAL,
     AST_SCOPE,
     AST_RETURN,
@@ -98,6 +100,13 @@ typedef struct Ast {
             //Var *fn_var;
             int nargs;
             AstList *args;
+        };
+        // slice
+        struct {
+            struct Ast *slice_inner;
+            Type *slice_array_type;
+            struct Ast *slice_offset;
+            struct Ast *slice_length;
         };
         // binding
         struct {
@@ -185,6 +194,7 @@ Ast *make_ast_id(Var *var, char *name);
 Ast *make_ast_decl(char *name, Type *type);
 Ast *make_ast_assign(Ast *left, Ast *right);
 Ast *make_ast_binop(int op, Ast *left, Ast *right);
+Ast *make_ast_slice(Ast *inner, Ast *offset, Ast *length);
 
 Type *var_type(Ast *ast);
 

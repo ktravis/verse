@@ -17,6 +17,10 @@ fn otherthing(b:vec3):vec3 {
     return b;
 }
 
+fn hold_struct(): ^vec3 {
+    return hold vec3{x=1,y=2,z=3};
+}
+
 fn main():int {
     a:auto = hold vec3 {
         x = 1,
@@ -36,5 +40,8 @@ fn main():int {
     y:^struct{b:int;} = hold x;
     assert(1 == y.b);
     release y;
+    a1:auto = hold_struct();
+    println("held: x = " + itoa(a1.x) + ", y = " + itoa(a1.y) + ", z = " + itoa(a1.z));
+    release a1;
     return 0;
 }

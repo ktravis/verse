@@ -33,6 +33,12 @@ Type *var_type(Ast *ast) {
         return ast->decl_var->type;
     case AST_CALL:
         return var_type(ast->fn)->ret;
+    case AST_INDEX: {
+        Type *t = var_type(ast->left);
+        return t->inner;
+    }
+    case AST_SLICE:
+        return make_array_type(var_type(ast->slice_inner)->inner);
     case AST_ANON_FUNC_DECL:
         return ast->fn_decl_var->type;
     case AST_BIND:
@@ -64,7 +70,7 @@ Type *var_type(Ast *ast) {
         if (t->base == PTR_T) {
             t = t->inner;
         }
-        if (t->base == ARRAY_T) {
+        if (is_array(t)) {
             if (!strcmp(ast->member_name, "length")) {
                 return base_type(INT_T);
             } else { // data
@@ -94,6 +100,7 @@ Type *var_type(Ast *ast) {
 int is_lvalue(Ast *ast) {
     return ast->type == AST_IDENTIFIER ||
         ast->type == AST_DOT ||
+        ast->type == AST_INDEX ||
         (ast->type == AST_UOP && ast->op == OP_AT);
 }
 
@@ -168,6 +175,14 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right) {
     return binop;
 }
 
+Ast *make_ast_slice(Ast *inner, Ast *offset, Ast *length) {
+    Ast *slice = ast_alloc(AST_SLICE);
+    slice->slice_inner = inner;
+    slice->slice_offset = offset;
+    slice->slice_length = length;
+    return slice;
+}
+
 Ast *cast_literal(Type *t, Ast *ast) {
     if (can_cast(t, var_type(ast))) {
         Ast *cast = ast_alloc(AST_CAST);
@@ -177,10 +192,6 @@ Ast *cast_literal(Type *t, Ast *ast) {
     } else if (is_numeric(t) && is_numeric(var_type(ast))) {
         int loss = 0;
         int lit_type = ast->type;
-        // TODO important: compute is_literal(AST_BINOP)'s at compile and reduce
-        /*if (lit_type == AST_BINOP) {*/
-            /*lit_type = (ast->left->type == AST_FLOAT || ast->right->type == AST_FLOAT) ? AST_FLOAT : AST_INTEGER;*/
-        /*}*/
         if (lit_type == AST_INTEGER) {
             if (t->base == UINT_T) {
                 if (ast->ival < 0) {
@@ -359,6 +370,12 @@ void print_ast(Ast *ast) {
         printf(")");
         break;
     }
+    case AST_INDEX:
+        print_ast(ast->left);
+        printf("[");
+        print_ast(ast->right);
+        printf("]");
+        break;
     case AST_BLOCK:
         for (int i = 0; i < ast->num_statements; i++) {
             print_ast(ast->statements[i]);

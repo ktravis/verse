@@ -17,6 +17,10 @@ struct string_type {
     int len;
     char *bytes;
 };
+struct array_type {
+    void *data;
+    long length;
+};
 // TODO double-check nulls are in the right spot
 struct string_type init_string(const char *str, int l) {
     struct string_type v;
@@ -77,6 +81,7 @@ int streq(struct string_type left, struct string_type right) {
     }
     return 1;
 }
+#define INIT_STATIC_ARRAY(t, l) (struct array_type){.data=alloca(sizeof(t)*l),.length=length}
 
 // builtins
 void _vs_assert(unsigned char a) {

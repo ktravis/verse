@@ -123,7 +123,7 @@ Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
 Ast *parse_dot_op_semantics(Ast *ast, Ast *scope) {
     ast->dot_left = parse_semantics(ast->dot_left, scope);
     Type *t = var_type(ast->dot_left);
-    if (t->base == ARRAY_T || (t->base == PTR_T && t->inner->base == ARRAY_T)) {
+    if (is_array(t) || (t->base == PTR_T && is_array(t->inner))) {
         if (strcmp(ast->member_name, "length") && strcmp(ast->member_name, "data")) {
             error(ast->line, "Cannot dot access member '%s' on array (only length or data).", ast->member_name);
         }
@@ -140,10 +140,9 @@ Ast *parse_assignment_semantics(Ast *ast, Ast *scope) {
     if (!is_lvalue(ast->left)) {
         error(ast->line, "LHS of assignment is not an lvalue.");
     }
-    if (!check_type(var_type(ast->left), var_type(ast->right))) {
-        error(ast->line, "LHS of operation '%s' has type '%s', while RHS has type '%s'.",
-                op_to_str(ast->op), ast->left->var->type->name,
-                var_type(ast->right)->name);
+    if (!(check_type(var_type(ast->left), var_type(ast->right)) || type_can_coerce(var_type(ast->right), var_type(ast->left)))) {
+        error(ast->line, "LHS of assignment has type '%s', while RHS has type '%s'.",
+                ast->left->var->type->name, var_type(ast->right)->name);
     }
     if (ast->right->type != AST_TEMP_VAR && is_dynamic(var_type(ast->right)) && !is_literal(ast->right)) {
         ast->right = make_ast_tmpvar(ast->right, make_temp_var(var_type(ast->right), scope));
@@ -218,6 +217,40 @@ Ast *parse_binop_semantics(Ast *ast, Ast *scope) {
     return ast;
 }
 
+Ast *parse_array_slice(Ast *inner, Ast *offset, Ast *scope) {
+    Ast *slice = ast_alloc(AST_SLICE);
+    slice->slice_inner = inner;
+    slice->slice_offset = offset;
+    Tok *t = next_token();
+    if (t == NULL) {
+        error(lineno(), "Unexpected EOF while parsing array slice.");
+    } else if (t->type == TOK_RSQUARE) {
+        slice->slice_length = NULL;
+    } else {
+        slice->slice_length = parse_expression(t, 0, scope);
+    }
+    return slice; 
+}
+
+Ast *parse_array_index(Ast *left, Ast *scope) {
+    Tok *t = next_token();
+    if (t->type == TOK_COLON) {
+        return parse_array_slice(left, NULL, scope);
+    }
+    Ast *ind = ast_alloc(AST_INDEX);
+    ind->left = left;
+    ind->right = parse_expression(t, 0, scope);
+    t = next_token();
+    if (t->type == TOK_COLON) {
+        Ast *offset = ind->right;
+        free(ind);
+        return parse_array_slice(left, offset, scope);
+    } else if (t->type != TOK_RSQUARE) {
+        error(lineno(), "Unexpected token '%s' while parsing array index.", to_string(t));
+    }
+    return ind; 
+}
+
 Ast *parse_arg_list(Ast *left, Ast *scope) {
     Ast *func = ast_alloc(AST_CALL);
     func->args = NULL;
@@ -290,7 +323,7 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope) {
         } else if (t->type == TOK_LPAREN) {
             ast = parse_arg_list(ast, scope);
         } else if (t->type == TOK_LSQUARE) {
-            ast = parse_arg_list(ast, scope);
+            ast = parse_array_index(ast, scope);
         } else {
             error(lineno(), "Unexpected token '%s'.", to_string(t));
             return NULL;
@@ -328,24 +361,25 @@ Type *parse_type(Tok *t, Ast *scope) {
         Type *type = NULL;
         t = next_token();
         long length = -1;
-        int slice = 0;
+        int slice = 1;
         if (t == NULL) {
             error(lineno(), "Unexpected EOF while parsing type.");
         } else if (t->type != TOK_RSQUARE) {
             if (t->type == TOK_INT) {
                 length = t->ival;
-            } else if (t->type == TOK_COLON) {
-                slice = 1;
+                slice = 0;
+            } else if (t->type == TOK_OP && t->op == OP_MINUS) {
+                slice = 0;
             } else {
-                error(lineno(), "Unexpected token '%s' while parsing type.", to_string(t));
+                error(lineno(), "Unexpected token '%s' while parsing array type.", to_string(t));
             }
             expect(TOK_RSQUARE);
         }
         type = parse_type(next_token(), scope);
         if (slice) {
-            type = make_slice_type(type);
+            type = make_array_type(type);
         } else {
-            type = make_array_type(type, length);
+            type = make_static_array_type(type, length);
         }
         if (ptr) {
             type = make_ptr_type(type);
@@ -890,6 +924,34 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         ast->var = v;
         break;
     }
+    case AST_SLICE: {
+        ast->slice_inner = parse_semantics(ast->slice_inner, scope);
+        Type *a = var_type(ast->slice_inner);
+        if (!is_array(a)) {
+            error(ast->line, "Cannot slice non-array type '%s'.", a->name);
+        }
+        if (ast->slice_offset != NULL) {
+            ast->slice_offset = parse_semantics(ast->slice_offset, scope);
+            if (is_literal(ast->slice_offset) && a->base == STATIC_ARRAY_T) {
+                long o = ast->slice_offset->ival;
+                if (o < 0) {
+                    error(ast->line, "Negative slice start is not allowed.");
+                } else if (o >= a->length) {
+                    error(ast->line, "Slice offset outside of array bounds (offset %ld to array length %ld).", o, a->length);
+                }
+            }
+        }
+        if (ast->slice_length != NULL) {
+            ast->slice_length = parse_semantics(ast->slice_length, scope);
+            if (is_literal(ast->slice_length) && a->base == STATIC_ARRAY_T) {
+                long l = ast->slice_length->ival;
+                if (l > a->length) {
+                    error(ast->line, "Slice length outside of array bounds (%ld to array length %ld).", l, a->length);
+                }
+            }
+        }
+        break;
+    }
     case AST_CAST:
         ast->cast_left = parse_semantics(ast->cast_left, scope);
         if (!can_cast(var_type(ast->cast_left), ast->cast_type)) {
@@ -995,7 +1057,8 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
                     error(-1, "wtf");
                 }
             }
-            if (!check_type(ast->decl_var->type, var_type(init))) {
+            if (!(check_type(ast->decl_var->type, var_type(init)) || type_can_coerce(var_type(init), ast->decl_var->type))) {
+                // TODO only for literal?
                 init = try_implicit_cast(ast->decl_var->type, init);
             }
             if (init->type != AST_TEMP_VAR && is_dynamic(var_type(init))) {
@@ -1007,7 +1070,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             ast->init = init;
         } else if (ast->decl_var->type->base == AUTO_T) {
             error(ast->line, "Cannot use type 'auto' for variable '%s' without initialization.", ast->decl_var->name);
-        } else if (ast->decl_var->type->base == ARRAY_T && ast->decl_var->type->length == -1) {
+        } else if (ast->decl_var->type->base == STATIC_ARRAY_T && ast->decl_var->type->length == -1) {
             error(ast->line, "Cannot use unspecified array type for variable '%s' without initialization.", ast->decl_var->name);
         }
         if (find_local_var(ast->decl_var->name, scope) != NULL) {
@@ -1101,7 +1164,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         for (int i = 0; args != NULL; i++) {
             arg = args->item;
             arg = parse_semantics(arg, scope);
-            if (!check_type(var_type(arg), arg_types->item)) {
+            if (!(check_type(var_type(arg), arg_types->item) || type_can_coerce(var_type(arg), arg_types->item))) {
                 if (is_literal(arg)) {
                     arg = try_implicit_cast(arg_types->item, arg);
                 } else {
@@ -1120,6 +1183,30 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         }
         if (is_dynamic(var_type(ast->fn)->ret)) {
             return make_ast_tmpvar(ast, make_temp_var(var_type(ast->fn)->ret, scope));
+        }
+        break;
+    }
+    case AST_INDEX: {
+        ast->left = parse_semantics(ast->left, scope);
+        ast->right = parse_semantics(ast->right, scope);
+        Type *l = var_type(ast->left);
+        Type *r = var_type(ast->right);
+        if (!(is_array(l) || (l->base == PTR_T && is_array(l->inner)))) {
+            error(ast->left->line, "Cannot perform index/subscript operation on non-array type (type is '%s').", l->name);
+        }
+        if (r->base != INT_T) {
+            error(ast->right->line, "Cannot index array with non-integer type '%s'.", r->name);
+        }
+        int _static = l->base == STATIC_ARRAY_T || (l->base == PTR_T && l->inner->base == STATIC_ARRAY_T);
+        if (is_literal(ast->right)) {
+            int i = ast->right->ival;
+            // r must be integer
+            if (i < 0) {
+                error(ast->line, "Negative array index is larger than array length (%ld vs length %ld).", ast->right->ival, array_size(l));
+            } else if (_static && i >= array_size(l)) {
+                error(ast->line, "Array index is larger than array length (%ld vs length %ld).", ast->right->ival, array_size(l));
+            }
+            ast->right->ival = i;
         }
         break;
     }
@@ -1175,6 +1262,9 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             if (is_dynamic(ret_t) && !is_literal(ast->ret_expr)) {
                 ast->ret_expr = make_ast_copy(ast->ret_expr);
             }
+        }
+        if (ret_t->base == STATIC_ARRAY_T) {
+            error(ast->line, "Cannot return a static array from a function.");
         }
         if (fn_ret_t->base == AUTO_T) {
             current_fn_scope->fn_decl_var->type->ret = ret_t;
