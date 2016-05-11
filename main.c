@@ -1,6 +1,8 @@
 #include "src/compiler.h"
 #include "src/util.h"
 
+#include "prelude.h"
+
 static int _indent = 0;
 
 void indent() {
@@ -1003,7 +1005,8 @@ int main(int argc, char **argv) {
     if (just_ast) {
         print_ast(root);
     } else {
-        printf("#include \"prelude.c\"\n");
+        /*printf("#include \"prelude.c\"\n");*/
+        printf("%.*s\n", prelude_length, prelude);
         _indent = 0;
         VarList *varlist = get_global_vars();
         while (varlist != NULL) {

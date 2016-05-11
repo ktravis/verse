@@ -2,5 +2,7 @@
 *.out
 *.dSYM/
 *.s
-compiler
 tmp.c
+bin/*
+prelude.bin
+prelude.h

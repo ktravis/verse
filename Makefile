@@ -1,11 +1,16 @@
 CFLAGS=-Wall -std=gnu99 -g
 OBJS=main.o src/token.o src/util.o src/types.o src/parse.o src/ast.o src/var.o src/eval.o
 
-compiler: $(OBJS)
-	$(CC) $(CFLANGS) -o $@ $(OBJS)
+compiler: prelude $(OBJS)
+	$(CC) $(CFLANGS) -o bin/$@ $(OBJS)
 
 clean:
-	rm $(OBJS) 2> /dev/null
+	@rm -rf bin prelude.bin prelude.h $(OBJS) 2>/dev/null
 
 test: compiler
 	for f in tests/*.vs; do ./verse $$f; done 
+
+prelude:
+	mkdir -p bin
+	$(CC) binpack.c -o bin/includer
+	bin/includer prelude.c
