@@ -4,3 +4,5 @@
 *.s
 tmp.c
 bin/*
+prelude.bin
+prelude.h
