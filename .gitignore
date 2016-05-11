@@ -2,5 +2,5 @@
 *.out
 *.dSYM/
 *.s
-compiler
 tmp.c
+bin/*
