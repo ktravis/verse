@@ -1,8 +1,10 @@
 CFLAGS=-Wall -std=gnu99 -g
 OBJS=main.o src/token.o src/util.o src/types.o src/parse.o src/ast.o src/var.o src/eval.o
 
-compiler: prelude $(OBJS)
-	$(CC) $(CFLAGS) -o bin/$@ $(OBJS)
+compiler: bin/compiler
+
+bin/compiler: prelude.bin $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS)
 
 clean:
 	@rm -rf bin prelude.bin prelude.h $(OBJS) 2>/dev/null
@@ -10,7 +12,10 @@ clean:
 test: compiler
 	for f in tests/*.vs; do ./verse $$f; done 
 
-prelude: prelude.c
+bin/includer: binpack.c
 	mkdir -p bin
-	$(CC) binpack.c -o bin/includer
-	bin/includer $^
+	$(CC) $^ -o $@
+
+prelude.bin: prelude.c bin/includer
+	mkdir -p bin
+	bin/includer $<

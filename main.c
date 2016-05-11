@@ -511,16 +511,19 @@ void compile(Ast *ast) {
         compile(ast->slice_inner);
         printf(".data");
         if (ast->slice_offset != NULL) {
-            printf("+");
+            printf("+(");
             compile(ast->slice_offset);
+            printf("*%d)", var_type(ast->slice_inner)->inner->size);
         }
         printf(",.length=");
         if (ast->slice_length != NULL) {
-            printf("(");
+            /*printf("(");*/
             compile(ast->slice_length);
-            printf(")*%d", var_type(ast->slice_inner)->inner->size);
-        } else {
+            /*printf(")*%d", var_type(ast->slice_inner)->inner->size);*/
+        } else if (var_type(ast->slice_inner)->base == STATIC_ARRAY_T) {
             printf("%ld", var_type(ast->slice_inner)->length); 
+        } else {
+            error(ast->line, "Slicing a slice, uh ohhhhh");
         }
         if (ast->slice_offset != NULL) {
             printf("-");

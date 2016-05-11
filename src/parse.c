@@ -228,6 +228,7 @@ Ast *parse_array_slice(Ast *inner, Ast *offset, Ast *scope) {
         slice->slice_length = NULL;
     } else {
         slice->slice_length = parse_expression(t, 0, scope);
+        expect(TOK_RSQUARE);
     }
     return slice; 
 }
@@ -297,7 +298,7 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope) {
         t = next_token();
         if (t == NULL) {
             return ast;
-        } else if (t->type == TOK_SEMI || t->type == TOK_RPAREN || t->type == TOK_LBRACE || t->type == TOK_RBRACE) {
+        } else if (t->type == TOK_SEMI || t->type == TOK_RPAREN || t->type == TOK_LBRACE || t->type == TOK_RBRACE || t->type == TOK_RSQUARE) {
             unget_token(t);
             return ast;
         }

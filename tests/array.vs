@@ -23,8 +23,8 @@ fn main():int {
     }
     println("Array x:");
     print_array(do_stuff(x));
-    /*println("Array x[1:2]:");*/
-    /*print_array(x[1:2]);*/
+    println("Array x[1:3]:");
+    print_array(x[1:3]);
     y:[]int = x;
     do_stuff(x);
     println("Array y:");
