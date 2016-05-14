@@ -5,6 +5,23 @@ fn print_array(a:[]int) {
         i = i + 1;
     }
 }
+
+fn test_array_copy() {
+    x:[3]int;
+    y:[]int = x;
+
+    do_stuff(x);
+
+    // z will be a copy of x!
+    z:[-]int = x;
+    assert(y[1] == z[1]);
+    x[0] = 100;
+    // z is not modified
+    assert(z[0] == 0);
+    assert(x[0] == 100);
+    assert(y[0] == x[0]);
+}
+
 fn do_stuff(a:[]int):[]int {
     i:int;
     while i < a.length {
@@ -36,8 +53,9 @@ fn main():int {
     m:[3][3]int;
     while i < m.length {
         j:int;
+        m[i] = x;
         while j < m[i].length {
-            println("UM " + itoa(i) + ", " + itoa(j));
+            println("UM " + itoa(i) + ", " + itoa(j) + ": " + itoa(m[i][j]));
             j = j + 1;
         }
         i = i + 1;

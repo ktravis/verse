@@ -355,6 +355,8 @@ int is_dynamic(Type *t) {
             }
         }
         return 0;
+    } else if (t->base == STATIC_ARRAY_T) {
+        return is_dynamic(t->inner);
     }
     return t->base == STRING_T || (t->base == FN_T && t->bindings != NULL);
 }

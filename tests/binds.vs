@@ -15,7 +15,8 @@ fn main():int {
         c:[5]int;
         c[2] = 123;
         return fn ():int {
-            return #{c[2]};
+            c:auto = #{c};
+            return c[2];
         };
     };
     println("woo");
