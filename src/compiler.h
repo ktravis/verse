@@ -19,6 +19,7 @@ void emit_scope_end(Ast *ast);
 void compile(Ast *ast);
 void compile_unspecified_array(Ast *ast);
 void compile_static_array(Ast *ast);
+void emit_structmember(char *name, Type *st);
 void emit_binop(Ast *ast);
 void emit_free_bindings(int id, TypeList *bindings);
 void emit_static_array_copy(Type *t, char *dest, char *src);

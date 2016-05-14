@@ -122,52 +122,52 @@ void emit_uop(Ast *ast) {
 
 void emit_assignment(Ast *ast) {
     Type *lt = var_type(ast->left);
+    if (lt->base == STATIC_ARRAY_T) {
+        printf("{\n");
+        _indent++;
+        indent();
+        
+        emit_type(lt);
+        printf("l = ");
+        compile_static_array(ast->left);
+        printf(";\n");
+        indent();
+        
+        emit_type(lt);
+        printf("r = ");
+        compile_static_array(ast->right);
+        printf(";\n");
+        indent();
+
+        emit_static_array_copy(lt, "l", "r");
+        printf(";\n");
+
+        _indent--;
+        indent();
+        printf("}");
+        return;
+    }
     if (is_dynamic(lt)) {
-        if (lt->base == STATIC_ARRAY_T) {
-            printf("{\n");
-            _indent++;
-            indent();
-            
-            emit_type(lt);
-            printf("l = ");
-            compile_static_array(ast->left);
+        if (ast->left->type == AST_DOT || ast->left->type == AST_INDEX) {
+            compile(ast->right);
             printf(";\n");
             indent();
-            
-            emit_type(lt);
-            printf("r = ");
-            compile_static_array(ast->right);
-            printf(";\n");
-            indent();
-
-            emit_static_array_copy(lt, "l", "r");
-            printf(";\n");
-
-            _indent--;
-            indent();
-            printf("}");
+            printf("SWAP(");
+            compile(ast->left);
+            printf(",_tmp%d)", ast->right->tmpvar->id);
         } else {
-            if (ast->left->type == AST_DOT || ast->left->type == AST_INDEX) {
+            Var *l = get_ast_var(ast->left);
+            if (l->initialized) {
                 compile(ast->right);
                 printf(";\n");
                 indent();
-                printf("SWAP(");
-                compile(ast->left);
-                printf(",_tmp%d)", ast->right->tmpvar->id);
+                printf("SWAP(_vs_%s,_tmp%d)", l->name, ast->right->tmpvar->id);
             } else {
-                Var *l = get_ast_var(ast->left);
-                if (l->initialized) {
-                    compile(ast->right);
-                    printf(";\n");
-                    indent();
-                    printf("SWAP(_vs_%s,_tmp%d)", l->name, ast->right->tmpvar->id);
-                } else {
-                    printf("_vs_%s = ", l->name);
-                    compile(ast->right);
-                    l->initialized = 1;
-                    if (ast->right->type == AST_TEMP_VAR) {
-                        ast->right->tmpvar->consumed = 1;
-                    }
+                printf("_vs_%s = ", l->name);
+                compile(ast->right);
+                l->initialized = 1;
+                if (ast->right->type == AST_TEMP_VAR) {
+                    ast->right->tmpvar->consumed = 1;
                 }
             }
         }
@@ -345,8 +345,13 @@ void compile_static_array(Ast *ast) {
     /*}*/
 /*}*/
 void emit_static_array_decl(Ast *ast) {
-    emit_type(ast->decl_var->type->inner);
-    printf("_vs_%s[%ld]", ast->decl_var->name, ast->decl_var->type->length);
+    char *membername = malloc(sizeof(char) * (strlen(ast->decl_var->name) + 5));
+    sprintf(membername, "_vs_%s", ast->decl_var->name);
+    membername[strlen(ast->decl_var->name) + 5] = 0;
+    emit_structmember(membername, ast->decl_var->type);
+    free(membername);
+    /*emit_type(ast->decl_var->type->inner);*/
+    /*printf("_vs_%s[%ld]", ast->decl_var->name, ast->decl_var->type->length);*/
     if (ast->init == NULL) {
         printf(" = {0}");
     } else {
@@ -855,14 +860,18 @@ void compile(Ast *ast) {
     }
     case AST_INDEX:
         if (is_array(var_type(ast->left))) {
-            printf("((");
-            emit_type(var_type(ast->left)->inner);
-            printf("*)");
+            printf("(");
+            if (var_type(ast->left)->base == ARRAY_T) {
+                printf("(");
+                emit_type(var_type(ast->left)->inner);
+                printf("*)");
+            }
             compile_static_array(ast->left);
             printf(")[");
             compile(ast->right);
             printf("]");
         } else {
+            // TODO why is this here? strings?
             compile(ast->left);
             printf("[");
             compile(ast->right);
@@ -910,6 +919,7 @@ void compile(Ast *ast) {
         compile(ast->while_condition);
         printf(") {\n");
         _indent++;
+        indent();
         compile(ast->while_body);
         _indent--;
         indent();

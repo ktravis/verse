@@ -22,6 +22,25 @@ fn test_array_copy() {
     assert(y[0] == x[0]);
 }
 
+fn test_array_with_struct() {
+    s:struct{
+        arr:[5]int;
+    };
+    a:[5]int;
+    i:int;
+    while i < a.length {
+        a[i] = i;
+        i = i + 1;
+    }
+
+    s.arr = a;
+    i = 0;
+    while i < s.arr.length {
+        println("Struct array[" + itoa(i) + "]: " + itoa(s.arr[i]));
+        i = i + 1;
+    }
+}
+
 fn do_stuff(a:[]int):[]int {
     i:int;
     while i < a.length {
@@ -48,6 +67,8 @@ fn main():int {
     print_array(y);
     i = 0;
 
+    test_array_copy();
+    test_array_with_struct();
 
     // multi-dimensional arrays?
     m:[3][3]int;
