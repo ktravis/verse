@@ -556,6 +556,9 @@ Ast *parse_func_decl(Ast *scope, int anonymous) {
     fn_scope->body = parse_block(fn_scope, 1);
     func->fn_body = fn_scope;
 
+    if (!anonymous) {
+        global_fn_vars = varlist_append(global_fn_vars, fn_decl_var);
+    }
     global_fn_decls = astlist_append(global_fn_decls, func);
 
     return func; 
@@ -1113,16 +1116,16 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             error(ast->line, "Cannot declare an extern inside scope ('%s').", ast->fn_decl_var->name);
         }
         attach_var(ast->fn_decl_var, scope);
-        global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);
+        /*global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);*/
         break;
     case AST_FUNC_DECL:
         if (parser_state != PARSE_MAIN) {
             error(ast->line, "Cannot declare a named function inside scope ('%s').", ast->fn_decl_var->name);
         }
-        attach_var(ast->fn_decl_var, scope);
-        attach_var(ast->fn_decl_var, ast->fn_body);
+        /*attach_var(ast->fn_decl_var, scope);*/
+        /*attach_var(ast->fn_decl_var, ast->fn_body);*/
     case AST_ANON_FUNC_DECL: {
-        global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);
+        /*global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);*/
         Var *bindings_var = NULL;
         if (ast->type == AST_ANON_FUNC_DECL) {
             bindings_var = malloc(sizeof(Var));
