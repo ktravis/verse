@@ -82,7 +82,6 @@ int streq(struct string_type left, struct string_type right) {
     }
     return 1;
 }
-#define INIT_STATIC_ARRAY(t, l) (struct array_type){.data=alloca(sizeof(t)*l),.length=length}
 
 // builtins
 void _vs_assert(unsigned char a) {
