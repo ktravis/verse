@@ -329,21 +329,6 @@ void compile_static_array(Ast *ast) {
     }
 }
 
-/*void emit_static_array_decl(Ast *ast) {*/
-    /*if (ast->init == NULL) {*/
-        /*emit_type(ast->decl_var->type);*/
-        /*long l = ast->decl_var->type->length * ast->decl_var->type->inner->size;*/
-        /*printf("_vs_%s = memset(alloca(%ld), 0, %ld)", ast->decl_var->name, l, l);*/
-    /*} else {*/
-        /*emit_type(ast->decl_var->type->inner);*/
-        /*printf("_vs_%s = ", ast->decl_var->name);*/
-        /*compile_static_array(ast->init);*/
-        /*if (ast->init->type == AST_TEMP_VAR) {*/
-            /*ast->init->tmpvar->consumed = 1;*/
-        /*}*/
-        /*ast->decl_var->initialized = 1;*/
-    /*}*/
-/*}*/
 void emit_static_array_decl(Ast *ast) {
     char *membername = malloc(sizeof(char) * (strlen(ast->decl_var->name) + 5));
     sprintf(membername, "_vs_%s", ast->decl_var->name);
@@ -380,8 +365,8 @@ void emit_static_array_decl(Ast *ast) {
         if (ast->init->type == AST_TEMP_VAR) {
             ast->init->tmpvar->consumed = 1;
         }
-        ast->decl_var->initialized = 1;
     }
+    ast->decl_var->initialized = 1;
 }
 
 void emit_decl(Ast *ast) {
@@ -699,6 +684,14 @@ void compile(Ast *ast) {
         if (ast->type == AST_STRUCT) {
         } else {
             switch (var_type(ast->expr)->base) {
+            case STATIC_ARRAY_T: {
+                // TODO this is all messed up
+                Type *t = var_type(ast->expr);
+                printf("(struct array_type){.data=calloc(%ld, sizeof(", t->length);
+                emit_type(t->inner);
+                printf(")),.length=%ld}", t->length);
+                break;
+            }
             case STRING_T:
                 /*emit_tmpvar(ast->expr);*/
                 /*break;*/
@@ -706,6 +699,7 @@ void compile(Ast *ast) {
                 printf("(_tmp%d = ", ast->tmpvar->id);
                 printf("malloc(sizeof(");
                 emit_type(var_type(ast->expr));
+
                 printf(")), *_tmp%d = ", ast->tmpvar->id);
                 compile(ast->expr);
                 printf(", _tmp%d", ast->tmpvar->id);
@@ -858,26 +852,36 @@ void compile(Ast *ast) {
         printf(")");
         break;
     }
-    case AST_INDEX:
-        if (is_array(var_type(ast->left))) {
+    case AST_INDEX: {
+        /*int ptr = 0;*/
+        Type *lt = var_type(ast->left);
+        /*if (lt->base == PTR_T) {*/
+            /*lt = lt->inner;*/
+            /*ptr = 1;*/
+        /*}*/
+        if (is_array(lt)) {
             printf("(");
-            if (var_type(ast->left)->base == ARRAY_T) {
+            if (lt->base == ARRAY_T) {
                 printf("(");
                 emit_type(var_type(ast->left)->inner);
                 printf("*)");
             }
+            /*if (ptr) {*/
+                /*printf("*");*/
+            /*}*/
             compile_static_array(ast->left);
             printf(")[");
             compile(ast->right);
             printf("]");
         } else {
-            // TODO why is this here? strings?
+            // TODO why is this here? strings? ptrs?
             compile(ast->left);
             printf("[");
             compile(ast->right);
             printf("]");
         }
         break;
+    }
     case AST_BLOCK:
         for (int i = 0; i < ast->num_statements; i++) {
             if (ast->statements[i]->type == AST_FUNC_DECL || ast->statements[i]->type == AST_EXTERN_FUNC_DECL) {
@@ -1008,9 +1012,9 @@ void emit_free(Var *var) {
             _indent++;
             indent();
             emit_type(var->type->inner);
-            printf("*_0 = _vs_%s.data;\n", var->name);
+            printf("*_0 = _vs_%s;\n", var->name);
             indent();
-            printf("for (int i = 0; i < _vs_%s.length; i++) {\n", var->name);
+            printf("for (int i = 0; i < %ld; i++) {\n", var->type->length);
             _indent++;
             indent();
             emit_type(var->type->inner);
@@ -1119,8 +1123,12 @@ void emit_free_locals(Ast *scope) {
         Var *v = locals->item;
         locals = locals->next;
         // TODO got to be a better way to handle this here
-        if (v->consumed || (v->type->base != FN_T && ((v->type->base == BASEPTR_T || v->type->base == PTR_T) ||
-                v->type->held || !v->initialized || (v->temp && v->consumed)))) {
+        if (v->consumed ||
+                (v->type->base != FN_T &&
+                    ((v->type->base == BASEPTR_T || v->type->base == PTR_T) ||
+                     v->type->held ||
+                     !v->initialized ||
+                     (v->temp && v->consumed)))) {
             continue;
         }
         emit_free(v);

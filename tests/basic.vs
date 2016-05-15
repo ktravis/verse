@@ -18,10 +18,10 @@ fn main():int {
     x = "123";
     assert(x != '1234');
 
-    z:auto = fn ():bool {
+    z := fn ():bool {
         return true;
     };
-    z2:auto = z;
+    z2 := z;
     assert(z());
     assert(z2());
     if x != '123' {
@@ -35,16 +35,16 @@ fn main():int {
     }
     println(x);
 
-    blah:auto = fn(x:int, y:int):auto {
+    blah := fn(x:int, y:int):auto {
         return x * x + y * y;
     };
     assert(blah(3, 4) == 25);
-    blah2:auto = fn():fn(bool):bool {
+    blah2 := fn():fn(bool):bool {
         return fn(a:bool):bool {
             return !a;
         };
     };
-    blah3:auto = blah2();
+    blah3 := blah2();
     assert(blah3(false));
     assert(blah3(!true));
     assert(x1 == 2);

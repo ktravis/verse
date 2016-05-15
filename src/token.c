@@ -110,13 +110,6 @@ Tok *next_token() {
     } else if (c == ';') {
         return make_token(TOK_SEMI);
     } else if (c == ':') {
-        int d = getc(stdin);
-        if (d == ':') {
-            Tok *t = make_token(TOK_OP);
-            t->op = OP_CAST;
-            return t;
-        }
-        ungetc(d, stdin);
         return make_token(TOK_COLON);
     } else if (c == '^') {
         return make_token(TOK_CARET);
@@ -305,6 +298,10 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_BREAK);
     } else if (!strcmp(buf, "continue")) {
         return make_token(TOK_CONTINUE);
+    } else if (!strcmp(buf, "as")) {
+        Tok *t = make_token(TOK_OP);
+        t->op = OP_CAST;
+        return t;
     }
     return NULL;
 }
@@ -542,7 +539,7 @@ const char *op_to_str(int op) {
     case OP_DOT: return ".";
     case OP_ADDR: return "^";
     case OP_AT: return "@";
-    case OP_CAST: return "::";
+    case OP_CAST: return "as";
     default:
         return "BAD OP";
     }

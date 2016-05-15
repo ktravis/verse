@@ -22,23 +22,56 @@ fn test_array_copy() {
     assert(y[0] == x[0]);
 }
 
-fn test_array_with_struct() {
-    s:struct{
-        arr:[5]int;
-    };
-    a:[5]int;
-    i:int;
-    while i < a.length {
-        a[i] = i;
-        i = i + 1;
-    }
+fn test_array_of_strings() {
+    x:[10]string;
+    x[0] = "test";
+    x[1] = "one";
+    x[2] = "two";
 
-    s.arr = a;
-    i = 0;
+    fn (a:[]string) {
+        i:int;
+        while i < a.length {
+            println(a[i]); 
+            i = i + 1;
+        }
+    }(x[:3]);
+}
+
+fn test_array_with_struct() {
+    s := (fn ():struct{arr:[5]int;} {
+        s:struct{
+            arr:[5]int;
+        };
+        a:[5]int;
+        i:int;
+        while i < a.length {
+            a[i] = i;
+            i = i + 1;
+        }
+
+        // `a` will be out of scope when we return,
+        //  but is copied to `s` and returned
+        s.arr = a;
+        return s;
+    }());
+
+    i:int = 0;
     while i < s.arr.length {
-        println("Struct array[" + itoa(i) + "]: " + itoa(s.arr[i]));
+        assert(i == s.arr[i]);
         i = i + 1;
     }
+}
+
+fn test_hold_array() {
+    y:[]string = fn():auto {
+        x:[2]string;
+        x[0] = "hello, ";
+        x[1] = "world!";
+        return hold x; 
+    }();
+    // TODO release doing nothing!
+    println(y[0] + y[1]);
+    release y;
 }
 
 fn do_stuff(a:[]int):[]int {
@@ -69,6 +102,8 @@ fn main():int {
 
     test_array_copy();
     test_array_with_struct();
+    test_array_of_strings();
+    test_hold_array();
 
     // multi-dimensional arrays?
     m:[3][3]int;

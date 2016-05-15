@@ -35,6 +35,9 @@ Type *var_type(Ast *ast) {
         return var_type(ast->fn)->ret;
     case AST_INDEX: {
         Type *t = var_type(ast->left);
+        if (t->base == PTR_T) {
+            t = t->inner;
+        }
         return t->inner;
     }
     case AST_SLICE:

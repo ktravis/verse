@@ -144,7 +144,7 @@ Ast *parse_assignment_semantics(Ast *ast, Ast *scope) {
         error(ast->line, "LHS of assignment has type '%s', while RHS has type '%s'.",
                 ast->left->var->type->name, var_type(ast->right)->name);
     }
-    if (ast->right->type != AST_TEMP_VAR && is_dynamic(var_type(ast->right)) && !is_literal(ast->right)) {
+    if (ast->right->type != AST_TEMP_VAR && is_dynamic(var_type(ast->left)) && !is_literal(ast->right)) {
         ast->right = make_ast_tmpvar(ast->right, make_temp_var(var_type(ast->right), scope));
     }
     return ast;
@@ -278,8 +278,16 @@ Ast *parse_arg_list(Ast *left, Ast *scope) {
 }
 
 Ast *parse_declaration(Tok *t, Ast *scope) {
-    Ast *lhs = make_ast_decl(t->sval, parse_type(next_token(), scope));
+    char *name = t->sval;
     Tok *next = next_token();
+    Type *type = NULL;
+    if (next->type == TOK_OP && next->op == OP_ASSIGN) {
+        type = make_type("auto", AUTO_T, -1);
+    } else {
+        type = parse_type(next, scope);
+        next = next_token();
+    }
+    Ast *lhs = make_ast_decl(name, type);
     if (next == NULL) {
         error(lhs->line, "Unexpected end of input while parsing declaration.");
     } else if (next->type == TOK_OP && next->op == OP_ASSIGN) {
@@ -989,22 +997,25 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         break;
     }
     case AST_RELEASE: {
-        // TODO consider only BASEPTR_T being a valid release target
         ast->release_target = parse_semantics(ast->release_target, scope);
         Type *t = var_type(ast->release_target);
+        if (t->base != PTR_T && t->base != BASEPTR_T && t->base != ARRAY_T) {
+            error(ast->line, "Struct member release target must be a pointer.");
+        /*} else {*/
+            /*error(ast->line, "Unexpected target of release statement (must be variable or dot op).");*/
+        }
         if (ast->release_target->type == AST_IDENTIFIER) {
-            if (!t->held && t->base != PTR_T && t->base != BASEPTR_T) {
-                error(ast->line, "Cannot release the non-held variable '%s'.", ast->release_target->var->name);
-            }
+            // TODO is held even being set?
+            /*if (!t->held && t->base != PTR_T && t->base != BASEPTR_T) {*/
+                /*error(ast->line, "Cannot release the non-held variable '%s'.", ast->release_target->var->name);*/
+            /*}*/
             // TODO instead mark that var has been released for better errors in
             // the future
             release_var(ast->release_target->var, scope);
-        } else if (ast->release_target->type == AST_DOT) {
-            if (t->base != PTR_T && t->base != BASEPTR_T) {
-                error(ast->line, "Struct member release target must be a pointer.");
-            }
-        } else {
-            error(ast->line, "Unexpected target of release statement (must be variable or dot op).");
+        /*} else if (ast->release_target->type == AST_DOT) {*/
+            /*if (t->base != PTR_T && t->base != BASEPTR_T) {*/
+                /*error(ast->line, "Struct member release target must be a pointer.");*/
+            /*}*/
         }
         break;
     }
@@ -1018,8 +1029,13 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         if (ast->expr->type != AST_TEMP_VAR && is_dynamic(t)) {
             ast->expr = make_ast_tmpvar(ast->expr, make_temp_var(t, scope));
         }
-        Type *tp = make_ptr_type(t);
-        tp->held = 1;
+        Type *tp = NULL;
+        if (t->base == STATIC_ARRAY_T) {
+            tp = make_array_type(t->inner);
+        } else {
+            tp = make_ptr_type(t);
+        }
+        tp->held = 1; // eh?
 
         ast->tmpvar = make_temp_var(tp, scope);
         break;
@@ -1065,7 +1081,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
                 // TODO only for literal?
                 init = try_implicit_cast(ast->decl_var->type, init);
             }
-            if (init->type != AST_TEMP_VAR && is_dynamic(var_type(init))) {
+            if (init->type != AST_TEMP_VAR && is_dynamic(ast->decl_var->type)) {
                 if (!is_literal(init)) {
                     init = make_ast_copy(init);
                 }
@@ -1175,7 +1191,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
                     error(arg->line, "Incorrect argument to function, expected type '%s', and got '%s'.", arg_types->item->name, var_type(arg)->name);
                 }
             }
-            if (arg->type != AST_TEMP_VAR && var_type(arg)->base != STRUCT_T && is_dynamic(var_type(arg))) {
+            if (arg->type != AST_TEMP_VAR && var_type(arg)->base != STRUCT_T && is_dynamic(arg_types->item)) {
                 if (!is_literal(arg)) {
                     arg = make_ast_copy(arg);
                 }
@@ -1195,13 +1211,14 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         ast->right = parse_semantics(ast->right, scope);
         Type *l = var_type(ast->left);
         Type *r = var_type(ast->right);
-        if (!(is_array(l) || (l->base == PTR_T && is_array(l->inner)))) {
+        /*if (!(is_array(l) || (l->base == PTR_T && is_array(l->inner)))) {*/
+        if (!is_array(l)) {
             error(ast->left->line, "Cannot perform index/subscript operation on non-array type (type is '%s').", l->name);
         }
         if (r->base != INT_T) {
             error(ast->right->line, "Cannot index array with non-integer type '%s'.", r->name);
         }
-        int _static = l->base == STATIC_ARRAY_T || (l->base == PTR_T && l->inner->base == STATIC_ARRAY_T);
+        int _static = l->base == STATIC_ARRAY_T; // || (l->base == PTR_T && l->inner->base == STATIC_ARRAY_T);
         if (is_literal(ast->right)) {
             int i = ast->right->ival;
             // r must be integer

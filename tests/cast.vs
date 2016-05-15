@@ -19,18 +19,18 @@ fn floop(x:thing) {
 
 fn main():int {
     // cast
-    x:blah = "test" :: blah;
+    x:blah = "test" as blah;
     // implicit cast
     y:blah = "test2";
     // fail
-    // z:blah = "test3" :: string;
-    grp(x::string);
+    // z:blah = "test3" as string;
+    grp(x as string);
     grp("heyyyy lol");
 
     not_a_thing:struct{
         a:int;
         b:bool;
     };
-    floop(not_a_thing::thing);
+    floop(not_a_thing as thing);
     return 0;
 }

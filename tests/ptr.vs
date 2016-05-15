@@ -34,7 +34,7 @@ fn main():int {
 
     a:list;
     a.name = "last";
-    b:auto = hold a;
+    b := hold a;
     b = prepend("second", b);
     b = prepend("first", b);
     print_list(b);
