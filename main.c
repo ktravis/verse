@@ -497,7 +497,6 @@ void emit_static_array_copy(Type *t, char *dest, char *src) {
     _indent--;
     indent();
     printf("}\n");
-    indent();
 
     _indent--;
     indent();
@@ -685,11 +684,16 @@ void compile(Ast *ast) {
         } else {
             switch (var_type(ast->expr)->base) {
             case STATIC_ARRAY_T: {
-                // TODO this is all messed up
                 Type *t = var_type(ast->expr);
-                printf("(struct array_type){.data=calloc(%ld, sizeof(", t->length);
-                emit_type(t->inner);
-                printf(")),.length=%ld}", t->length);
+                if (is_dynamic(t->inner)) {
+                    printf("(struct array_type){.data=_hold_%d(", t->id);
+                    compile(ast->expr);
+                    printf("),.length=%ld}", t->length);
+                } else { // TODO this isn't copying, duh!
+                    printf("(struct array_type){.data=calloc(%ld, sizeof(", t->length);
+                    emit_type(t->inner);
+                    printf(")),.length=%ld}", t->length);
+                }
                 break;
             }
             case STRING_T:
@@ -1194,6 +1198,28 @@ void emit_forward_decl(Var *v) {
     printf(");\n");
 }
 
+void emit_hold_func_decl(Type *t) {
+    emit_type(t); // should this be void *?
+    printf("_hold_%d(", t->id);
+    emit_type(t);
+    printf("other) {\n");
+    _indent++;
+    indent();
+
+    emit_type(t);
+    printf("held = malloc(sizeof(");
+    emit_type(t->inner);
+    printf(") * %ld);\n", t->length);
+    indent();
+    emit_static_array_copy(t, "held", "other");
+    indent();
+    printf("return held;\n");
+    
+    _indent--;
+    indent();
+    printf("}\n");
+}
+
 int main(int argc, char **argv) {
     int just_ast = 0;
     if (argc > 1 && !strcmp(argv[1], "-a")) {
@@ -1223,6 +1249,11 @@ int main(int argc, char **argv) {
         while (stlist != NULL) {
             emit_struct_decl(stlist->item);
             stlist = stlist->next;
+        }
+        TypeList *holds = get_global_hold_funcs();
+        while (holds != NULL) {
+            emit_hold_func_decl(holds->item);
+            holds = holds->next;
         }
         AstList *fnlist = get_global_funcs();
         while (fnlist != NULL) {

@@ -44,6 +44,7 @@ VarList *get_global_vars();
 AstList *get_init_list();
 VarList *get_global_bindings();
 AstList *get_binding_exprs(int id);
+TypeList *get_global_hold_funcs();
 void add_binding_expr(int id, Ast *expr);
 
 void init_builtins();

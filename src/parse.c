@@ -12,6 +12,7 @@ static VarList *builtin_vars = NULL;
 static AstList *global_fn_decls = NULL;
 static VarList *global_fn_bindings = NULL;
 static TypeList *global_struct_decls = NULL;
+static TypeList *global_hold_funcs = NULL;
 static AstListList *binding_exprs = NULL;
 static int parser_state = PARSE_MAIN; // TODO unnecessary w/ PUSH_FN_SCOPE?
 static int loop_state = 0;
@@ -1031,6 +1032,22 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         }
         Type *tp = NULL;
         if (t->base == STATIC_ARRAY_T) {
+            // If the static array has a dynamic inner type, we need to add the
+            // type to the list of those for which "hold" functions will be
+            // created
+            // This is a bit of a hack, specifically for the c backed...
+            if (is_dynamic(t->inner)) {
+                TypeList *h = global_hold_funcs;
+                while (h != NULL) {
+                    if (h->item->id == t->id) {
+                        break;
+                    }
+                    h = h->next;
+                }
+                if (h == NULL) {
+                    global_hold_funcs = typelist_append(global_hold_funcs, t);
+                }
+            }
             tp = make_array_type(t->inner);
         } else {
             tp = make_ptr_type(t);
@@ -1321,6 +1338,10 @@ AstList *get_global_funcs() {
 
 TypeList *get_global_structs() {
     return reverse_typelist(global_struct_decls);
+}
+
+TypeList *get_global_hold_funcs() {
+    return global_hold_funcs;
 }
 
 VarList *get_global_vars() {
