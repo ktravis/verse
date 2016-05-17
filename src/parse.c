@@ -718,21 +718,25 @@ Ast *parse_hold(Ast *scope) {
 }
 
 Ast *parse_struct_literal(char *name, Ast *scope) {
-    Tok *t = expect(TOK_LBRACE);
+    UNWIND_SET;
+
+    Tok *t = NEXT_TOKEN_UNWINDABLE;
     Ast *ast = ast_alloc(AST_STRUCT);
     int alloc = 0;
     ast->struct_lit_name = name;
     ast->nmembers = 0;
     if (peek_token()->type == TOK_RBRACE) {
-        next_token();
+        t = NEXT_TOKEN_UNWINDABLE;
         return ast;
     }
     for (;;) {
-        t = next_token();
+        t = NEXT_TOKEN_UNWINDABLE;
         if (t == NULL) {
             error(lineno(), "Unexpected EOF while parsing struct literal.");
         } else if (t->type != TOK_ID) {
-            error(lineno(), "Unexpected token '%s' while parsing struct literal.", to_string(t));
+            UNWIND_TOKENS;
+            /*error(lineno(), "Unexpected token '%s' while parsing struct literal.", to_string(t));*/
+            return NULL;
         }
         if (ast->nmembers >= alloc) {
             alloc += 4;
@@ -740,20 +744,25 @@ Ast *parse_struct_literal(char *name, Ast *scope) {
             ast->member_exprs = realloc(ast->member_exprs, sizeof(Ast *)*alloc);
         }
         ast->member_names[ast->nmembers] = t->sval;
-        t = next_token();
+        t = NEXT_TOKEN_UNWINDABLE;
         if (t == NULL) {
             error(lineno(), "Unexpected EOF while parsing struct literal.");
         } else if (t->type != TOK_OP || t->op != OP_ASSIGN) {
-            error(lineno(), "Unexpected token '%s' while parsing struct literal.", to_string(t));
+            UNWIND_TOKENS;
+            /*error(lineno(), "Unexpected token '%s' while parsing struct literal.", to_string(t));*/
+            return NULL;
         }
-        ast->member_exprs[ast->nmembers++] = parse_expression(next_token(), 0, scope);
-        t = next_token();
+        ast->member_exprs[ast->nmembers++] = parse_expression(NEXT_TOKEN_UNWINDABLE, 0, scope);
+        t = NEXT_TOKEN_UNWINDABLE;
         if (t == NULL) {
             error(lineno(), "Unexpected EOF while parsing struct literal.");
         } else if (t->type == TOK_RBRACE) {
             break;
         } else if (t->type != TOK_COMMA) {
-            error(lineno(), "Unexpected token '%s' while parsing struct literal.", to_string(t));
+            UNWIND_TOKENS;
+            // eh?
+            /*error(lineno(), "Unexpected token '%s' while parsing struct literal.", to_string(t));*/
+            return NULL;
         }
     }
     return ast;
@@ -785,7 +794,10 @@ Ast *parse_primary(Tok *t, Ast *scope) {
         }
         unget_token(next);
         if (peek_token()->type == TOK_LBRACE) {
-            return parse_struct_literal(t->sval, scope);
+            Ast *ast = parse_struct_literal(t->sval, scope);
+            if (ast != NULL) {
+                return ast;
+            }
         }
         Ast *id = ast_alloc(AST_IDENTIFIER);
         id->var = NULL;
@@ -1149,7 +1161,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             error(ast->line, "Cannot declare an extern inside scope ('%s').", ast->fn_decl_var->name);
         }
         attach_var(ast->fn_decl_var, scope);
-        /*global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);*/
+        global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl_var);
         break;
     case AST_FUNC_DECL:
         if (parser_state != PARSE_MAIN) {
@@ -1307,7 +1319,11 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         if (fn_ret_t->base == AUTO_T) {
             current_fn_scope->fn_decl_var->type->ret = ret_t;
         } else if (!check_type(fn_ret_t, ret_t)) {
-            error(ast->line, "Return statement type '%s' does not match enclosing function's return type '%s'.", ret_t->name, fn_ret_t->name);
+            if (is_literal(ast->ret_expr)) {
+                ast->ret_expr = try_implicit_cast(fn_ret_t, ast->ret_expr);
+            } else {
+                error(ast->line, "Return statement type '%s' does not match enclosing function's return type '%s'.", ret_t->name, fn_ret_t->name);
+            }
         }
         break;
     }

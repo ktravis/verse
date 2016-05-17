@@ -41,6 +41,7 @@ fn main():int {
     assert(1 == y.b);
     release y;
     a1 := hold_struct();
+    glarg:vec3 = vec3{};
     println("held: x = " + itoa(a1.x) + ", y = " + itoa(a1.y) + ", z = " + itoa(a1.z));
     release a1;
     return 0;

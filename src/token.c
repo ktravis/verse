@@ -4,6 +4,7 @@
 static Tok *last = NULL;
 
 static int line = 1;
+static TokList *unwind_stack = NULL;
 
 void read_block_comment() {
     int count = 1;
@@ -57,6 +58,29 @@ char read_non_space() {
     return c;
 }
 
+TokList *toklist_append(TokList *list, Tok *t) {
+    TokList *out = malloc(sizeof(TokList));
+    out->next = list;
+    out->item = t;
+    return out;
+}
+TokList *reverse_toklist(TokList *list) {
+    TokList *tail = list;
+    if (tail == NULL) {
+        return NULL;
+    }
+    TokList *head = tail;
+    TokList *tmp = head->next;
+    head->next = NULL;
+    while (tmp != NULL) {
+        tail = head;
+        head = tmp;
+        tmp = tmp->next;
+        head->next = tail;
+    }
+    return head;
+}
+
 int is_id_char(char c) {
     return isalpha(c) || isdigit(c) || c == '_';
 }
@@ -68,9 +92,9 @@ Tok *make_token(int t) {
 }
 
 Tok *next_token() {
-    if (last != NULL) {
-        Tok *t = last;
-        last = NULL;
+    if (unwind_stack != NULL) {
+        Tok *t = unwind_stack->item;
+        unwind_stack = unwind_stack->next;
         return t;
     }
     char c = read_non_space();
@@ -194,10 +218,11 @@ Tok *peek_token() {
 }
 
 void unget_token(Tok *tok) {
-    if (last != NULL) {
-        error(-1, "Can't unget twice in a row.");
-    }
-    last = tok;
+    /*if (last != NULL) {*/
+        /*error(-1, "Can't unget twice in a row.");*/
+    /*}*/
+    /*last = tok;*/
+    unwind_stack = toklist_append(unwind_stack, tok);
 }
 
 double read_decimal(char c) {

@@ -75,6 +75,20 @@ typedef struct Tok {
     };
 } Tok;
 
+typedef struct TokList {
+    Tok *item;
+    struct TokList *next;
+} TokList;
+
+TokList *toklist_append(TokList *list, Tok *t);
+TokList *reverse_toklist(TokList *list);
+
+#define UNWIND_SET TokList *__consumed = NULL
+#define NEXT_TOKEN_UNWINDABLE ((__consumed = toklist_append(__consumed, next_token()))->item)
+#define UNWIND_TOKENS \
+  for (; __consumed != NULL; __consumed = __consumed->next) unget_token(__consumed->item)
+  //for (__consumed = reverse_toklist(__consumed); __consumed != NULL; __consumed = __consumed->next) unget_token(__consumed->item)
+
 void skip_spaces();
 int is_id_char(char c);
 int type_id(char *buf);

@@ -238,6 +238,9 @@ int can_cast(Type *from, Type *to) {
     case INT_T:
         if (from->size == 8 && (to->base == PTR_T || to->base == BASEPTR_T)) {
             return 1;
+        }
+        if (to->base == FLOAT_T && to->size >= from->size) {
+            return 1;
         } // DO want fallthrough here
     default:
         return from->base == to->base;
@@ -442,9 +445,9 @@ void init_types() {
     uint32_type = define_type(make_type("uint32", UINT_T, 4));
     uint64_type = define_type(make_type("uint64", UINT_T, 8));
 
-    float_type = define_type(make_type("float", FLOAT_T, 8));
-    float32_type = define_type(make_type("float32", FLOAT_T, 8));
-    float64_type = define_type(make_type("float64", FLOAT_T, 16));
+    float_type = define_type(make_type("float", FLOAT_T, 4));
+    float32_type = define_type(make_type("float32", FLOAT_T, 4));
+    float64_type = define_type(make_type("float64", FLOAT_T, 8));
 
     bool_type = define_type(make_type("bool", BOOL_T, 1));
 
