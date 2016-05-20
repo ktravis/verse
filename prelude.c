@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <alloca.h>
+#include <math.h>
 
 #define SWAP(x,y) do \
    { unsigned char swap_temp[sizeof(x) == sizeof(y) ? (signed)sizeof(x) : -1]; \
@@ -83,6 +84,10 @@ int streq(struct string_type left, struct string_type right) {
     return 1;
 }
 
+int64_t to_i(double f) {
+    return floor(f);
+}
+
 // builtins
 void _vs_assert(unsigned char a) {
     assert(a);
@@ -106,4 +111,7 @@ struct string_type _vs_itoa(int x) {
     snprintf(v.bytes, 7, "%d", x);
     v.len = strlen(v.bytes);
     return v;
+}
+uint8_t _vs_getc() {
+    return (uint8_t)getc(stdin);
 }

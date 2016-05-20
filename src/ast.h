@@ -37,6 +37,7 @@ enum {
     AST_TYPE_DECL,
     AST_BLOCK,
     AST_WHILE,
+    AST_FOR,
     AST_BREAK,
     AST_CONTINUE,
     AST_HOLD,
@@ -160,6 +161,12 @@ typedef struct Ast {
         struct {
             struct Ast *while_condition;
             struct Ast *while_body;
+        };
+        // for
+        struct {
+            Var *for_itervar;
+            struct Ast *for_iterable;
+            struct Ast *for_body;
         };
         // struct literal
         struct {

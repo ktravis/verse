@@ -307,6 +307,10 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_ELSE);
     } else if (!strcmp(buf, "while")) {
         return make_token(TOK_WHILE);
+    } else if (!strcmp(buf, "for")) {
+        return make_token(TOK_FOR);
+    } else if (!strcmp(buf, "in")) {
+        return make_token(TOK_IN);
     } else if (!strcmp(buf, "extern")) {
         return make_token(TOK_EXTERN);
     } else if (!strcmp(buf, "type")) {
@@ -317,8 +321,6 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_HOLD);
     } else if (!strcmp(buf, "release")) {
         return make_token(TOK_RELEASE);
-    } else if (!strcmp(buf, "while")) {
-        return make_token(TOK_WHILE);
     } else if (!strcmp(buf, "break")) {
         return make_token(TOK_BREAK);
     } else if (!strcmp(buf, "continue")) {
@@ -480,6 +482,10 @@ const char *to_string(Tok *t) {
         return "release";
     case TOK_WHILE:
         return "while";
+    case TOK_FOR:
+        return "for";
+    case TOK_IN:
+        return "in";
     case TOK_BREAK:
         return "break";
     case TOK_CONTINUE:
@@ -531,6 +537,10 @@ const char *token_type(int type) {
         return "RELEASE";
     case TOK_WHILE:
         return "WHILE";
+    case TOK_FOR:
+        return "FOR";
+    case TOK_IN:
+        return "IN";
     case TOK_BREAK:
         return "BREAK";
     case TOK_CONTINUE:

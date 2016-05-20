@@ -895,7 +895,7 @@ void compile(Ast *ast) {
                 indent();
             }
             compile(ast->statements[i]);
-            if (ast->statements[i]->type != AST_CONDITIONAL && ast->statements[i]->type != AST_RELEASE && ast->statements[i]->type != AST_WHILE) {
+            if (ast->statements[i]->type != AST_CONDITIONAL && ast->statements[i]->type != AST_RELEASE && ast->statements[i]->type != AST_WHILE && ast->statements[i]->type != AST_FOR) {
                 printf(";\n");
             }
         }
@@ -929,6 +929,38 @@ void compile(Ast *ast) {
         _indent++;
         indent();
         compile(ast->while_body);
+        _indent--;
+        indent();
+        printf("}\n");
+        break;
+    case AST_FOR:
+        // TODO loop depth should change iter var name?
+        printf("{\n");
+        _indent++;
+        indent();
+        /*emit_type(var_type(ast->for_iterable));*/
+        printf("struct array_type _iter = ");
+        compile_unspecified_array(ast->for_iterable);
+        printf(";\n");
+        indent();
+        emit_type(ast->for_itervar->type);
+        printf("_vs_%s;\n", ast->for_itervar->name);
+        indent();
+        // TODO can't actually have _vs_%s init in the first part of the for
+        // loop... look for something else
+        printf("for (long _i = 0, _vs_%s = ((", ast->for_itervar->name);
+        emit_type(ast->for_itervar->type);
+        printf("*)_iter.data)[_i]; _i < _iter.length; _i++, (_vs_%s = ((", ast->for_itervar->name);
+        emit_type(ast->for_itervar->type);
+        printf("*)_iter.data)[_i])) ");
+        /*_indent++;*/
+        /*indent();*/
+        /*printf("_vs_%s = _iter.data[_i];\n", ast->for_itervar->name);*/
+        /*indent();*/
+        compile(ast->for_body);
+        /*_indent--;*/
+        /*indent();*/
+        /*printf("}\n");*/
         _indent--;
         indent();
         printf("}\n");

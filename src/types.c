@@ -235,6 +235,11 @@ int can_cast(Type *from, Type *to) {
             }
         }
         return 1;
+    case UINT_T:
+        if (to->base == INT_T && to->size > from->size) { // TODO should we allow this? i.e. uint8 -> int
+            return 1;
+        }
+        return from->base == to->base;
     case INT_T:
         if (from->size == 8 && (to->base == PTR_T || to->base == BASEPTR_T)) {
             return 1;
@@ -423,6 +428,36 @@ Type *base_type(int t) {
     case PTR_T:
     case ARRAY_T:
     case DYN_ARRAY_T:
+    default:
+        error(-1, "cmon man");
+    }
+    return NULL;
+}
+
+Type *base_numeric_type(int t, int size) {
+    if (!types_initialized) {
+        error (-1, "Must first initialize types before calling base_type(...)");
+    }
+    switch (t) {
+    case INT_T:
+        switch (size) {
+        case 8: return int8_type;
+        case 16: return int16_type;
+        case 32: return int32_type;
+        case 64: return int64_type;
+        }
+    case UINT_T:
+        switch (size) {
+        case 8: return uint8_type;
+        case 16: return uint16_type;
+        case 32: return uint32_type;
+        case 64: return uint64_type;
+        }
+    case FLOAT_T:
+        switch (size) {
+        case 32: return float32_type;
+        case 64: return float64_type;
+        }
     default:
         error(-1, "cmon man");
     }

@@ -62,6 +62,7 @@ typedef struct TypeList {
 
 
 Type *base_type(int t);
+Type *base_numeric_type(int t, int size);
 
 Type *make_type(char *name, int base, int size);
 Type *make_ptr_type(Type *inner);

@@ -692,6 +692,26 @@ Ast *parse_statement(Tok *t, Ast *scope) {
         }
         ast->while_body = parse_scope(scope);
         return ast;
+    } else if (t->type == TOK_FOR) {
+        ast = ast_alloc(AST_FOR);
+        Tok *id = expect(TOK_ID);
+        ast->for_itervar = make_var(id->sval, make_type("auto", AUTO_T, -1));
+        Tok *next = next_token();
+        /*if (next->type == TOK_COLON) {*/
+            /*Tok *id = expect(TOK_ID);*/
+
+        /*}*/
+        if (next->type != TOK_IN) {
+            error(ast->line, "Unexpected token '%s' while parsing for loop.", to_string(next));
+        }
+        ast->for_iterable = parse_expression(next_token(), 0, scope);
+        next = next_token();
+        // TODO handle empty for body case by trying rollback here
+        if (next == NULL || next->type != TOK_LBRACE) {
+            error(lineno(), "Unexpected token '%s' while parsing for loop.", to_string(next));
+        }
+        ast->for_body = parse_scope(scope);
+        return ast;
     } else if (t->type == TOK_IF) {
         return parse_conditional(scope);
     } else if (t->type == TOK_RETURN) {
@@ -1244,7 +1264,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         if (!is_array(l)) {
             error(ast->left->line, "Cannot perform index/subscript operation on non-array type (type is '%s').", l->name);
         }
-        if (r->base != INT_T) {
+        if (r->base != INT_T && r->base != UINT_T) {
             error(ast->right->line, "Cannot index array with non-integer type '%s'.", r->name);
         }
         int _static = l->base == STATIC_ARRAY_T; // || (l->base == PTR_T && l->inner->base == STATIC_ARRAY_T);
@@ -1280,6 +1300,22 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         ast->while_body = parse_semantics(ast->while_body, scope);
         loop_state = _old;
         break;
+    case AST_FOR: {
+      /*printf("HEEREYYY %s\n", ast->for_iterable->var->name);*/
+        ast->for_iterable = parse_semantics(ast->for_iterable, scope);
+        Type *it_type = var_type(ast->for_iterable);
+        if (!is_array(it_type)) {
+            error(ast->line, "Cannot use for loop to iterator over non-array type '%s'.", it_type->name);
+        }
+        ast->for_itervar->type = it_type->inner;
+        // TODO type check for when type of itervar is explicit
+        int _old = loop_state;
+        loop_state = 1;
+        attach_var(ast->for_itervar, ast->for_body);
+        ast->for_body = parse_semantics(ast->for_body, scope);
+        loop_state = _old;
+        break;
+    }
     case AST_SCOPE:
         ast->body = parse_semantics(ast->body, ast);
         break;
@@ -1382,6 +1418,9 @@ void init_builtins() {
     builtin_vars = varlist_append(builtin_vars, v);
 
     v = make_var("validptr", make_fn_type(1, typelist_append(NULL, base_type(BASEPTR_T)), base_type(BOOL_T)));
+    builtin_vars = varlist_append(builtin_vars, v);
+
+    v = make_var("getc", make_fn_type(0, NULL, base_numeric_type(UINT_T, 8)));
     builtin_vars = varlist_append(builtin_vars, v);
 }
 
