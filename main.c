@@ -938,29 +938,26 @@ void compile(Ast *ast) {
         printf("{\n");
         _indent++;
         indent();
-        /*emit_type(var_type(ast->for_iterable));*/
         printf("struct array_type _iter = ");
         compile_unspecified_array(ast->for_iterable);
         printf(";\n");
         indent();
-        emit_type(ast->for_itervar->type);
-        printf("_vs_%s;\n", ast->for_itervar->name);
+        printf("for (long _i = 0; _i < _iter.length; _i++) {\n");
+        _indent++;
         indent();
-        // TODO can't actually have _vs_%s init in the first part of the for
-        // loop... look for something else
-        printf("for (long _i = 0, _vs_%s = ((", ast->for_itervar->name);
         emit_type(ast->for_itervar->type);
-        printf("*)_iter.data)[_i]; _i < _iter.length; _i++, (_vs_%s = ((", ast->for_itervar->name);
+        printf("_vs_%s = ((", ast->for_itervar->name);
         emit_type(ast->for_itervar->type);
-        printf("*)_iter.data)[_i])) ");
-        /*_indent++;*/
-        /*indent();*/
-        /*printf("_vs_%s = _iter.data[_i];\n", ast->for_itervar->name);*/
-        /*indent();*/
+        printf("*)_iter.data)[_i];\n");
+
+        indent();
+        // TODO don't clear these vars!
         compile(ast->for_body);
-        /*_indent--;*/
-        /*indent();*/
-        /*printf("}\n");*/
+
+        _indent--;
+        indent();
+        printf("}\n");
+
         _indent--;
         indent();
         printf("}\n");

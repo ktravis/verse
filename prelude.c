@@ -84,10 +84,6 @@ int streq(struct string_type left, struct string_type right) {
     return 1;
 }
 
-int64_t to_i(double f) {
-    return floor(f);
-}
-
 // builtins
 void _vs_assert(unsigned char a) {
     assert(a);

@@ -1,8 +1,6 @@
 #include "token.h"
 #include "util.h"
 
-static Tok *last = NULL;
-
 static int line = 1;
 static TokList *unwind_stack = NULL;
 
@@ -218,10 +216,6 @@ Tok *peek_token() {
 }
 
 void unget_token(Tok *tok) {
-    /*if (last != NULL) {*/
-        /*error(-1, "Can't unget twice in a row.");*/
-    /*}*/
-    /*last = tok;*/
     unwind_stack = toklist_append(unwind_stack, tok);
 }
 
