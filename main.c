@@ -108,7 +108,7 @@ void emit_uop(Ast *ast) {
         printf("!"); break;
     case OP_ADDR:
         printf("&"); break;
-    case OP_AT:
+    case OP_DEREF:
         printf("*"); break;
     case OP_MINUS:
         printf("-"); break;

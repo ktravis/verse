@@ -21,7 +21,7 @@ enum {
     ARRAY_T,
     STATIC_ARRAY_T,
     DYN_ARRAY_T,
-    //DERIVED_T
+    ENUM_T
 };
 
 struct TypeList;

@@ -177,7 +177,7 @@ Tok *next_token() {
         return t;
     } else if (c == '@') {
         Tok *t = make_token(TOK_UOP);
-        t->op = OP_AT;
+        t->op = OP_DEREF;
         return t;
     } else if (c == '!') {
         Tok *t;
@@ -376,7 +376,7 @@ int valid_unary_op(int op) {
     case OP_PLUS:
     case OP_MINUS:
     case OP_ADDR:
-    case OP_AT:
+    case OP_DEREF:
         return 1;
     }
     return 0;
@@ -413,7 +413,7 @@ int priority_of(Tok *t) {
             return 12; // TODO this priority might be wrong
         case OP_DOT:
             return 13;
-        case OP_ADDR: case OP_AT:
+        case OP_ADDR: case OP_DEREF:
             return 14;
         default:
             return -1;
@@ -567,7 +567,7 @@ const char *op_to_str(int op) {
     case OP_LTE: return "<=";
     case OP_DOT: return ".";
     case OP_ADDR: return "^";
-    case OP_AT: return "@";
+    case OP_DEREF: return "@";
     case OP_CAST: return "as";
     default:
         return "BAD OP";

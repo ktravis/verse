@@ -82,7 +82,7 @@ Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
             error(ast->line, "Cannot perform logical negation on type '%s'.", var_type(ast->right)->name);
         }
         break;
-    case OP_AT: // TODO precedence is wrong, see @x.data
+    case OP_DEREF: // TODO precedence is wrong, see @x.data
         if (var_type(ast->right)->base != PTR_T) {
             error(ast->line, "Cannot dereference a non-pointer type.");
         }
@@ -110,7 +110,7 @@ Ast *parse_uop_semantics(Ast *ast, Ast *scope) {
         return eval_const_uop(ast);
     }
     if (is_dynamic(var_type(ast->right))) {
-        if (ast->op == OP_AT) {
+        if (ast->op == OP_DEREF) {
             if (ast->right->type != AST_TEMP_VAR) {
                 ast->right = make_ast_tmpvar(ast->right, make_temp_var(var_type(ast->right), scope));
             }
@@ -889,7 +889,12 @@ Ast *parse_conditional(Ast *scope) {
     next = next_token();
     if (next != NULL && next->type == TOK_ELSE) {
         next = next_token();
-        if (next == NULL || next->type != TOK_LBRACE) {
+        if (next == NULL) {
+            error(lineno(), "Unexpected EOF while parsing conditional.");
+        } else if (next->type == TOK_IF) {
+            cond->else_body = parse_conditional(scope);
+            return cond;
+        } else if (next->type != TOK_LBRACE) {
             error(lineno(), "Unexpected token '%s' while parsing conditional.", to_string(next));
         }
         cond->else_body = parse_block(scope, 1);

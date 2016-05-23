@@ -63,7 +63,7 @@ enum {
     OP_LT,
     OP_LTE,
     OP_ADDR,
-    OP_AT,
+    OP_DEREF,
     OP_CAST
 };
 

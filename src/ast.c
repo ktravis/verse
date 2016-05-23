@@ -52,7 +52,7 @@ Type *var_type(Ast *ast) {
             return base_type(BOOL_T);
         case OP_ADDR:
             return make_ptr_type(var_type(ast->right));
-        case OP_AT:
+        case OP_DEREF:
             return var_type(ast->right)->inner;
         case OP_MINUS:
         case OP_PLUS:
@@ -104,7 +104,7 @@ int is_lvalue(Ast *ast) {
     return ast->type == AST_IDENTIFIER ||
         ast->type == AST_DOT ||
         ast->type == AST_INDEX ||
-        (ast->type == AST_UOP && ast->op == OP_AT);
+        (ast->type == AST_UOP && ast->op == OP_DEREF);
 }
 
 int is_literal(Ast *ast) {

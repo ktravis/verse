@@ -51,6 +51,16 @@ fn main():int {
     x1 = x1 + 1;
     assert(x1 == 3);
 
+    if x1 == 2 {
+        assert(false);
+    } else if x1 == 4 {
+        assert(false);
+    } else if x1 == 3 {
+        assert(true);
+    } else {
+        assert(false);
+    }
+
     println("Tests passed.");
     return 0;
 }
