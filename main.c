@@ -1184,6 +1184,13 @@ void emit_var_decl(Var *v) {
     if (v->type->base == FN_T) {
         emit_type(v->type->ret);
         printf("(*");
+    } else if (v->type->base == STATIC_ARRAY_T) {
+        emit_type(v->type->inner);
+        if (!v->ext) {
+            printf("_vs_");
+        }
+        printf("%s[%ld] = {0};\n", v->name, v->type->length);
+        return;
     } else {
         emit_type(v->type);
     }

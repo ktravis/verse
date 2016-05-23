@@ -1161,6 +1161,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
                 id->varname = ast->decl_var->name;
                 id->var = ast->decl_var;
                 ast = make_ast_assign(id, ast->init);
+                return ast;
             }
         } else {
             attach_var(ast->decl_var, scope); // should this be after the init parsing?
