@@ -16,7 +16,7 @@
 typedef void * fn_type;
 typedef void * ptr_type;
 struct string_type {
-    int len;
+    int length;
     char *bytes;
 };
 struct array_type {
@@ -26,7 +26,7 @@ struct array_type {
 // TODO double-check nulls are in the right spot
 struct string_type init_string(const char *str, int l) {
     struct string_type v;
-    v.len = l;
+    v.length = l;
     v.bytes = malloc(l+1);
     strncpy(v.bytes, str, l);
     v.bytes[l] = 0;
@@ -34,8 +34,8 @@ struct string_type init_string(const char *str, int l) {
 }
 struct string_type copy_string(struct string_type str) {
     struct string_type v;
-    int l = str.len;
-    v.len = l;
+    int l = str.length;
+    v.length = l;
     v.bytes = malloc(l+1);
     strncpy(v.bytes, str.bytes, l);
     v.bytes[l] = 0;
@@ -43,26 +43,26 @@ struct string_type copy_string(struct string_type str) {
 }
 struct string_type append_string(struct string_type lhs, struct string_type rhs) {
     struct string_type v;
-    int l = lhs.len + rhs.len;
-    v.len = l;
+    int l = lhs.length + rhs.length;
+    v.length = l;
     v.bytes = malloc(l+1);
-    strncpy(v.bytes, lhs.bytes, lhs.len);
-    strncpy(v.bytes + lhs.len, rhs.bytes, rhs.len);
+    strncpy(v.bytes, lhs.bytes, lhs.length);
+    strncpy(v.bytes + lhs.length, rhs.bytes, rhs.length);
     v.bytes[l] = 0;
     return v;
 }
-struct string_type append_string_lit(struct string_type lhs, char *bytes, int len) {
+struct string_type append_string_lit(struct string_type lhs, char *bytes, int length) {
     struct string_type v;
-    int l = lhs.len + len;
-    v.len = l;
+    int l = lhs.length + length;
+    v.length = l;
     v.bytes = malloc(l+1);
-    strncpy(v.bytes, lhs.bytes, lhs.len);
-    strncpy(v.bytes + lhs.len, bytes, len);
+    strncpy(v.bytes, lhs.bytes, lhs.length);
+    strncpy(v.bytes + lhs.length, bytes, length);
     v.bytes[l] = 0;
     return v;
 }
 int streq_lit(struct string_type left, char *right, int n) {
-    if (left.len != n) {
+    if (left.length != n) {
         return 0;
     }
     for (int i = 0; i < n; i++) {
@@ -73,10 +73,10 @@ int streq_lit(struct string_type left, char *right, int n) {
     return 1;
 }
 int streq(struct string_type left, struct string_type right) {
-    if (left.len != right.len) {
+    if (left.length != right.length) {
         return 0;
     }
-    for (int i = 0; i < left.len; i++) {
+    for (int i = 0; i < left.length; i++) {
         if (left.bytes[i] != right.bytes[i]) {
             return 0;
         }
@@ -105,7 +105,7 @@ struct string_type _vs_itoa(int x) {
     struct string_type v;
     v.bytes = malloc(8);
     snprintf(v.bytes, 7, "%d", x);
-    v.len = strlen(v.bytes);
+    v.length = strlen(v.bytes);
     return v;
 }
 uint8_t _vs_getc() {

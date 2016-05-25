@@ -76,8 +76,19 @@ Type *var_type(Ast *ast) {
         if (is_array(t)) {
             if (!strcmp(ast->member_name, "length")) {
                 return base_type(INT_T);
-            } else { // data
+            } else if (!strcmp(ast->member_name, "data")) {
                 return make_ptr_type(t->inner);
+            } else {
+                error(ast->line, "Array has no member named '%s'.", ast->member_name);
+            }
+        }
+        if (t->base == STRING_T) {
+            if (!strcmp(ast->member_name, "length")) {
+                return base_type(INT_T);
+            } else if (!strcmp(ast->member_name, "bytes")) {
+                return make_ptr_type(base_numeric_type(UINT_T, 8));
+            } else {
+                error(ast->line, "String has no member named '%s'.", ast->member_name);
             }
         }
         for (int i = 0; i < t->nmembers; i++) {
