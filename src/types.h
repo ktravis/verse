@@ -73,12 +73,17 @@ Type *make_struct_type(char *name, int nmembers, char **member_names, Type **mem
 Type *find_type(int id);
 Type *find_type_by_name(char *name);
 
+void register_type(Type *t);
+TypeList *get_used_types();
+int get_num_used_types();
+
 int add_binding(Type *t, Type *b);
 
 int can_cast(Type *from, Type *to);
 int is_numeric(Type *t);
 int is_dynamic(Type *t);
 int is_array(Type *t);
+int types_are_equal(Type *a, Type *b);
 int check_type(Type *a, Type *b);
 int type_can_coerce(Type *from, Type *to);
 int type_equality_comparable(Type *a, Type *b);

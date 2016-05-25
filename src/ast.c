@@ -12,8 +12,7 @@ Ast *make_ast_copy(Ast *ast) {
     cp->copy_expr = ast;
     return cp;
 }
-
-Type *var_type(Ast *ast) {
+Type *get_ast_type(Ast *ast) {
     switch (ast->type) {
     case AST_STRING:
         return base_type(STRING_T);
@@ -109,6 +108,13 @@ Type *var_type(Ast *ast) {
         error(ast->line, "don't know how to infer vartype (%d)", ast->type);
     }
     return base_type(VOID_T);
+}
+
+// TODO should this register somewhere better?
+Type *var_type(Ast *ast) {
+    Type *t = get_ast_type(ast);
+    register_type(t); 
+    return t;
 }
 
 int is_lvalue(Ast *ast) {

@@ -1268,41 +1268,78 @@ int main(int argc, char **argv) {
     if (just_ast) {
         print_ast(root);
     } else {
-        /*printf("#include \"prelude.c\"\n");*/
         printf("%.*s\n", prelude_length, prelude);
         _indent = 0;
+
+        TypeList *reg = get_used_types();
+        /*int num_used_types = get_num_used_types();*/
+        if (reg != NULL) {
+            fprintf(stderr, "Types in use:\n");
+            while (reg != NULL) {
+                fprintf(stderr, "\t%s\n", reg->item->name);
+                Type *t = reg->item;
+                switch (t->base) {
+                case PTR_T:
+                    printf("struct PtrType _type_info%d = {%d, {%ld, \"%s\"}, &_type_info%d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id);
+                    break;
+                case BASEPTR_T:
+                case STRING_T:
+                case BOOL_T:
+                    printf("struct Type _type_info%d = {%d, {%ld, \"%s\"}};\n", t->id, t->id, strlen(t->name), t->name);
+                    break;
+                case INT_T:
+                case UINT_T:
+                case FLOAT_T:
+                    printf("struct NumType _type_info%d = {%d, {%ld, \"%s\"}, %d};\n", t->id, t->id, strlen(t->name), t->name, t->size);
+                    break;
+                default:
+                    break;
+                }
+
+                reg = reg->next;
+            }
+        }
+
         VarList *varlist = get_global_vars();
         while (varlist != NULL) {
             emit_var_decl(varlist->item);
             varlist = varlist->next;
         }
+
         varlist = get_global_bindings();
         while (varlist != NULL) {
             printf("char *_cl_%d = NULL;\n", varlist->item->id);
             varlist = varlist->next;
         }
+
         TypeList *stlist = get_global_structs();
         while (stlist != NULL) {
             emit_struct_decl(stlist->item);
             stlist = stlist->next;
         }
+
         TypeList *holds = get_global_hold_funcs();
         while (holds != NULL) {
             emit_hold_func_decl(holds->item);
             holds = holds->next;
         }
+
         AstList *fnlist = get_global_funcs();
         while (fnlist != NULL) {
             emit_forward_decl(fnlist->item->fn_decl_var);
             fnlist = fnlist->next;
         }
+
         fnlist = get_global_funcs();
         while (fnlist != NULL) {
             emit_func_decl(fnlist->item);
             fnlist = fnlist->next;
         }
+
         printf("void _verse_init() ");
+
         compile(root);
+
         printf("int main(int argc, char** argv) {\n"
                "    _verse_init();\n"
                "    return _vs_main();\n"

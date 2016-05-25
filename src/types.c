@@ -3,6 +3,8 @@
 
 static int last_type_id = 0;
 static TypeList *type_defs = NULL;
+static int num_used_types = 0;
+static TypeList *type_registry = NULL;
 
 Type *make_type(char *name, int base, int size) {
     Type *t = malloc(sizeof(Type));
@@ -19,6 +21,29 @@ Type *make_type(char *name, int base, int size) {
     }
     t->name = name;
     return t;
+}
+
+void register_type(Type *t) {
+    TypeList *list = type_registry;
+    while (list != NULL) {
+        if (types_are_equal(list->item, t)) {
+            return;
+        }
+        list = list->next;
+    }
+    num_used_types++;
+    list = malloc(sizeof(TypeList));
+    list->next = type_registry;
+    list->item = t;
+    type_registry = list;
+}
+
+TypeList *get_used_types() {
+    return type_registry;
+}
+
+int get_num_used_types() {
+    return num_used_types;
 }
 
 Type *make_fn_type(int nargs, TypeList *args, Type *ret) {
@@ -290,6 +315,58 @@ int precision_loss_float(Type *t, double fval) {
 
 int is_array(Type *t) {
     return t->base == ARRAY_T || t->base == STATIC_ARRAY_T || t->base == DYN_ARRAY_T;
+}
+
+int types_are_equal(Type *a, Type *b) {
+    if (a->base != b->base) {
+        return 0;
+    }
+    if (a->id == b->id) {
+        return 1;
+    }
+    if (a->named || b->named) {
+        return a->named && b->named && !strcmp(a->name, b->name);
+    }
+    switch (a->base) {
+    case INT_T:
+    case UINT_T:
+    case FLOAT_T:
+        return a->size == b->size;
+    case FN_T:
+        if (a->nargs == b->nargs && types_are_equal(a->ret, b->ret)) {
+            TypeList *a_args = a->args;
+            TypeList *b_args = b->args;
+            while (a_args != NULL) {
+                if (!types_are_equal(a_args->item, b_args->item)) {
+                    return 0;
+                }
+                a_args = a_args->next;
+                b_args = b_args->next;
+            }
+            return 1;
+        }
+        return 0;
+    case PTR_T:
+        return types_are_equal(a->inner, b->inner);
+    case STRUCT_T:
+        if (a->nmembers != b->nmembers) {
+            return 0;
+        }
+        for (int i = 0; i < a->nmembers; i++) {
+            if (!types_are_equal(a->member_types[i], b->member_types[i])) {
+                return 0;
+            }
+        }
+        return 1;
+    case STATIC_ARRAY_T:
+        return types_are_equal(a->inner, b->inner) && a->size == b->size;
+    case ARRAY_T:
+    case DYN_ARRAY_T:
+        return types_are_equal(a->inner, b->inner);
+    case STRING_T:
+        return 1;
+    }
+    return 0;
 }
 
 int check_type(Type *a, Type *b) {
