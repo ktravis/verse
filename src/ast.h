@@ -44,6 +44,8 @@ enum {
     AST_BIND,
     AST_STRUCT,
     AST_CAST,
+    AST_DIRECTIVE,
+    AST_TYPEINFO,
 };
 
 struct AstList;
@@ -57,6 +59,8 @@ typedef struct Ast {
         // float
         double fval;
         // string
+        // typeinfo
+        Type *typeinfo_target;
         struct {
             char *sval;
             int sid;
@@ -175,6 +179,11 @@ typedef struct Ast {
             int nmembers;
             char **member_names;
             struct Ast **member_exprs;
+        };
+        // directive
+        struct {
+            char *directive_name;
+            struct Ast *directive_subject;
         };
     };
 } Ast;

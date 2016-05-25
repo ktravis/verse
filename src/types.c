@@ -3,8 +3,8 @@
 
 static int last_type_id = 0;
 static TypeList *type_defs = NULL;
-static int num_used_types = 0;
-static TypeList *type_registry = NULL;
+static TypeList *type_registry_head = NULL;
+static TypeList *type_registry_tail = NULL;
 
 Type *make_type(char *name, int base, int size) {
     Type *t = malloc(sizeof(Type));
@@ -23,27 +23,45 @@ Type *make_type(char *name, int base, int size) {
     return t;
 }
 
-void register_type(Type *t) {
-    TypeList *list = type_registry;
-    while (list != NULL) {
-        if (types_are_equal(list->item, t)) {
-            return;
+Type *register_type(Type *t) {
+    TypeList *reg = type_registry_tail;
+    fprintf(stderr, "checking %d %s\n", t->id, t->name);
+    while (reg != NULL) {
+        fprintf(stderr, "\tcomparing %d to %d\n", t->id, reg->item->id);
+        if (types_are_equal(reg->item, t)) {
+            fprintf(stderr, "match\n");
+            return reg->item;
         }
-        list = list->next;
+        reg = reg->prev;
     }
-    num_used_types++;
-    list = malloc(sizeof(TypeList));
-    list->next = type_registry;
-    list->item = t;
-    type_registry = list;
+    if (t->base == STRUCT_T) {
+        for (int i = 0; i < t->nmembers; i++) {
+            t->member_types[i] = register_type(t->member_types[i]);
+        }
+    } else if (is_array(t) || t->base == PTR_T) {
+        t->inner = register_type(t->inner);
+    } else if (t->base == FN_T) {
+        for (TypeList *list = t->args; list != NULL; list = list->next) {
+            list->item = register_type(list->item);
+        }
+        t->ret = register_type(t->ret);
+    }
+    fprintf(stderr, "Registering %s %d\n", t->name, t->id);
+    TypeList *new_tail = malloc(sizeof(TypeList));
+    if (type_registry_tail != NULL) {
+        type_registry_tail->next = new_tail;
+    }
+    new_tail->item = t;
+    new_tail->prev = type_registry_tail;
+    type_registry_tail = new_tail;
+    if (type_registry_head == NULL) {
+        type_registry_head = type_registry_tail;
+    }
+    return t;
 }
 
 TypeList *get_used_types() {
-    return type_registry;
-}
-
-int get_num_used_types() {
-    return num_used_types;
+    return type_registry_head;
 }
 
 Type *make_fn_type(int nargs, TypeList *args, Type *ret) {
@@ -69,6 +87,10 @@ Type *make_fn_type(int nargs, TypeList *args, Type *ret) {
         size_t n = strlen(parts[i]);
         strncpy(m, parts[i], n);
         m += n;
+        if (i < nargs - 1) {
+            m[0] = ',';
+            m += 1;
+        }
         if (_args->item->base == FN_T) {
             free(parts[i]);
         }
@@ -214,6 +236,7 @@ TypeList *reverse_typelist(TypeList *list) {
 }
 
 Type *define_type(Type *t) {
+    register_type(t);
     type_defs = typelist_append(type_defs, t);
     return t;
 }
@@ -236,9 +259,8 @@ int can_cast(Type *from, Type *to) {
     case BASEPTR_T:
         return (to->base == PTR_T || to->base == BASEPTR_T);
     case PTR_T:
-        return to->base == BASEPTR_T ||
-            (to->base == INT_T && to->size == 8) ||
-            (to->base == PTR_T && check_type(from->inner, to->inner));
+        return to->base == BASEPTR_T || to->base == PTR_T ||
+            (to->base == INT_T && to->size == 8);
     case FN_T:
         if (from->nargs == to->nargs && check_type(from->ret, to->ret)) {
             TypeList *from_args = from->args;
@@ -478,6 +500,19 @@ static Type *float64_type = NULL;
 static Type *bool_type = NULL;
 static Type *string_type = NULL;
 static Type *baseptr_type = NULL;
+static Type *typeinfo_type = NULL;
+static Type *typeinfo_ptr_type = NULL;
+static Type *numtype_type = NULL;
+static Type *ptrtype_type = NULL;
+static Type *structmember_type = NULL;
+static Type *structtype_type = NULL;
+static Type *arraytype_type = NULL;
+static Type *fntype_type = NULL;
+static Type *doomguy_type = NULL;
+
+int is_any(Type *t) {
+    return t->id == doomguy_type->id;
+}
 
 // TODO inline?
 Type *base_type(int t) {
@@ -499,6 +534,10 @@ Type *base_type(int t) {
         return void_type;
     case BASEPTR_T:
         return baseptr_type;
+    case TYPE_T:
+        return typeinfo_type;
+    case ANY_T:
+        return doomguy_type;
     case FN_T:
     case AUTO_T:
     case STRUCT_T:
@@ -566,5 +605,99 @@ void init_types() {
     string_type = define_type(make_type("string", STRING_T, 16)); // should be checked that non-pointer is used in bindings
 
     baseptr_type = define_type(make_type("ptr", BASEPTR_T, 8)); // should be checked that non-pointer is used in bindings
+
+    // TODO can these be defined in a "basic.vs" ?
+    char **member_names = malloc(sizeof(char*)*2);
+    member_names[0] = "id";
+    member_names[1] = "name";
+    Type **member_types = malloc(sizeof(Type*)*2);
+    member_types[0] = int_type;
+    member_types[1] = string_type;
+    typeinfo_type = define_type(make_struct_type("Type", 2, member_names, member_types));
+
+    typeinfo_ptr_type = define_type(make_ptr_type(typeinfo_type));
+
+    member_names = malloc(sizeof(char*)*4);
+    member_names[0] = "id";
+    member_names[1] = "name";
+    member_names[2] = "size";
+    member_names[3] = "is_signed";
+    member_types = malloc(sizeof(Type*)*4);
+    member_types[0] = int_type;
+    member_types[1] = string_type;
+    member_types[2] = int_type;
+    member_types[3] = bool_type;
+    numtype_type = define_type(make_struct_type("NumType", 4, member_names, member_types));
+
+    member_names = malloc(sizeof(char*)*3);
+    member_names[0] = "id";
+    member_names[1] = "name";
+    member_names[2] = "inner";
+    member_types = malloc(sizeof(Type*)*3);
+    member_types[0] = int_type;
+    member_types[1] = string_type;
+    member_types[2] = typeinfo_ptr_type;
+    ptrtype_type = define_type(make_struct_type("PtrType", 3, member_names, member_types));
+
+    member_names = malloc(sizeof(char*)*2);
+    member_names[0] = "name";
+    member_names[1] = "type";
+    member_types = malloc(sizeof(Type*)*2);
+    member_types[0] = string_type;
+    member_types[1] = typeinfo_ptr_type;
+    structmember_type = define_type(make_struct_type("StructMember", 2, member_names, member_types));
+
+    Type *structmember_array_type = define_type(make_array_type(structmember_type));
+
+    member_names = malloc(sizeof(char*)*3);
+    member_names[0] = "id";
+    member_names[1] = "name";
+    member_names[2] = "members";
+    member_types = malloc(sizeof(Type*)*3);
+    member_types[0] = int_type;
+    member_types[1] = string_type;
+    member_types[2] = structmember_array_type;
+    structtype_type = define_type(make_struct_type("StructType", 3, member_names, member_types));
+
+    member_names = malloc(sizeof(char*)*5);
+    member_names[0] = "id";
+    member_names[1] = "name";
+    member_names[2] = "inner";
+    member_names[3] = "size";
+    member_names[4] = "is_static";
+    member_types = malloc(sizeof(Type*)*5);
+    member_types[0] = int_type;
+    member_types[1] = string_type;
+    member_types[2] = typeinfo_ptr_type;
+    member_types[3] = int_type;
+    member_types[4] = bool_type;
+    arraytype_type = define_type(make_struct_type("ArrayType", 5, member_names, member_types));
+
+    Type *typeinfo_array_type = define_type(make_array_type(typeinfo_type));
+
+    member_names = malloc(sizeof(char*)*5);
+    member_names[0] = "id";
+    member_names[1] = "name";
+    member_names[2] = "args";
+    member_names[3] = "return_type";
+    member_names[4] = "anonymous";
+    /*member_names[4] = "is_static";*/
+    member_types = malloc(sizeof(Type*)*5);
+    member_types[0] = int_type;
+    member_types[1] = string_type;
+    member_types[2] = typeinfo_array_type;
+    member_types[3] = typeinfo_ptr_type;
+    member_types[4] = bool_type;
+    /*member_types[4] = bool_type;*/
+    fntype_type = define_type(make_struct_type("FnType", 5, member_names, member_types));
+
+    member_names = malloc(sizeof(char*)*2);
+    member_names[0] = "value_pointer";
+    member_names[1] = "type";
+    member_types = malloc(sizeof(Type*)*2);
+    member_types[0] = baseptr_type;
+    member_types[1] = typeinfo_ptr_type;
+    doomguy_type = define_type(make_struct_type("DoomGuy", 2, member_names, member_types));
+
     types_initialized = 1;
 }

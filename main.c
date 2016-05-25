@@ -584,6 +584,25 @@ void emit_struct_decl(Type *st) {
     printf("}\n");
 }
 
+void compile_pointer(Ast *ast) {
+    assert(is_lvalue(ast) || ast->type == AST_TEMP_VAR);
+
+    if (ast->type == AST_TEMP_VAR) {
+        if (ast->tmpvar->type->base == FN_T) {
+            printf("&");
+            compile(ast->expr);
+        } else {
+            ast->tmpvar->initialized = 1;
+            printf("(_tmp%d = ", ast->tmpvar->id);
+            compile(ast->expr);
+            printf(", &_tmp%d)", ast->tmpvar->id);
+        }
+    } else {
+        printf("&");
+        compile(ast);
+    }
+}
+
 void compile(Ast *ast) {
     switch (ast->type) {
     case AST_INTEGER:
@@ -632,6 +651,13 @@ void compile(Ast *ast) {
         emit_binop(ast);
         break;
     case AST_CAST:
+        if (is_any(ast->cast_type)) {
+            // TODO how do I deal with passing like an int or something
+            printf("(struct _vs_DoomGuy){.value_pointer=");
+            compile_pointer(ast->cast_left);
+            printf(",.type=(struct _vs_Type *)&_type_info%d}", var_type(ast->cast_left)->id);
+            break;
+        }
         if (ast->cast_type->base == STRUCT_T) {
             printf("*");
         }
@@ -782,6 +808,7 @@ void compile(Ast *ast) {
             bindings = reverse_typelist(bindings);
             bind_exprs = reverse_astlist(bind_exprs);
             while (bindings != NULL && bind_exprs != NULL) {
+                // TODO fix array bindings? see binds.vs
                 printf("*((");
                 emit_type(bindings->item);
                 printf("*)(_cl_%d+%d))=", id, bindings->item->offset);
@@ -966,6 +993,9 @@ void compile(Ast *ast) {
         printf("*((");
         emit_type(var_type(ast->bind_expr));
         printf("*)_cl_%d+%d)", ast->bind_id, ast->bind_offset);
+        break;
+    case AST_TYPEINFO:
+        printf("((struct _vs_Type *)&_type_info%d)", ast->typeinfo_target->id);
         break;
     default:
         error(ast->line, "No idea how to deal with this.");
@@ -1256,6 +1286,46 @@ void emit_hold_func_decl(Type *t) {
     printf("}\n");
 }
 
+void emit_typeinfo_decl(Type *t) {
+    switch (t->base) {
+    case PTR_T:
+        printf("struct _vs_PtrType _type_info%d = {%d, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id);
+        break;
+    case INT_T:
+    case UINT_T:
+    case FLOAT_T:
+        printf("struct _vs_NumType _type_info%d = {%d, {%ld, \"%s\"}, %d};\n", t->id, t->id, strlen(t->name), t->name, t->size);
+        break;
+    case STRUCT_T:
+        printf("struct _vs_StructMember _type_info%d_members[] = {\n", t->id);
+        for (int i = 0; i < t->nmembers; i++) {
+            printf("  {{%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d},\n", strlen(t->member_names[i]), t->member_names[i], t->member_types[i]->id);
+        }
+        printf("};\n");
+        printf("struct _vs_StructType _type_info%d = {%d, {%ld, \"%s\"}, {%d, _type_info%d_members}};\n", t->id, t->id, strlen(t->name), t->name, t->nmembers, t->id);
+        /*emit_struct_decl(stlist->item);*/
+        break;
+    case STATIC_ARRAY_T:
+    case ARRAY_T: // TODO make this not have a name? switch Type to hae enum in name slot for base type
+        printf("struct _vs_ArrayType _type_info%d = {%d, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d, %ld, %d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id, t->length, t->base == STATIC_ARRAY_T);
+        break;
+    case FN_T:
+        printf("struct _vs_Type *_type_info%d_args[] = {\n", t->id);
+        for (TypeList *list = t->args; list != NULL; list = list->next) {
+            printf("  (struct _vs_Type *)&_type_info%d,\n", list->item->id);
+        }
+        printf("};\n");
+        printf("struct _vs_FnType _type_info%d = {%d, {%ld, \"%s\"}, {%d, (struct _vs_Type **)_type_info%d_args}, (struct _vs_Type *)&_type_info%d, %d};\n", t->id, t->id, strlen(t->name), t->name, t->nargs, t->id, t->ret->id, !t->named);
+        break;
+    case BASEPTR_T:
+    case STRING_T:
+    case BOOL_T:
+    default:
+        printf("struct _vs_Type _type_info%d = {%d, {%ld, \"%s\"}};\n", t->id, t->id, strlen(t->name), t->name);
+        break;
+    }
+}
+
 int main(int argc, char **argv) {
     int just_ast = 0;
     if (argc > 1 && !strcmp(argv[1], "-a")) {
@@ -1271,35 +1341,6 @@ int main(int argc, char **argv) {
         printf("%.*s\n", prelude_length, prelude);
         _indent = 0;
 
-        TypeList *reg = get_used_types();
-        /*int num_used_types = get_num_used_types();*/
-        if (reg != NULL) {
-            fprintf(stderr, "Types in use:\n");
-            while (reg != NULL) {
-                fprintf(stderr, "\t%s\n", reg->item->name);
-                Type *t = reg->item;
-                switch (t->base) {
-                case PTR_T:
-                    printf("struct PtrType _type_info%d = {%d, {%ld, \"%s\"}, &_type_info%d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id);
-                    break;
-                case BASEPTR_T:
-                case STRING_T:
-                case BOOL_T:
-                    printf("struct Type _type_info%d = {%d, {%ld, \"%s\"}};\n", t->id, t->id, strlen(t->name), t->name);
-                    break;
-                case INT_T:
-                case UINT_T:
-                case FLOAT_T:
-                    printf("struct NumType _type_info%d = {%d, {%ld, \"%s\"}, %d};\n", t->id, t->id, strlen(t->name), t->name, t->size);
-                    break;
-                default:
-                    break;
-                }
-
-                reg = reg->next;
-            }
-        }
-
         VarList *varlist = get_global_vars();
         while (varlist != NULL) {
             emit_var_decl(varlist->item);
@@ -1312,10 +1353,28 @@ int main(int argc, char **argv) {
             varlist = varlist->next;
         }
 
-        TypeList *stlist = get_global_structs();
-        while (stlist != NULL) {
-            emit_struct_decl(stlist->item);
-            stlist = stlist->next;
+        /*TypeList *stlist = get_global_structs();*/
+        /*while (stlist != NULL) {*/
+            /*emit_struct_decl(stlist->item);*/
+            /*stlist = stlist->next;*/
+        /*}*/
+
+        TypeList *reg = get_used_types();
+        fprintf(stderr, "_----------------------------------___________\n");
+        TypeList *tmp = reg;
+        while (tmp != NULL) {
+            if (tmp->item->base == STRUCT_T) {
+                emit_struct_decl(tmp->item);
+            }
+            tmp = tmp->next;
+        }
+        if (reg != NULL) {
+            /*fprintf(stderr, "Types in use:\n");*/
+            while (reg != NULL) {
+                /*fprintf(stderr, "\t%s\n", reg->item->name);*/
+                emit_typeinfo_decl(reg->item);
+                reg = reg->next;
+            }
         }
 
         TypeList *holds = get_global_hold_funcs();

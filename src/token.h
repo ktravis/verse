@@ -41,6 +41,8 @@ enum {
     TOK_IN,
     TOK_BREAK,
     TOK_CONTINUE,
+    TOK_DIRECTIVE,
+    TOK_ELLIPSIS
 };
 
 enum {
@@ -103,7 +105,7 @@ void unget_token(Tok *tok);
 
 double read_decimal(char c);
 Tok *read_number(char c);
-Tok *read_string(char quote);
+char *read_string(char quote);
 Tok *read_identifier(char c);
 Tok *check_reserved(char *buf);
 

@@ -12,6 +12,16 @@ Ast *make_ast_copy(Ast *ast) {
     cp->copy_expr = ast;
     return cp;
 }
+
+Type *type_of_directive(Ast *ast) {
+    char *n = ast->directive_name;
+    /*if (!strcmp(n, "type")) {*/
+        /*return typeinfo_t();*/
+    /*}*/
+    error(ast->line, "Cannot determine type of unknown directive '%s'.", n);
+    return NULL;
+}
+
 Type *get_ast_type(Ast *ast) {
     switch (ast->type) {
     case AST_STRING:
@@ -104,6 +114,11 @@ Type *get_ast_type(Ast *ast) {
     case AST_HOLD: {
         return ast->tmpvar->type;
     }
+    case AST_TYPEINFO:
+        // TODO this should be a pointer! Make them pointers to static memory!
+        return make_ptr_type(base_type(TYPE_T));
+    case AST_DIRECTIVE:
+        return type_of_directive(ast);
     default:
         error(ast->line, "don't know how to infer vartype (%d)", ast->type);
     }
@@ -113,8 +128,7 @@ Type *get_ast_type(Ast *ast) {
 // TODO should this register somewhere better?
 Type *var_type(Ast *ast) {
     Type *t = get_ast_type(ast);
-    register_type(t); 
-    return t;
+    return register_type(t); 
 }
 
 int is_lvalue(Ast *ast) {
@@ -139,6 +153,13 @@ int is_literal(Ast *ast) {
         /*return is_literal(ast->left) && is_literal(ast->right);*/
     }
     return 0;
+}
+
+Ast *make_ast_directive(char *name, Ast *subject) {
+    Ast *ast = ast_alloc(AST_DIRECTIVE);
+    ast->directive_name = name;
+    ast->directive_subject = subject;
+    return ast;
 }
 
 Ast *make_ast_bool(long ival) {
@@ -203,6 +224,13 @@ Ast *make_ast_slice(Ast *inner, Ast *offset, Ast *length) {
     return slice;
 }
 
+Ast *cast_to_any(Ast *ast) {
+    Ast *cast = ast_alloc(AST_CAST);
+    cast->cast_left = ast;
+    cast->cast_type = base_type(ANY_T);
+    return cast;
+}
+
 Ast *cast_literal(Type *t, Ast *ast) {
     if (can_cast(t, var_type(ast))) {
         Ast *cast = ast_alloc(AST_CAST);
@@ -240,6 +268,9 @@ Ast *cast_literal(Type *t, Ast *ast) {
 }
 
 Ast *try_implicit_cast(Type *t, Ast *ast) {
+    if (is_any(t)) {
+        return cast_to_any(ast); 
+    }
     if (is_literal(ast)) {
         return cast_literal(t, ast);
     }

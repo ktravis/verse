@@ -104,7 +104,9 @@ Tok *next_token() {
     } else if (isalpha(c) || c == '_') {
         return read_identifier(c);
     } else if (c == '\"' || c == '\'') {
-        return read_string(c);
+        Tok *t = make_token(TOK_STR);
+        t->sval = read_string(c);
+        return t;
     } else if (c == '(') {
         return make_token(TOK_LPAREN);
     } else if (c == ')') {
@@ -114,8 +116,31 @@ Tok *next_token() {
     } else if (c == ']') {
         return make_token(TOK_RSQUARE);
     } else if (c == '#') {
-        if ((c = getc(stdin)) == '{') {
+        c = getc(stdin);
+        if (c == '{') {
             return make_token(TOK_STARTBIND);
+        } else if (isalpha(c) || c == '_') {
+            // TODO refactor this
+            Tok *t = make_token(TOK_DIRECTIVE);
+            int alloc = 8;
+            char *buf = malloc(alloc);
+            buf[0] = c;
+            int len = 1;
+            for (;;) {
+                c = getc(stdin);
+                if (!is_id_char(c)) {
+                    ungetc(c, stdin);
+                    break;
+                }
+                buf[len++] = c;
+                if (len == alloc - 1) {
+                    alloc *= 2;
+                    buf = realloc(buf, alloc);
+                }
+            }
+            buf[len] = 0;
+            t->sval = buf;
+            return t;
         } else {
             error(line, "Unexpected character sequence '#%c'", c);
         }
@@ -126,6 +151,14 @@ Tok *next_token() {
     } else if (c == ',') {
         return make_token(TOK_COMMA);
     } else if (c == '.') {
+        if ((c = getc(stdin)) == '.') { // TODO are multiple dots in a row (but not three) ever valid?
+            if ((c = getc(stdin)) == '.') {
+                return make_token(TOK_ELLIPSIS); 
+            }
+            error(line, "Unexected character '%c' following '..'", c);
+        } else {
+            ungetc(c, stdin);
+        }
         Tok *t = make_token(TOK_OP);
         t->op = OP_DOT;
         return t;
@@ -244,6 +277,11 @@ Tok *read_number(char c) {
                 Tok *t = make_token(TOK_FLOAT);
                 c = getc(stdin);
                 if (!isdigit(c)) {
+                    if (c == '.') { // reading a possible ellipsis?
+                        ungetc(c, stdin);
+                        ungetc('.', stdin);
+                        break;
+                    }
                     error(line, "Unexpected non-numeric character '%c' while reading float.", c);
                 }
                 t->fval = n + read_decimal(c);
@@ -259,7 +297,7 @@ Tok *read_number(char c) {
     return t;
 }
 
-Tok *read_string(char quote) {
+char *read_string(char quote) {
     int alloc = 8;
     char *buf = malloc(alloc);
     int len = 0;
@@ -267,10 +305,8 @@ Tok *read_string(char quote) {
     int start = line;
     while ((c = getc(stdin)) != EOF) {
         if (c == quote && (len == 0 || buf[len-1] != '\\')) {
-            Tok *t = make_token(TOK_STR);
-            t->sval = buf;
             buf[len] = 0;
-            return t;
+            return buf;
         }
         buf[len++] = c;
         if (len == alloc - 1) {
@@ -484,8 +520,8 @@ const char *to_string(Tok *t) {
         return "break";
     case TOK_CONTINUE:
         return "continue";
-    /*case TOK_DOT:*/
-        /*return ".";*/
+    case TOK_ELLIPSIS:
+        return "...";
     default:
         return NULL;
     }
@@ -539,8 +575,8 @@ const char *token_type(int type) {
         return "BREAK";
     case TOK_CONTINUE:
         return "CONTINUE";
-    /*case TOK_DOT:*/
-        /*return "DOT";*/
+    case TOK_ELLIPSIS:
+        return "ELLIPSIS";
     default:
         return "BAD TOKEN";
     }

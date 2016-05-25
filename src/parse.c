@@ -323,7 +323,16 @@ Ast *parse_expression(Tok *t, int priority, Ast *scope) {
             if (t->op == OP_ASSIGN) {
                 ast = make_ast_assign(ast, parse_expression(next_token(), next_priority + 1, scope));
             } else if (t->op == OP_DOT) {
-                Tok *next = expect(TOK_ID);
+                Tok *next = next_token();
+                if (next->type != TOK_ID) {
+                    // TODO change this to something like "TOK_KEYWORD"
+                    if (next->type == TOK_TYPE) {
+                        next->type = TOK_ID;
+                        next->sval = "type";
+                    } else {
+                        error(lineno(), "Unexpected token '%s' while parsing dot operation.", to_string(next));
+                    }
+                }
                 ast = make_ast_dot_op(ast, next->sval);
                 ast->type = AST_DOT;
             } else if (t->op == OP_CAST) {
@@ -792,6 +801,22 @@ Ast *parse_struct_literal(char *name, Ast *scope) {
     return ast;
 }
 
+Ast *parse_directive(Tok *t, Ast *scope) {
+    // TODO handle other types of directives here
+    Ast *dir = ast_alloc(AST_DIRECTIVE);
+    dir->directive_name = t->sval;
+    Tok *next = next_token();
+    if (next == NULL) {
+        error(lineno(), "Unexpected end of input.");
+    }
+    if (next->type != TOK_LPAREN) {
+        error(lineno(), "Unexpected token '%s' while parsing directive '%s'", to_string(next), t->sval);
+    }
+    dir->directive_subject = parse_expression(next_token(), 0, scope);
+    expect(TOK_RPAREN);
+    return dir;
+}
+
 Ast *parse_primary(Tok *t, Ast *scope) {
     if (t == NULL) {
         error(lineno(), "Unexpected EOF while parsing primary.");
@@ -828,6 +853,8 @@ Ast *parse_primary(Tok *t, Ast *scope) {
         id->varname = t->sval;
         return id;
     }
+    case TOK_DIRECTIVE: 
+        return parse_directive(t, scope);
     case TOK_FN:
         return parse_func_decl(scope, 1);
     case TOK_HOLD:
@@ -954,6 +981,25 @@ Ast *parse_scope(Ast *parent) {
     return scope;
 }
 
+Ast *parse_directive_semantics(Ast *ast, Ast *scope) {
+    // TODO does this checking need to happen in the first pass? may be a
+    // reason to do this later!
+    // TODO factor this out
+    char *n = ast->directive_name;
+    if (!strcmp(n, "type")) {
+        ast->directive_subject = parse_semantics(ast->directive_subject, scope);
+        // TODO should this only be acceptible on identifiers? That would be
+        // more consistent (don't have to explain that #type does NOT evaluate
+        // arguments -- but is that too restricted / unnecessary?
+        Ast *t = ast_alloc(AST_TYPEINFO);
+        t->line = ast->line;
+        t->typeinfo_target = var_type(ast->directive_subject);
+        return t;
+    }
+    error(ast->line, "Unrecognized directive '%s'.", n);
+    return NULL;
+}
+
 Ast *parse_semantics(Ast *ast, Ast *scope) {
     switch (ast->type) {
     case AST_INTEGER:
@@ -1010,6 +1056,11 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         ast->cast_left = parse_semantics(ast->cast_left, scope);
         if (!can_cast(var_type(ast->cast_left), ast->cast_type)) {
             error(ast->line, "Cannot cast type '%s' to type '%s'.", var_type(ast->cast_left)->name, ast->cast_type->name);
+        }
+        if (is_any(ast->cast_type)) {
+            if (!is_lvalue(ast->cast_left)) {
+                ast->cast_left = make_ast_tmpvar(ast->cast_left, make_temp_var(var_type(ast->cast_left), scope));
+            }
         }
         break;
     case AST_STRUCT: {
@@ -1158,6 +1209,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         if (t != NULL) { // TODO maybe don't do this here?
             error(ast->line, "Variable name '%s' already in use by type.", ast->decl_var->name);
         }
+        t = register_type(t);
         if (parser_state == PARSE_MAIN) {
             global_vars = varlist_append(global_vars, ast->decl_var);
             if (ast->init != NULL) {
@@ -1184,6 +1236,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         if (t != NULL && t->id != ast->target_type->id) { // TODO maybe don't do this here?
             error(ast->line, "Type name '%s' already exists.", ast->type_name);
         }
+        /*ast->target_type = register_type(ast->target_type);*/
         break;
     }
     case AST_EXTERN_FUNC_DECL:
@@ -1243,12 +1296,16 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         for (int i = 0; args != NULL; i++) {
             arg = args->item;
             arg = parse_semantics(arg, scope);
-            if (!(check_type(var_type(arg), arg_types->item) || type_can_coerce(var_type(arg), arg_types->item))) {
-                if (is_literal(arg)) {
-                    arg = try_implicit_cast(arg_types->item, arg);
-                } else {
-                    error(arg->line, "Incorrect argument to function, expected type '%s', and got '%s'.", arg_types->item->name, var_type(arg)->name);
+            if (is_any(arg_types->item)) {
+                if (!is_any(var_type(arg)) && (arg->type != AST_TEMP_VAR && !is_lvalue(arg))) {
+                    if (!is_literal(arg)) {
+                        arg = make_ast_copy(arg);
+                    }
+                    arg = make_ast_tmpvar(arg, make_temp_var(var_type(arg), scope));
                 }
+            }
+            if (!(check_type(var_type(arg), arg_types->item) || type_can_coerce(var_type(arg), arg_types->item))) {
+                arg = try_implicit_cast(arg_types->item, arg);
             }
             if (arg->type != AST_TEMP_VAR && var_type(arg)->base != STRUCT_T && is_dynamic(arg_types->item)) {
                 if (!is_literal(arg)) {
@@ -1362,6 +1419,7 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
         if (ret_t->base == STATIC_ARRAY_T) {
             error(ast->line, "Cannot return a static array from a function.");
         }
+        // TODO not everything is being correctly reassigned from auto
         if (fn_ret_t->base == AUTO_T) {
             current_fn_scope->fn_decl_var->type->ret = ret_t;
         } else if (!check_type(fn_ret_t, ret_t)) {
@@ -1388,6 +1446,8 @@ Ast *parse_semantics(Ast *ast, Ast *scope) {
             ast->statements[i] = parse_semantics(ast->statements[i], scope);
         }
         break;
+    case AST_DIRECTIVE:
+        return parse_directive_semantics(ast, scope);
     default:
         error(-1, "idk parse semantics");
     }

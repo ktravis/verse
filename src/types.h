@@ -21,7 +21,9 @@ enum {
     ARRAY_T,
     STATIC_ARRAY_T,
     DYN_ARRAY_T,
-    ENUM_T
+    ENUM_T,
+    TYPE_T,
+    ANY_T
 };
 
 struct TypeList;
@@ -58,6 +60,7 @@ typedef struct Type {
 typedef struct TypeList {
     Type *item;
     struct TypeList *next;
+    struct TypeList *prev;
 } TypeList;
 
 
@@ -73,7 +76,7 @@ Type *make_struct_type(char *name, int nmembers, char **member_names, Type **mem
 Type *find_type(int id);
 Type *find_type_by_name(char *name);
 
-void register_type(Type *t);
+Type *register_type(Type *t);
 TypeList *get_used_types();
 int get_num_used_types();
 
@@ -83,6 +86,7 @@ int can_cast(Type *from, Type *to);
 int is_numeric(Type *t);
 int is_dynamic(Type *t);
 int is_array(Type *t);
+int is_any(Type *t);
 int types_are_equal(Type *a, Type *b);
 int check_type(Type *a, Type *b);
 int type_can_coerce(Type *from, Type *to);

@@ -20,40 +20,8 @@ struct string_type {
     char *bytes;
 };
 struct array_type {
-    void *data;
     long length;
-};
-struct Type {
-    int id;
-    struct string_type name;
-};
-struct NumType {
-    int id;
-    struct string_type name;
-    int size;
-    unsigned char is_signed;
-};
-struct PtrType {
-    int id;
-    struct string_type name;
-    struct Type *inner;
-};
-struct StructType {
-    int id;
-    struct string_type name;
-    struct array_type members;
-    /*int nmembers;*/
-    /*struct StructMember *members;*/
-};
-struct StructMember {
-    char *name;
-    struct Type *type;
-}
-struct FnType {
-    int id;
-    struct string_type name;
-    struct array_type args;
-    struct Type *return_type;
+    void *data;
 };
 // TODO double-check nulls are in the right spot
 struct string_type init_string(const char *str, int l) {
