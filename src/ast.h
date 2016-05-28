@@ -10,11 +10,8 @@
 #include "util.h"
 #include "types.h"
 
-enum {
-    AST_STRING,
-    AST_INTEGER,
-    AST_FLOAT,
-    AST_BOOL,
+typedef enum {
+    AST_LITERAL,
     AST_DOT,
     AST_ASSIGN,
     AST_BINOP,
@@ -24,7 +21,6 @@ enum {
     AST_TEMP_VAR,
     AST_RELEASE,
     AST_DECL,
-    AST_TYPE,
     AST_FUNC_DECL,
     AST_ANON_FUNC_DECL,
     AST_EXTERN_FUNC_DECL,
@@ -42,151 +38,209 @@ enum {
     AST_CONTINUE,
     AST_HOLD,
     AST_BIND,
-    AST_STRUCT,
     AST_CAST,
     AST_DIRECTIVE,
     AST_TYPEINFO,
-};
+} AstType;
 
 struct AstList;
 
 typedef struct Ast {
-    int type;
-    int line;
+    AstType type;
+    int     line;
+    Type    *var_type;
     union {
-        // int / bool
-        long ival; // TODO this will overflow for uint64
-        // float
-        double fval;
-        // string
-        // typeinfo
-        Type *typeinfo_target;
-        struct {
-            char *sval;
-            int sid;
-        };
-        // var
-        struct {
-            Var *var;
-            char *varname;
-        };
-        // decl
-        struct {
-            Var *decl_var;
-            struct Ast *init;
-        };
-        // func decl
-        struct {
-            Var *fn_decl_var;
-            int anon;
-            VarList *fn_decl_args;
-            struct Ast *fn_body;
-            Var *bindings_var;
-        };
-        // uop / binop
-        struct {
-            int op;
-            struct Ast *left;
-            struct Ast *right;
-        };
-        // cast
-        struct {
-            struct Ast *cast_left;
-            Type *cast_type;
-        };
-        // dot
-        struct {
-            struct Ast *dot_left;
-            char *member_name;
-        };
-        // call
-        struct {
-            struct Ast *fn;
-            //Var *fn_var;
-            int nargs;
-            struct AstList *args;
-        };
-        // slice
-        struct {
-            struct Ast *slice_inner;
-            Type *slice_array_type;
-            struct Ast *slice_offset;
-            struct Ast *slice_length;
-        };
-        // binding
-        struct {
-            int bind_offset;
-            int bind_id;
-            struct Ast *bind_expr;
-        };
-        // block
-        struct {
-            struct Ast **statements; // change this to be a linked list or something
-            int num_statements;
-        };
-        // scope
-        struct {
-            struct Ast *parent;
-            struct Ast *body;
-            VarList *locals;
-            struct AstList *bindings;
-            struct AstList *anon_funcs;
-            unsigned char has_return;
-            unsigned char is_function;
-        };
-        // conditional
-        struct {
-            struct Ast *condition;
-            struct Ast *if_body;
-            struct Ast *else_body;
-        };
-        // type decl
-        struct {
-            char *type_name;
-            Type *target_type;
-        };
-        // temp var
-        struct {
-            Var *tmpvar;
-            struct Ast *expr;
-        };
-        // copy
-        struct Ast *copy_expr;
-        // return
-        struct {
-            struct Ast *fn_scope;
-            struct Ast *ret_expr;
-        };
-        // release
-        struct {
-            struct Ast *release_target;
-        };
-        // while
-        struct {
-            struct Ast *while_condition;
-            struct Ast *while_body;
-        };
-        // for
-        struct {
-            Var *for_itervar;
-            struct Ast *for_iterable;
-            struct Ast *for_body;
-        };
-        // struct literal
-        struct {
-            char *struct_lit_name;
-            Type *struct_lit_type;
-            int nmembers;
-            char **member_names;
-            struct Ast **member_exprs;
-        };
-        // directive
-        struct {
-            char *directive_name;
-            struct Ast *directive_subject;
-        };
+        struct AstLiteral       *lit;
+        struct AstTypeInfo      *typeinfo;
+        struct AstIdent         *ident;
+        struct AstDecl          *decl;
+        struct AstFnDecl        *fn_decl;
+        struct AstUnaryOp       *unary;
+        struct AstBinaryOp      *binary;
+        struct AstCast          *cast;
+        struct AstDot           *dot;
+        struct AstCall          *call;
+        struct AstSlice         *slice;
+        struct AstIndex         *index;
+        struct AstBind          *bind;
+        struct AstBlock         *block;
+        struct AstScope         *scope;
+        struct AstConditional   *cond;
+        struct AstTypeDecl      *type_decl;
+        struct AstTempVar       *tempvar;
+        struct AstCopy          *copy;
+        struct AstReturn        *ret;
+        struct AstHold          *hold;
+        struct AstRelease       *release;
+        struct AstWhile         *while_loop;
+        struct AstFor           *for_loop;
+        struct AstDirective     *directive;
     };
 } Ast;
+
+typedef enum {
+    INTEGER,
+    STRING,
+    FLOAT,
+    BOOL,
+    STRUCT,
+} LiteralType;
+
+typedef struct AstLiteral {
+    LiteralType lit_type;
+    union {
+        long    int_val;
+        double  float_val;
+        char    *string_val;
+        struct {
+            char *name;
+            Type *type;
+            int  nmembers;
+            char **member_names;
+
+            Ast **member_exprs;
+        } struct_val;
+    };
+} AstLiteral;
+
+typedef struct AstTypeInfo {
+    Type *typeinfo_target;
+} AstTypeInfo;
+
+typedef struct AstIdent {
+    Var *var;
+    char *varname; // TODO not needed?
+} AstIdent;
+
+typedef struct AstDecl {
+    Var *var;
+    Ast *init;
+} AstDecl;
+
+typedef struct AstFnDecl {
+    Var *var;
+    int anon;
+    VarList *args;
+    struct AstScope *scope;
+    Var *bindings_var;
+} AstFnDecl;
+
+typedef struct AstUnaryOp {
+    int op;
+    Ast *object;
+} AstUnaryOp;
+
+typedef struct AstBinaryOp {
+    int op;
+    Ast *left;
+    Ast *right;
+} AstBinaryOp;
+
+typedef struct AstCast {
+    Type *cast_type;
+    Ast *object;
+} AstCast;
+
+typedef struct AstDot {
+    Ast *object;
+    char *member_name;
+} AstDot;
+
+typedef struct AstCall {
+    Ast *fn; // obj?
+    int nargs;
+    struct AstList *args;
+} AstCall;
+
+typedef struct AstSlice {
+    Ast *object;
+    Ast *offset;
+    Ast *length;
+} AstSlice;
+
+typedef struct AstIndex {
+    Ast *object;
+    Ast *index;
+} AstIndex;
+
+typedef struct AstBind {
+    Ast *expr;
+    int offset;
+    int bind_id;
+} AstBind;
+
+typedef struct AstBlock {
+    struct AstList *statements;
+} AstBlock;
+
+typedef struct ResolutionList {
+    Type *type;
+    Type **swappable;
+    struct ResolutionList *to_parent;
+    struct ResolutionList *prev_in_scope;
+    struct ResolutionList *next_in_scope;
+} ResolutionList;
+
+typedef struct AstScope {
+    struct AstScope *parent;
+    AstBlock *body;
+    VarList *locals;
+    TypeList *local_types;
+    ResolutionList *unresolved_types;
+    struct AstList *bindings;
+    unsigned char has_return;
+    unsigned char is_function; // TODO change the way this works
+} AstScope;
+
+typedef struct AstConditional {
+    Ast *condition;
+    AstBlock *if_body;
+    AstBlock *else_body;
+} AstConditional;
+
+typedef struct AstTypeDecl {
+    char *type_name;
+    Type *target_type;
+} AstTypeDecl;
+
+typedef struct AstTempVar {
+    Var *var;
+    Ast *expr;
+} AstTempVar;
+
+typedef struct AstCopy {
+    Ast *expr;
+} AstCopy;
+
+typedef struct AstReturn {
+    AstScope *scope; // Needed ?
+    Ast *expr;
+} AstReturn;
+
+typedef struct AstHold {
+    Ast *object;
+    Var *tempvar;
+} AstHold;
+
+typedef struct AstRelease {
+    Ast *object;
+} AstRelease;
+
+typedef struct AstWhile {
+    Ast *condition;
+    AstScope *body;
+} AstWhile;
+
+typedef struct AstFor {
+    Var *itervar;
+    Ast *iterable;
+    AstScope *body;
+} AstFor;
+
+typedef struct AstDirective {
+    char *name;
+    Ast *object;
+} AstDirective;
 
 typedef struct AstList {
     Ast *item;
@@ -199,28 +253,27 @@ typedef struct AstListList {
     struct AstListList *next;
 } AstListList;
 
-Ast *ast_alloc(int type);
+Ast *ast_alloc(AstType type);
 Ast *make_ast_copy(Ast *ast);
 
 Ast *make_ast_bool(long ival);
 Ast *make_ast_string(char *val);
 Ast *make_ast_dot_op(Ast *dot_left, char *member_name);
-Ast *make_ast_tmpvar(Ast *ast, Var *tmpvar);
+Ast *make_ast_tempvar(Ast *ast, Var *tempvar);
 Ast *make_ast_id(Var *var, char *name);
 Ast *make_ast_decl(char *name, Type *type);
 Ast *make_ast_assign(Ast *left, Ast *right);
 Ast *make_ast_binop(int op, Ast *left, Ast *right);
 Ast *make_ast_slice(Ast *inner, Ast *offset, Ast *length);
 
-Type *var_type(Ast *ast);
-
+//Type *var_type(Ast *ast);
 Var *get_ast_var(Ast *ast);
 
 AstList *astlist_append(AstList *list, Ast *ast);
 AstList *reverse_astlist();
 
 int is_lvalue(Ast *ast);
-int is_literal(Ast *ast);
+//int is_literal(Ast *ast);
 Ast *cast_literal(Type *t, Ast *ast);
 Ast *try_implicit_cast(Type *t, Ast *ast);
 

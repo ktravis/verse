@@ -14,9 +14,11 @@
 
 void emit_type(Type *t);
 void emit_free(Var *var);
-void emit_free_locals(Ast *scope);
-void emit_scope_start(Ast *ast);
-void emit_scope_end(Ast *ast);
+void emit_free_locals(AstScope *scope);
+void emit_scope_start(AstScope *ast);
+void emit_scope_end(AstScope *ast);
+void compile_scope(AstScope *scope);
+void compile_block(AstBlock *block);
 void compile(Ast *ast);
 void compile_unspecified_array(Ast *ast);
 void compile_static_array(Ast *ast);

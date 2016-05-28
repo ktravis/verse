@@ -12,6 +12,7 @@ typedef struct Var {
     int temp;
     int consumed;
     int initialized;
+    unsigned char constant;
     //int held;
     int ext;
     struct Var **members;

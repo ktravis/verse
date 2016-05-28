@@ -85,29 +85,26 @@ int streq(struct string_type left, struct string_type right) {
 }
 
 // builtins
-void _vs_assert(unsigned char a) {
-    assert(a);
-}
-void _vs_println(struct string_type str) {
+/*void assert(unsigned char a) {*/
+    /*assert(a);*/
+/*}*/
+void println(struct string_type str) {
     printf("%s\n", str.bytes);
     free(str.bytes);
     /*free(str);*/
 }
-unsigned char _vs_validptr(ptr_type p) {
+unsigned char validptr(ptr_type p) {
     return (p != NULL);
 }
-void _vs_print_str(struct string_type str) {
+void print_str(struct string_type str) {
     printf("%s", str.bytes);
     free(str.bytes);
     /*free(str);*/
 }
-struct string_type _vs_itoa(int x) {
+struct string_type itoa(int x) {
     struct string_type v;
     v.bytes = malloc(8);
     snprintf(v.bytes, 7, "%d", x);
     v.length = strlen(v.bytes);
     return v;
-}
-uint8_t _vs_getc() {
-    return (uint8_t)getc(stdin);
 }

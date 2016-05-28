@@ -17,20 +17,20 @@ Var *make_var(char *name, Type *type) {
     var->initialized = 0;
     if (type->base == STRUCT_T) {
         var->initialized = 1;
-        var->members = malloc(sizeof(Var*)*type->nmembers);
-        for (int i = 0; i < type->nmembers; i++) {
-            int l = strlen(name)+strlen(type->member_names[i])+1;
+        var->members = malloc(sizeof(Var*)*type->st.nmembers);
+        for (int i = 0; i < type->st.nmembers; i++) {
+            int l = strlen(name)+strlen(type->st.member_names[i])+1;
             char *member_name;
             if (type->held) {
                 member_name = malloc((l+2)*sizeof(char));
-                sprintf(member_name, "%s->%s", name, type->member_names[i]);
+                sprintf(member_name, "%s->%s", name, type->st.member_names[i]);
                 member_name[l+1] = 0;
             } else {
                 member_name = malloc((l+1)*sizeof(char));
-                sprintf(member_name, "%s.%s", name, type->member_names[i]);
+                sprintf(member_name, "%s.%s", name, type->st.member_names[i]);
                 member_name[l] = 0;
             }
-            var->members[i] = make_var(member_name, type->member_types[i]); // TODO
+            var->members[i] = make_var(member_name, type->st.member_types[i]); // TODO
             var->members[i]->initialized = 1; // maybe wrong?
         }
     } else {

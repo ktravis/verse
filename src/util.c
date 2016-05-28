@@ -19,6 +19,14 @@ void error(int line, char *fmt, ...) {
     exit(1); 
 }
 
+void errlog(char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    fprintf(stderr, "\n");
+    va_end(args);
+}
+
 int escaped_strlen(const char *str) {
     int n = 0, i = 0;
     char c;

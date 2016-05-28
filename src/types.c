@@ -2,9 +2,12 @@
 #include "util.h"
 
 static int last_type_id = 0;
-static TypeList *type_defs = NULL;
-static TypeList *type_registry_head = NULL;
-static TypeList *type_registry_tail = NULL;
+// static TypeList *type_registry_head = NULL;
+// static TypeList *type_registry_tail = NULL;
+
+static Type **registry = NULL;
+static int num_registered_types = 0;
+static int _reg_alloc = 0;
 
 Type *make_type(char *name, int base, int size) {
     Type *t = malloc(sizeof(Type));
@@ -19,49 +22,85 @@ Type *make_type(char *name, int base, int size) {
         snprintf(name, l, "%d", t->id);
         name[l] = 0;
     }
+    t->unresolved = 0;
+    t->builtin = 0;
     t->name = name;
     return t;
 }
 
 Type *register_type(Type *t) {
-    TypeList *reg = type_registry_tail;
-    fprintf(stderr, "checking %d %s\n", t->id, t->name);
-    while (reg != NULL) {
-        fprintf(stderr, "\tcomparing %d to %d\n", t->id, reg->item->id);
-        if (types_are_equal(reg->item, t)) {
-            fprintf(stderr, "match\n");
-            return reg->item;
+    /*fprintf(stderr, "Checking %s %d\n", t->name, t->id);*/
+    // TypeList *reg = type_registry_tail;
+    /*fprintf(stderr, "checking %d %s\n", t->id, t->name);*/
+    // while (reg != NULL) {
+    //     /*fprintf(stderr, "\tcomparing %d to %d\n", t->id, reg->item->id);*/
+    //     if (reg->item->unresolved && !strcmp(reg->item->name, t->name)) {
+    //         fprintf(stderr, "Found an unresolved %s %d\n", reg->item->name, t->size);
+    //         reg->item = t;
+    //         return t;
+    //     }
+    //     if (types_are_equal(reg->item, t)) {
+    //         /*fprintf(stderr, "match\n");*/
+    //         return reg->item;
+    //     }
+    //     reg = reg->prev;
+    // }
+    for (int i = 0; i < num_registered_types; i++) {
+        if (types_are_equal(t, registry[i])) {
+            return registry[i];
         }
-        reg = reg->prev;
     }
     if (t->base == STRUCT_T) {
-        for (int i = 0; i < t->nmembers; i++) {
-            t->member_types[i] = register_type(t->member_types[i]);
+        for (int i = 0; i < t->st.nmembers; i++) {
+            t->st.member_types[i] = register_type(t->st.member_types[i]);
         }
     } else if (is_array(t) || t->base == PTR_T) {
         t->inner = register_type(t->inner);
     } else if (t->base == FN_T) {
-        for (TypeList *list = t->args; list != NULL; list = list->next) {
+        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
             list->item = register_type(list->item);
         }
-        t->ret = register_type(t->ret);
+        t->fn.ret = register_type(t->fn.ret);
     }
-    fprintf(stderr, "Registering %s %d\n", t->name, t->id);
-    TypeList *new_tail = malloc(sizeof(TypeList));
-    if (type_registry_tail != NULL) {
-        type_registry_tail->next = new_tail;
+    /*fprintf(stderr, "Registering %s %d\n", t->name, t->id);*/
+    if (registry == NULL) {
+        _reg_alloc = 24;
+        registry = malloc(sizeof(Type*) * _reg_alloc);
+    } 
+    if (num_registered_types + 1 > _reg_alloc) {
+        _reg_alloc *= 2;
+        registry = realloc(registry, sizeof(Type*) * _reg_alloc);    
     }
-    new_tail->item = t;
-    new_tail->prev = type_registry_tail;
-    type_registry_tail = new_tail;
-    if (type_registry_head == NULL) {
-        type_registry_head = type_registry_tail;
-    }
+    registry[num_registered_types++] = t;
     return t;
+    // TypeList *new_tail = malloc(sizeof(TypeList));
+    // if (type_registry_tail != NULL) {
+    //     type_registry_tail->next = new_tail;
+    // }
+    // new_tail->item = t;
+    // new_tail->prev = type_registry_tail;
+    // type_registry_tail = new_tail;
+    // if (type_registry_head == NULL) {
+    //     type_registry_head = type_registry_tail;
+    // }
+    // return t;
 }
 
 TypeList *get_used_types() {
-    return type_registry_head;
+    TypeList *list = NULL;
+    for (int i = num_registered_types-1; i >= 0; i--) {
+        int found = 0;
+        for (int j = 0; j < i; j++) {
+            if (types_are_equal(registry[i], registry[j])) {
+                found = 1;
+                break;
+            }
+        }
+        if (!found) {
+            list = typelist_append(list, registry[i]);    
+        }
+    }
+    return list;
 }
 
 Type *make_fn_type(int nargs, TypeList *args, Type *ret) {
@@ -105,9 +144,9 @@ Type *make_fn_type(int nargs, TypeList *args, Type *ret) {
     buf[size-1] = 0;
 
     Type *t = make_type(buf, FN_T, 8);
-    t->nargs = nargs;
-    t->args = args;
-    t->ret = ret;
+    t->fn.nargs = nargs;
+    t->fn.args = args;
+    t->fn.ret = ret;
     t->bindings = NULL;
     t->named = 0;
 
@@ -167,35 +206,13 @@ Type *make_struct_type(char *name, int nmembers, char **member_names, Type **mem
     }
     Type *s = make_type(name, STRUCT_T, 0);
     s->named = named;
-    s->nmembers = nmembers;
-    s->member_names = member_names;
-    s->member_types = member_types;
-    for (int i = 0; i < s->nmembers; i++) {
-        s->size += s->member_types[i]->size;
+    s->st.nmembers = nmembers;
+    s->st.member_names = member_names;
+    s->st.member_types = member_types;
+    for (int i = 0; i < s->st.nmembers; i++) {
+        s->size += s->st.member_types[i]->size;
     }
     return s;
-}
-
-Type *find_type(int id) {
-    TypeList *types = type_defs;
-    while (types != NULL) {
-        if (types->item->id == id) {
-            return types->item;
-        }
-        types = types->next;
-    }
-    return NULL;
-}
-
-Type *find_type_by_name(char *name) {
-    TypeList *types = type_defs;
-    while (types != NULL) {
-        if (!strcmp(types->item->name, name)) {
-            return types->item;
-        }
-        types = types->next;
-    }
-    return NULL;
 }
 
 int is_numeric(Type *t) {
@@ -235,12 +252,6 @@ TypeList *reverse_typelist(TypeList *list) {
     return head;
 }
 
-Type *define_type(Type *t) {
-    register_type(t);
-    type_defs = typelist_append(type_defs, t);
-    return t;
-}
-
 long array_size(Type *type) {
     Type *t = type;
     if (type->base == PTR_T) {
@@ -262,9 +273,9 @@ int can_cast(Type *from, Type *to) {
         return to->base == BASEPTR_T || to->base == PTR_T ||
             (to->base == INT_T && to->size == 8);
     case FN_T:
-        if (from->nargs == to->nargs && check_type(from->ret, to->ret)) {
-            TypeList *from_args = from->args;
-            TypeList *to_args = to->args;
+        if (from->fn.nargs == to->fn.nargs && check_type(from->fn.ret, to->fn.ret)) {
+            TypeList *from_args = from->fn.args;
+            TypeList *to_args = to->fn.args;
             while (from_args != NULL) {
                 if (!check_type(from_args->item, to_args->item)) {
                     return 0;
@@ -276,8 +287,9 @@ int can_cast(Type *from, Type *to) {
         }
         return 0;
     case STRUCT_T:
-        for (int i = 0; i < to->nmembers; i++) {
-            if (!check_type(from->member_types[i], to->member_types[i])) {
+        
+        for (int i = 0; i < (to->st.nmembers < from->st.nmembers ? to->st.nmembers : from->st.nmembers); i++) {
+            if (!check_type(from->st.member_types[i], to->st.member_types[i])) {
                 return 0;
             }
         }
@@ -346,8 +358,21 @@ int types_are_equal(Type *a, Type *b) {
     if (a->id == b->id) {
         return 1;
     }
-    if (a->named || b->named) {
-        return a->named && b->named && !strcmp(a->name, b->name);
+    if (a->named) {
+        if (!b->named) {
+            return 0;
+        }
+        if (strcmp(a->name, b->name)) {
+            return 0;
+        }
+    }
+    if (b->named) {
+        if (!a->named) {
+            return 0;
+        }
+        if (strcmp(a->name, b->name)) {
+            return 0;
+        }
     }
     switch (a->base) {
     case INT_T:
@@ -355,9 +380,9 @@ int types_are_equal(Type *a, Type *b) {
     case FLOAT_T:
         return a->size == b->size;
     case FN_T:
-        if (a->nargs == b->nargs && types_are_equal(a->ret, b->ret)) {
-            TypeList *a_args = a->args;
-            TypeList *b_args = b->args;
+        if (a->fn.nargs == b->fn.nargs && types_are_equal(a->fn.ret, b->fn.ret)) {
+            TypeList *a_args = a->fn.args;
+            TypeList *b_args = b->fn.args;
             while (a_args != NULL) {
                 if (!types_are_equal(a_args->item, b_args->item)) {
                     return 0;
@@ -371,11 +396,11 @@ int types_are_equal(Type *a, Type *b) {
     case PTR_T:
         return types_are_equal(a->inner, b->inner);
     case STRUCT_T:
-        if (a->nmembers != b->nmembers) {
+        if (a->st.nmembers != b->st.nmembers) {
             return 0;
         }
-        for (int i = 0; i < a->nmembers; i++) {
-            if (!types_are_equal(a->member_types[i], b->member_types[i])) {
+        for (int i = 0; i < a->st.nmembers; i++) {
+            if (!types_are_equal(a->st.member_types[i], b->st.member_types[i])) {
                 return 0;
             }
         }
@@ -402,9 +427,9 @@ int check_type(Type *a, Type *b) {
     }
     if (a->base == b->base) {
         if (a->base == FN_T) {
-            if (a->nargs == b->nargs && check_type(a->ret, b->ret)) {
-                TypeList *a_args = a->args;
-                TypeList *b_args = b->args;
+            if (a->fn.nargs == b->fn.nargs && check_type(a->fn.ret, b->fn.ret)) {
+                TypeList *a_args = a->fn.args;
+                TypeList *b_args = b->fn.args;
                 while (a_args != NULL) {
                     if (!check_type(a_args->item, b_args->item)) {
                         return 0;
@@ -423,11 +448,11 @@ int check_type(Type *a, Type *b) {
         } else if (a->base == DYN_ARRAY_T) {
             return check_type(a->inner, b->inner);
         } else if (a->base == STRUCT_T) {
-            if (a->nmembers != b->nmembers) {
+            if (a->st.nmembers != b->st.nmembers) {
                 return 0;
             }
-            for (int i = 0; i < a->nmembers; i++) {
-                if (!check_type(a->member_types[i], b->member_types[i])) {
+            for (int i = 0; i < a->st.nmembers; i++) {
+                if (!check_type(a->st.member_types[i], b->st.member_types[i])) {
                     return 0;
                 }
             }
@@ -456,8 +481,8 @@ int type_equality_comparable(Type *a, Type *b) {
 
 int is_dynamic(Type *t) {
     if (t->base == STRUCT_T) {
-        for (int i = 0; i < t->nmembers; i++) {
-            if (is_dynamic(t->member_types[i])) {
+        for (int i = 0; i < t->st.nmembers; i++) {
+            if (is_dynamic(t->st.member_types[i])) {
                 return 1;
             }
         }
@@ -580,31 +605,35 @@ Type *base_numeric_type(int t, int size) {
     return NULL;
 }
 
-void init_types() {
-    auto_type = define_type(make_type("auto", AUTO_T, -1));
-    void_type = define_type(make_type("void", VOID_T, 0));
+Type *typeinfo_ptr() {
+    return typeinfo_ptr_type;
+}
 
-    int_type = define_type(make_type("int", INT_T, 4));
-    int8_type = define_type(make_type("int8", INT_T, 1));
-    int16_type = define_type(make_type("int16", INT_T, 2));
-    int32_type = define_type(make_type("int32", INT_T, 4));
-    int64_type = define_type(make_type("int64", INT_T, 8));
+void init_types(struct AstScope *scope) {
+    auto_type = define_builtin_type(make_type("auto", AUTO_T, -1));
+    void_type = define_builtin_type(make_type("void", VOID_T, 0));
 
-    uint_type = define_type(make_type("uint", UINT_T, 4));
-    uint8_type = define_type(make_type("uint8", UINT_T, 1));
-    uint16_type = define_type(make_type("uint16", UINT_T, 2));
-    uint32_type = define_type(make_type("uint32", UINT_T, 4));
-    uint64_type = define_type(make_type("uint64", UINT_T, 8));
+    int_type = define_builtin_type(make_type("int", INT_T, 4));
+    int8_type = define_builtin_type(make_type("int8", INT_T, 1));
+    int16_type = define_builtin_type(make_type("int16", INT_T, 2));
+    int32_type = define_builtin_type(make_type("int32", INT_T, 4));
+    int64_type = define_builtin_type(make_type("int64", INT_T, 8));
 
-    float_type = define_type(make_type("float", FLOAT_T, 4));
-    float32_type = define_type(make_type("float32", FLOAT_T, 4));
-    float64_type = define_type(make_type("float64", FLOAT_T, 8));
+    uint_type = define_builtin_type(make_type("uint", UINT_T, 4));
+    uint8_type = define_builtin_type(make_type("uint8", UINT_T, 1));
+    uint16_type = define_builtin_type(make_type("uint16", UINT_T, 2));
+    uint32_type = define_builtin_type(make_type("uint32", UINT_T, 4));
+    uint64_type = define_builtin_type(make_type("uint64", UINT_T, 8));
 
-    bool_type = define_type(make_type("bool", BOOL_T, 1));
+    float_type = define_builtin_type(make_type("float", FLOAT_T, 4));
+    float32_type = define_builtin_type(make_type("float32", FLOAT_T, 4));
+    float64_type = define_builtin_type(make_type("float64", FLOAT_T, 8));
 
-    string_type = define_type(make_type("string", STRING_T, 16)); // should be checked that non-pointer is used in bindings
+    bool_type = define_builtin_type(make_type("bool", BOOL_T, 1));
 
-    baseptr_type = define_type(make_type("ptr", BASEPTR_T, 8)); // should be checked that non-pointer is used in bindings
+    string_type = define_builtin_type(make_type("string", STRING_T, 16)); // should be checked that non-pointer is used in bindings
+
+    baseptr_type = define_builtin_type(make_type("ptr", BASEPTR_T, 8)); // should be checked that non-pointer is used in bindings
 
     // TODO can these be defined in a "basic.vs" ?
     char **member_names = malloc(sizeof(char*)*2);
@@ -613,9 +642,9 @@ void init_types() {
     Type **member_types = malloc(sizeof(Type*)*2);
     member_types[0] = int_type;
     member_types[1] = string_type;
-    typeinfo_type = define_type(make_struct_type("Type", 2, member_names, member_types));
+    typeinfo_type = define_builtin_type(make_struct_type("Type", 2, member_names, member_types));
 
-    typeinfo_ptr_type = define_type(make_ptr_type(typeinfo_type));
+    typeinfo_ptr_type = define_builtin_type(make_ptr_type(typeinfo_type));
 
     member_names = malloc(sizeof(char*)*4);
     member_names[0] = "id";
@@ -627,7 +656,7 @@ void init_types() {
     member_types[1] = string_type;
     member_types[2] = int_type;
     member_types[3] = bool_type;
-    numtype_type = define_type(make_struct_type("NumType", 4, member_names, member_types));
+    numtype_type = define_builtin_type(make_struct_type("NumType", 4, member_names, member_types));
 
     member_names = malloc(sizeof(char*)*3);
     member_names[0] = "id";
@@ -637,7 +666,7 @@ void init_types() {
     member_types[0] = int_type;
     member_types[1] = string_type;
     member_types[2] = typeinfo_ptr_type;
-    ptrtype_type = define_type(make_struct_type("PtrType", 3, member_names, member_types));
+    ptrtype_type = define_builtin_type(make_struct_type("PtrType", 3, member_names, member_types));
 
     member_names = malloc(sizeof(char*)*2);
     member_names[0] = "name";
@@ -645,9 +674,9 @@ void init_types() {
     member_types = malloc(sizeof(Type*)*2);
     member_types[0] = string_type;
     member_types[1] = typeinfo_ptr_type;
-    structmember_type = define_type(make_struct_type("StructMember", 2, member_names, member_types));
+    structmember_type = define_builtin_type(make_struct_type("StructMember", 2, member_names, member_types));
 
-    Type *structmember_array_type = define_type(make_array_type(structmember_type));
+    Type *structmember_array_type = define_builtin_type(make_array_type(structmember_type));
 
     member_names = malloc(sizeof(char*)*3);
     member_names[0] = "id";
@@ -657,7 +686,7 @@ void init_types() {
     member_types[0] = int_type;
     member_types[1] = string_type;
     member_types[2] = structmember_array_type;
-    structtype_type = define_type(make_struct_type("StructType", 3, member_names, member_types));
+    structtype_type = define_builtin_type(make_struct_type("StructType", 3, member_names, member_types));
 
     member_names = malloc(sizeof(char*)*5);
     member_names[0] = "id";
@@ -671,9 +700,9 @@ void init_types() {
     member_types[2] = typeinfo_ptr_type;
     member_types[3] = int_type;
     member_types[4] = bool_type;
-    arraytype_type = define_type(make_struct_type("ArrayType", 5, member_names, member_types));
+    arraytype_type = define_builtin_type(make_struct_type("ArrayType", 5, member_names, member_types));
 
-    Type *typeinfo_array_type = define_type(make_array_type(typeinfo_type));
+    Type *typeinfo_array_type = define_builtin_type(make_array_type(typeinfo_type));
 
     member_names = malloc(sizeof(char*)*5);
     member_names[0] = "id";
@@ -689,7 +718,7 @@ void init_types() {
     member_types[3] = typeinfo_ptr_type;
     member_types[4] = bool_type;
     /*member_types[4] = bool_type;*/
-    fntype_type = define_type(make_struct_type("FnType", 5, member_names, member_types));
+    fntype_type = define_builtin_type(make_struct_type("FnType", 5, member_names, member_types));
 
     member_names = malloc(sizeof(char*)*2);
     member_names[0] = "value_pointer";
@@ -697,7 +726,7 @@ void init_types() {
     member_types = malloc(sizeof(Type*)*2);
     member_types[0] = baseptr_type;
     member_types[1] = typeinfo_ptr_type;
-    doomguy_type = define_type(make_struct_type("DoomGuy", 2, member_names, member_types));
+    doomguy_type = define_builtin_type(make_struct_type("DoomGuy", 2, member_names, member_types));
 
     types_initialized = 1;
 }

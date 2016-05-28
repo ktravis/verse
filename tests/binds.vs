@@ -12,9 +12,9 @@ fn main():int {
         };
     };
     y := fn ():auto {
-        c:[5]int;
-        c[2] = 123;
-        return fn ():int {
+        c:[5]string;
+        c[2] = "123";
+        return fn ():string {
             c := #{c};
             return c[2];
         };
@@ -22,6 +22,9 @@ fn main():int {
     println("woo");
     assert(a == 2);
     println(x()());
-    assert(y()() == 123);
+    assert(y()() == "123");
+    // println(y()()); // TODO calling this a second time causes a problem 
+    //                 //  because the same _cl_xx is used to hold the bound
+    //                 //  variables, bindings need to be reworked
     return 0;
 }

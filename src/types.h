@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+struct AstScope; // forward declare this
+
 enum {
     INT_T = 1,
     UINT_T,
@@ -36,6 +38,8 @@ typedef struct Type {
     int held;
     int size;
     long length;
+    unsigned char unresolved;
+    unsigned char builtin;
     // for structs / derived
     int id;
     union {
@@ -44,13 +48,13 @@ typedef struct Type {
             int nargs;
             struct TypeList *args;
             struct Type *ret;
-        };
+        } fn;
         struct Type *inner;
         struct {
             int nmembers;
             char **member_names;
             struct Type **member_types;
-        };
+        } st;
     };
     struct TypeList *bindings;
     int offset;
@@ -64,6 +68,9 @@ typedef struct TypeList {
 } TypeList;
 
 
+Type *define_builtin_type(Type *type);
+
+
 Type *base_type(int t);
 Type *base_numeric_type(int t, int size);
 
@@ -73,8 +80,6 @@ Type *make_static_array_type(Type *inner, long length);
 Type *make_array_type(Type *inner);
 Type *make_fn_type(int nargs, TypeList *args, Type *ret);
 Type *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types);
-Type *find_type(int id);
-Type *find_type_by_name(char *name);
 
 Type *register_type(Type *t);
 TypeList *get_used_types();
@@ -92,6 +97,7 @@ int check_type(Type *a, Type *b);
 int type_can_coerce(Type *from, Type *to);
 int type_equality_comparable(Type *a, Type *b);
 long array_size(Type *t);
+Type *typeinfo_ptr();
 
 int precision_loss_uint(Type *t, unsigned long ival);
 int precision_loss_int(Type *t, long ival);
@@ -101,7 +107,6 @@ Type *promote_number_type(Type *a, Type *b);
 
 TypeList *reverse_typelist(TypeList *list);
 TypeList *typelist_append(TypeList *list, Type *t);
-Type *define_type(Type *t);
 void remove_type(int id);
 
 #endif

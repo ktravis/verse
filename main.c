@@ -13,50 +13,51 @@ void indent() {
 }
 
 void emit_string_comparison(Ast *ast) {
-    if (ast->op == OP_NEQUALS) {
+    AstBinaryOp *bin = ast->binary;
+    if (bin->op == OP_NEQUALS) {
         printf("!");
-    } else if (ast->op != OP_EQUALS) {
-        error(ast->line, "Comparison of type '%s' is not valid for type 'string'.", op_to_str(ast->op));
+    } else if (bin->op != OP_EQUALS) {
+        error(ast->line, "Comparison of type '%s' is not valid for type 'string'.", op_to_str(bin->op));
     }
-    if (ast->left->type == AST_STRING && ast->right->type == AST_STRING) {
-        printf("%d", strcmp(ast->left->sval, ast->right->sval) ? 0 : 1);
+    if (bin->left->type == AST_LITERAL && bin->right->type == AST_LITERAL) {
+        printf("%d", strcmp(bin->left->lit->string_val, bin->right->lit->string_val) ? 0 : 1);
         return;
     }
-    if (ast->left->type == AST_STRING) {
+    if (bin->left->type == AST_LITERAL) {
         printf("streq_lit(");
-        compile(ast->right);
+        compile(bin->right);
         printf(",\"");
-        print_quoted_string(ast->left->sval);
-        printf("\",%d)", escaped_strlen(ast->left->sval));
-    } else if (ast->right->type == AST_STRING) {
+        print_quoted_string(bin->left->lit->string_val);
+        printf("\",%d)", escaped_strlen(bin->left->lit->string_val));
+    } else if (bin->right->type == AST_LITERAL) {
         printf("streq_lit(");
-        compile(ast->left);
+        compile(bin->left);
         printf(",\"");
-        print_quoted_string(ast->right->sval);
-        printf("\",%d)", escaped_strlen(ast->right->sval));
+        print_quoted_string(bin->right->lit->string_val);
+        printf("\",%d)", escaped_strlen(bin->right->lit->string_val));
     } else {
         printf("streq(");
-        compile(ast->left);
+        compile(bin->left);
         printf(",");
-        compile(ast->right);
+        compile(bin->right);
         printf(")");
     }
 }
 
 void emit_comparison(Ast *ast) {
-    if (var_type(ast->left)->base == STRING_T) {
+    if (ast->binary->left->var_type->base == STRING_T) {
         emit_string_comparison(ast);
         return;
     }
     printf("(");
-    compile(ast->left);
-    printf(" %s ", op_to_str(ast->op));
-    compile(ast->right);
+    compile(ast->binary->left);
+    printf(" %s ", op_to_str(ast->binary->op));
+    compile(ast->binary->right);
     printf(")");
 }
 
 void emit_string_binop(Ast *ast) {
-    switch (ast->right->type) {
+    switch (ast->binary->right->type) {
     case AST_CALL: // is this right? need to do anything else?
     case AST_IDENTIFIER:
     case AST_DOT:
@@ -64,17 +65,17 @@ void emit_string_binop(Ast *ast) {
     case AST_UOP:
     case AST_TEMP_VAR:
         printf("append_string(");
-        compile(ast->left);
+        compile(ast->binary->left);
         printf(",");
-        compile(ast->right);
+        compile(ast->binary->right);
         printf(")");
         break;
-    case AST_STRING:
+    case AST_LITERAL:
         printf("append_string_lit(");
-        compile(ast->left);
+        compile(ast->binary->left);
         printf(",\"");
-        print_quoted_string(ast->right->sval);
-        printf("\",%d)", (int) escaped_strlen(ast->right->sval));
+        print_quoted_string(ast->binary->right->lit->string_val);
+        printf("\",%d)", (int) escaped_strlen(ast->binary->right->lit->string_val));
         break;
     default:
         error(-1, "Couldn't do the string binop? %d", ast->type);
@@ -82,28 +83,28 @@ void emit_string_binop(Ast *ast) {
 }
 
 void emit_dot_op(Ast *ast) {
-    Type *t = var_type(ast->dot_left);
+    Type *t = ast->dot->object->var_type;
     if (t->base == STATIC_ARRAY_T || (t->base == PTR_T && t->inner->base == STATIC_ARRAY_T)) {
-        if (!strcmp(ast->member_name, "length")) {
+        if (!strcmp(ast->dot->member_name, "length")) {
             printf("%ld", array_size(t));
-        } else if (!strcmp(ast->member_name, "data")) {
+        } else if (!strcmp(ast->dot->member_name, "data")) {
             if (t->base == PTR_T) {
                 printf("*");
             }
-            compile(ast->dot_left);
+            compile(ast->dot->object);
         }
     } else {
-        compile(ast->dot_left);
+        compile(ast->dot->object);
         if (t->base == PTR_T) {// || (ast->dot_left->type == AST_IDENTIFIER && ast->dot_left->var->type->held)) {
-            printf("->%s", ast->member_name);
+            printf("->%s", ast->dot->member_name);
         } else {
-            printf(".%s", ast->member_name);
+            printf(".%s", ast->dot->member_name);
         }
     }
 }
 
 void emit_uop(Ast *ast) {
-    switch (ast->op) {
+    switch (ast->unary->op) {
     case OP_NOT:
         printf("!"); break;
     case OP_ADDR:
@@ -115,13 +116,13 @@ void emit_uop(Ast *ast) {
     case OP_PLUS:
         printf("+"); break;
     default:
-        error(ast->line,"Unkown unary operator '%s' (%s).", op_to_str(ast->op), ast->op);
+        error(ast->line,"Unkown unary operator '%s' (%s).", op_to_str(ast->unary->op), ast->unary->op);
     }
-    compile(ast->right);
+    compile(ast->unary->object);
 }
 
 void emit_assignment(Ast *ast) {
-    Type *lt = var_type(ast->left);
+    Type *lt = ast->binary->left->var_type;
     if (lt->base == STATIC_ARRAY_T) {
         printf("{\n");
         _indent++;
@@ -129,13 +130,13 @@ void emit_assignment(Ast *ast) {
         
         emit_type(lt);
         printf("l = ");
-        compile_static_array(ast->left);
+        compile_static_array(ast->binary->left);
         printf(";\n");
         indent();
         
         emit_type(lt);
         printf("r = ");
-        compile_static_array(ast->right);
+        compile_static_array(ast->binary->right);
         printf(";\n");
         indent();
 
@@ -148,88 +149,92 @@ void emit_assignment(Ast *ast) {
         return;
     }
     if (is_dynamic(lt)) {
-        if (ast->left->type == AST_DOT || ast->left->type == AST_INDEX) {
-            compile(ast->right);
+        if (ast->binary->left->type == AST_DOT || ast->binary->left->type == AST_INDEX) {
+            compile(ast->binary->right);
             printf(";\n");
             indent();
             printf("SWAP(");
-            compile(ast->left);
-            printf(",_tmp%d)", ast->right->tmpvar->id);
+            compile(ast->binary->left);
+            printf(",_tmp%d)", ast->binary->right->tempvar->var->id);
         } else {
-            Var *l = get_ast_var(ast->left);
+            Var *l = get_ast_var(ast->binary->left);
             if (l->initialized) {
-                compile(ast->right);
+                compile(ast->binary->right);
                 printf(";\n");
                 indent();
-                printf("SWAP(_vs_%s,_tmp%d)", l->name, ast->right->tmpvar->id);
+                printf("SWAP(_vs_%s,_tmp%d)", l->name, ast->binary->right->tempvar->var->id);
             } else {
                 printf("_vs_%s = ", l->name);
-                compile(ast->right);
+                compile(ast->binary->right);
                 l->initialized = 1;
-                if (ast->right->type == AST_TEMP_VAR) {
-                    ast->right->tmpvar->consumed = 1;
+                if (ast->binary->right->type == AST_TEMP_VAR) {
+                    ast->binary->right->tempvar->var->consumed = 1;
                 }
             }
         }
     } else {
-        compile(ast->left);
+        compile(ast->binary->left);
         printf(" = ");
         if (lt->base == ARRAY_T) {
-            compile_unspecified_array(ast->right);
+            compile_unspecified_array(ast->binary->right);
         } else if (lt->base == STATIC_ARRAY_T) {
-            compile_static_array(ast->right);
+            compile_static_array(ast->binary->right);
         } else {
-            compile(ast->right);
+            compile(ast->binary->right);
         }
-        if (ast->right->type == AST_TEMP_VAR) {
-            ast->right->tmpvar->consumed = 1;
+        if (ast->binary->right->type == AST_TEMP_VAR) {
+            ast->binary->right->tempvar->var->consumed = 1;
         }
     }
 }
 
 void emit_binop(Ast *ast) {
-    if (is_comparison(ast->op)) {
+    if (is_comparison(ast->binary->op)) {
         emit_comparison(ast);
         return;
-    } else if (var_type(ast->left)->base == STRING_T) {
+    } else if (ast->binary->left->var_type->base == STRING_T) {
         emit_string_binop(ast);
         return;
-    } else if (ast->op == OP_OR) {
+    } else if (ast->binary->op == OP_OR) {
         printf("(");
-        compile(ast->left);
+        compile(ast->binary->left);
         printf(") || (");
-        compile(ast->right);
+        compile(ast->binary->right);
         printf(")");
         return;
-    } else if (ast->op == OP_AND) {
+    } else if (ast->binary->op == OP_AND) {
         printf("(");
-        compile(ast->left);
+        compile(ast->binary->left);
         printf(") && ("); // does this short-circuit?
-        compile(ast->right);
+        compile(ast->binary->right);
         printf(")");
         return;
     }
     printf("(");
-    compile(ast->left);
-    printf(" %s ", op_to_str(ast->op));
-    compile(ast->right);
+    compile(ast->binary->left);
+    printf(" %s ", op_to_str(ast->binary->op));
+    compile(ast->binary->right);
     printf(")");
 }
 
 void emit_copy(Ast *ast) {
-    if (var_type(ast->copy_expr)->base == FN_T) {
-        compile(ast->copy_expr);
+    if (ast->copy->expr->var_type->base == FN_T) {
+        compile(ast->copy->expr);
     } else {
-        Type *t = var_type(ast->copy_expr);
+        Type *t = ast->copy->expr->var_type;
         switch (t->base) {
         case STRING_T:
             printf("copy_string(");
-            compile(ast->copy_expr);
+            compile(ast->copy->expr);
             printf(")");
             break;
         case STRUCT_T: {
-            printf("_copy_%s(", t->name);
-            compile(ast->copy_expr);
+            if (t->builtin) {
+                printf("_copy_%s(", t->name);
+            } else {
+                printf("_copy_%d(", t->id);
+            }
+            compile(ast->copy->expr);
             printf(")");
             break;
         }
@@ -237,13 +242,13 @@ void emit_copy(Ast *ast) {
     }
 }
 
-void emit_tmpvar(Ast *ast) {
-    if (ast->tmpvar->type->base == FN_T) {
-        compile(ast->expr);
+void emit_tempvar(Ast *ast) {
+    if (ast->tempvar->var->type->base == FN_T) {
+        compile(ast->tempvar->expr);
     } else {
-        ast->tmpvar->initialized = 1;
-        printf("(_tmp%d = ", ast->tmpvar->id);
-        compile(ast->expr);
+        ast->tempvar->var->initialized = 1;
+        printf("(_tmp%d = ", ast->tempvar->var->id);
+        compile(ast->tempvar->expr);
         printf(")");
     }
 }
@@ -291,7 +296,7 @@ void emit_type(Type *type) {
         printf("*");
         break;
     case STRUCT_T: {
-        if (type->named) {
+        if (type->builtin) {
             printf("struct _vs_%s ", type->name);
         } else {
             printf("struct _vs_%d ", type->id);
@@ -304,7 +309,7 @@ void emit_type(Type *type) {
 }
 
 void compile_unspecified_array(Ast *ast) {
-    Type *t = var_type(ast);
+    Type *t = ast->var_type;
     if (t->base == ARRAY_T) {
         compile(ast);
     } else if (t->base == STATIC_ARRAY_T) {
@@ -317,7 +322,7 @@ void compile_unspecified_array(Ast *ast) {
 }
 
 void compile_static_array(Ast *ast) {
-    Type *t = var_type(ast);
+    Type *t = ast->var_type;
     if (t->base == STATIC_ARRAY_T) {
         compile(ast);
     } else if (t->base == ARRAY_T) {
@@ -330,14 +335,14 @@ void compile_static_array(Ast *ast) {
 }
 
 void emit_static_array_decl(Ast *ast) {
-    char *membername = malloc(sizeof(char) * (strlen(ast->decl_var->name) + 5));
-    sprintf(membername, "_vs_%s", ast->decl_var->name);
-    membername[strlen(ast->decl_var->name) + 5] = 0;
-    emit_structmember(membername, ast->decl_var->type);
+    char *membername = malloc(sizeof(char) * (strlen(ast->decl->var->name) + 5));
+    sprintf(membername, "_vs_%s", ast->decl->var->name);
+    membername[strlen(ast->decl->var->name) + 5] = 0;
+    emit_structmember(membername, ast->decl->var->type);
     free(membername);
     /*emit_type(ast->decl_var->type->inner);*/
     /*printf("_vs_%s[%ld]", ast->decl_var->name, ast->decl_var->type->length);*/
-    if (ast->init == NULL) {
+    if (ast->decl->init == NULL) {
         printf(" = {0}");
     } else {
         printf(";\n");
@@ -345,16 +350,16 @@ void emit_static_array_decl(Ast *ast) {
         printf("{\n");
         _indent++;
         indent();
-        emit_type(ast->decl_var->type);
+        emit_type(ast->decl->var->type);
         printf("_0 = ");
-        compile_static_array(ast->init);
+        compile_static_array(ast->decl->init);
         printf(";\n");
         indent();
 
-        char *dname = malloc(sizeof(char) * (strlen(ast->decl_var->name) + 5));
-        sprintf(dname, "_vs_%s", ast->decl_var->name);
-        dname[strlen(ast->decl_var->name) + 5] = 0;
-        emit_static_array_copy(ast->decl_var->type, dname, "_0");
+        char *dname = malloc(sizeof(char) * (strlen(ast->decl->var->name) + 5));
+        sprintf(dname, "_vs_%s", ast->decl->var->name);
+        dname[strlen(ast->decl->var->name) + 5] = 0;
+        emit_static_array_copy(ast->decl->var->type, dname, "_0");
         printf(";\n");
         free(dname);
 
@@ -362,34 +367,34 @@ void emit_static_array_decl(Ast *ast) {
         indent();
         printf("}");
 
-        if (ast->init->type == AST_TEMP_VAR) {
-            ast->init->tmpvar->consumed = 1;
+        if (ast->decl->init->type == AST_TEMP_VAR) {
+            ast->decl->init->tempvar->var->consumed = 1;
         }
     }
-    ast->decl_var->initialized = 1;
+    ast->decl->var->initialized = 1;
 }
 
 void emit_decl(Ast *ast) {
-    Type *t = ast->decl_var->type;
+    Type *t = ast->decl->var->type;
     if (t->base == STATIC_ARRAY_T) {
         emit_static_array_decl(ast);
         return;
     }
     emit_type(t);
-    printf("_vs_%s", ast->decl_var->name);
-    if (ast->init == NULL) {
+    printf("_vs_%s", ast->decl->var->name);
+    if (ast->decl->init == NULL) {
         if (t->base == STRING_T) {
             printf(" = (struct string_type){0}");
-            ast->decl_var->initialized = 1;
+            ast->decl->var->initialized = 1;
         } else if (t->base == STRUCT_T) {
             printf(";\n");
             indent();
-            if (t->named) {
-                printf("_init_%s(&_vs_%s)", t->name, ast->decl_var->name);
+            if (t->builtin) {
+                printf("_init_%s(&_vs_%s)", t->name, ast->decl->var->name);
             } else {
-                printf("_init_%d(&_vs_%s)", t->id, ast->decl_var->name);
+                printf("_init_%d(&_vs_%s)", t->id, ast->decl->var->name);
             }
-            ast->decl_var->initialized = 1;
+            ast->decl->var->initialized = 1;
         } else if (t->base == BASEPTR_T || t->base == PTR_T)  {
             printf(" = NULL");
         } else if (is_numeric(t)) {
@@ -400,21 +405,28 @@ void emit_decl(Ast *ast) {
     } else {
         printf(" = ");
         if (t->base == ARRAY_T) {
-            compile_unspecified_array(ast->init);
+            compile_unspecified_array(ast->decl->init);
         } else {
-            compile(ast->init);
+            compile(ast->decl->init);
         }
-        if (ast->init->type == AST_TEMP_VAR) {
-            ast->init->tmpvar->consumed = 1;
+        if (ast->decl->init->type == AST_TEMP_VAR) {
+            ast->decl->init->tempvar->var->consumed = 1;
         }
-        ast->decl_var->initialized = 1;
+        ast->decl->var->initialized = 1;
     }
 }
 
 void emit_func_decl(Ast *fn) {
-    emit_type(fn->fn_decl_var->type->ret);
-    printf("_vs_%s(", fn->fn_decl_var->name);
-    VarList *args = fn->fn_decl_args;
+    printf("/* %s */\n", fn->fn_decl->var->name);
+    indent();
+    emit_type(fn->fn_decl->var->type->fn.ret);
+    // TODO do this in a non-hacky way
+    if (!strcmp(fn->fn_decl->var->name, "main")) {
+        printf("_vs_%s(", fn->fn_decl->var->name);
+    } else {
+        printf("_vs_%d(", fn->fn_decl->var->id);
+    }
+    VarList *args = fn->fn_decl->args;
     while (args != NULL) {
         emit_type(args->item->type);
         printf("_vs_%s", args->item->name);
@@ -424,7 +436,8 @@ void emit_func_decl(Ast *fn) {
         args = args->next;
     }
     printf(") ");
-    compile(fn->fn_body);
+    
+    compile_scope(fn->fn_decl->scope);
 }
 
 void emit_structmember(char *name, Type *st) {
@@ -481,7 +494,7 @@ void emit_static_array_copy(Type *t, char *dest, char *src) {
         printf("%s[i] = copy_string(%s[i])", dest, src);
         break;
     case STRUCT_T:
-        if (t->inner->named) {
+        if (t->inner->builtin) {
             printf("%s[i] = _copy_%s(%s[i])", dest, t->inner->name, src);
         } else {
             printf("%s[i] = _copy_%d(%s[i])", dest, t->inner->id, src);
@@ -508,16 +521,16 @@ void emit_struct_decl(Type *st) {
     emit_type(st);
     printf("{\n");
     _indent++;
-    for (int i = 0; i < st->nmembers; i++) {
+    for (int i = 0; i < st->st.nmembers; i++) {
         indent();
-        emit_structmember(st->member_names[i], st->member_types[i]);
+        emit_structmember(st->st.member_names[i], st->st.member_types[i]);
         printf(";\n");
     }
     _indent--;
     indent();
     printf("};\n");
     emit_type(st);
-    if (st->named) {
+    if (st->builtin) {
         printf("*_init_%s(", st->name);
     } else {
         printf("*_init_%d(", st->id);
@@ -545,7 +558,7 @@ void emit_struct_decl(Type *st) {
     indent();
     printf("}\n");
     emit_type(st);
-    if (st->named) {
+    if (st->builtin) {
         printf("_copy_%s(", st->name);
     } else {
         printf("_copy_%d(", st->id);
@@ -553,28 +566,28 @@ void emit_struct_decl(Type *st) {
     emit_type(st);
     printf("x) {\n");
     _indent++;
-    for (int i = 0; i < st->nmembers; i++) {
-        Type *t = st->member_types[i];
+    for (int i = 0; i < st->st.nmembers; i++) {
+        Type *t = st->st.member_types[i];
         if (t->base == STATIC_ARRAY_T && is_dynamic(t->inner)) {
             indent();
-            char *member = malloc(sizeof(char) * (strlen(st->member_names[i]) + 3));
-            sprintf(member, "x.%s", st->member_names[i]);
-            member[strlen(st->member_names[i])] = 0;
+            char *member = malloc(sizeof(char) * (strlen(st->st.member_names[i]) + 3));
+            sprintf(member, "x.%s", st->st.member_names[i]);
+            member[strlen(st->st.member_names[i])] = 0;
             emit_static_array_copy(t, member, member);
             printf(";\n");
             free(member);
         } else if (t->base == STRING_T) {
             indent();
-            printf("x.%s = copy_string(x.%s);\n", st->member_names[i], st->member_names[i]);
+            printf("x.%s = copy_string(x.%s);\n", st->st.member_names[i], st->st.member_names[i]);
         } else if (t->base == STRUCT_T) {
             indent();
-            printf("x.%s = ", st->member_names[i]);
-            if (t->named) {
+            printf("x.%s = ", st->st.member_names[i]);
+            if (t->builtin) {
                 printf("_copy_%s(", t->name);
             } else {
                 printf("_copy_%d(", t->id);
             }
-            printf("x.%s);\n", st->member_names[i]);
+            printf("x.%s);\n", st->st.member_names[i]);
         }
     }
     indent();
@@ -588,14 +601,14 @@ void compile_pointer(Ast *ast) {
     assert(is_lvalue(ast) || ast->type == AST_TEMP_VAR);
 
     if (ast->type == AST_TEMP_VAR) {
-        if (ast->tmpvar->type->base == FN_T) {
+        if (ast->tempvar->var->type->base == FN_T) {
             printf("&");
-            compile(ast->expr);
+            compile(ast->tempvar->expr);
         } else {
-            ast->tmpvar->initialized = 1;
-            printf("(_tmp%d = ", ast->tmpvar->id);
-            compile(ast->expr);
-            printf(", &_tmp%d)", ast->tmpvar->id);
+            ast->tempvar->var->initialized = 1;
+            printf("(_tmp%d = ", ast->tempvar->var->id);
+            compile(ast->tempvar->expr);
+            printf(", &_tmp%d)", ast->tempvar->var->id);
         }
     } else {
         printf("&");
@@ -603,41 +616,73 @@ void compile_pointer(Ast *ast) {
     }
 }
 
+void compile_scope(AstScope *scope) {
+    emit_scope_start(scope);
+    compile_block(scope->body);
+    emit_scope_end(scope);
+}
+
+void compile_block(AstBlock *block) {
+    for (AstList *statements = block->statements; statements != NULL; statements = statements->next) {
+        if (statements->item->type == AST_FUNC_DECL || statements->item->type == AST_EXTERN_FUNC_DECL ||
+            statements->item->type == AST_TYPE_DECL) {
+            continue;
+        }
+        if (statements->item->type != AST_RELEASE) {
+            indent();
+        }
+        compile(statements->item);
+        if (statements->item->type != AST_CONDITIONAL && statements->item->type != AST_RELEASE && 
+            statements->item->type != AST_WHILE && statements->item->type != AST_FOR &&
+            statements->item->type != AST_TYPE_DECL) {
+            printf(";\n");
+        }
+    }
+}
+
 void compile(Ast *ast) {
     switch (ast->type) {
-    case AST_INTEGER:
-        printf("%ld", ast->ival);
-        break;
-    case AST_FLOAT: // TODO this is truncated
-        printf("%F", ast->fval);
-        break;
-    case AST_BOOL:
-        printf("%d", (unsigned char)ast->ival);
-        break;
-    // TODO strlen is wrong for escaped chars \t etc
-    case AST_STRING:
-        printf("init_string(\"");
-        print_quoted_string(ast->sval);
-        printf("\", %d)", (int)strlen(ast->sval));
-        break;
-    case AST_STRUCT:
-        printf("(struct _vs_%s){", ast->struct_lit_type->name);
-        if (ast->nmembers == 0) {
-            printf("0");
-        } else {
-            for (int i = 0; i < ast->nmembers; i++) {
-                printf(".%s = ", ast->member_names[i]);
-                compile(ast->member_exprs[i]);
-                if (ast->member_exprs[i]->type == AST_TEMP_VAR || ast->member_exprs[i]->type == AST_ANON_FUNC_DECL) {
-                    ast->member_exprs[i]->tmpvar->consumed = 1;
-                }
-                if (i != ast->nmembers - 1) {
-                    printf(", ");
+    case AST_LITERAL:
+        switch (ast->lit->lit_type) {
+        case INTEGER:
+            printf("%ld", ast->lit->int_val);
+            break;
+        case FLOAT: // TODO this is truncated
+            printf("%F", ast->lit->float_val);
+            break;
+        case BOOL:
+            printf("%d", (unsigned char)ast->lit->int_val);
+            break;
+        // TODO strlen is wrong for escaped chars \t etc
+        case STRING:
+            printf("init_string(\"");
+            print_quoted_string(ast->lit->string_val);
+            printf("\", %d)", (int)strlen(ast->lit->string_val));
+            break;
+        case STRUCT:
+            if (ast->lit->struct_val.type->builtin) {
+                printf("(struct _vs_%s){", ast->lit->struct_val.type->name);
+            } else {
+                printf("(struct _vs_%d){", ast->lit->struct_val.type->id);
+            }
+            if (ast->lit->struct_val.nmembers == 0) {
+                printf("0");
+            } else {
+                for (int i = 0; i < ast->lit->struct_val.nmembers; i++) {
+                    printf(".%s = ", ast->lit->struct_val.member_names[i]);
+                    compile(ast->lit->struct_val.member_exprs[i]);
+                    if (ast->lit->struct_val.member_exprs[i]->type == AST_TEMP_VAR || ast->lit->struct_val.member_exprs[i]->type == AST_ANON_FUNC_DECL) {
+                        ast->lit->struct_val.member_exprs[i]->tempvar->var->consumed = 1;
+                    }
+                    if (i != ast->lit->struct_val.nmembers - 1) {
+                        printf(", ");
+                    }
                 }
             }
+            printf("}");
+            break;
         }
-        printf("}");
-        break;
+        break;     
     case AST_DOT:
         emit_dot_op(ast);
         break;
@@ -651,136 +696,136 @@ void compile(Ast *ast) {
         emit_binop(ast);
         break;
     case AST_CAST:
-        if (is_any(ast->cast_type)) {
+        if (is_any(ast->cast->cast_type)) {
             // TODO how do I deal with passing like an int or something
             printf("(struct _vs_DoomGuy){.value_pointer=");
-            compile_pointer(ast->cast_left);
-            printf(",.type=(struct _vs_Type *)&_type_info%d}", var_type(ast->cast_left)->id);
+            compile_pointer(ast->cast->object);
+            printf(",.type=(struct _vs_Type *)&_type_info%d}", ast->cast->object->var_type->id);
             break;
         }
-        if (ast->cast_type->base == STRUCT_T) {
+        if (ast->cast->cast_type->base == STRUCT_T) {
             printf("*");
         }
         printf("((");
-        emit_type(ast->cast_type);
-        if (ast->cast_type->base == STRUCT_T) {
+        emit_type(ast->cast->cast_type);
+        if (ast->cast->cast_type->base == STRUCT_T) {
             printf("*");
         }
         printf(")");
-        if (ast->cast_type->base == STRUCT_T) {
+        if (ast->cast->cast_type->base == STRUCT_T) {
             printf("&");
         }
-        compile(ast->cast_left);
+        compile(ast->cast->object);
         printf(")");
         break;
     case AST_SLICE:
         printf("(struct array_type){.data=");
-        compile_static_array(ast->slice_inner);
+        compile_static_array(ast->slice->object);
         /*printf(".data");*/
-        if (ast->slice_offset != NULL) {
+        if (ast->slice->offset != NULL) {
             printf("+(");
-            compile(ast->slice_offset);
+            compile(ast->slice->offset);
             /*printf("*%d)", var_type(ast->slice_inner)->inner->size);*/
             printf(")");
         }
         printf(",.length=");
-        if (ast->slice_length != NULL) {
-            compile(ast->slice_length);
-        } else if (var_type(ast->slice_inner)->base == STATIC_ARRAY_T) {
-            printf("%ld", var_type(ast->slice_inner)->length); 
+        if (ast->slice->length != NULL) {
+            compile(ast->slice->length);
+        } else if (ast->slice->object->var_type->base == STATIC_ARRAY_T) {
+            printf("%ld", ast->slice->object->var_type->length); 
         } else {
             // TODO make this work (store tmpvar of thing being sliced to avoid
             // re-running whatever it is)
             error(ast->line, "Slicing a slice, uh ohhhhh");
         }
-        if (ast->slice_offset != NULL) {
+        if (ast->slice->offset != NULL) {
             printf("-");
-            compile(ast->slice_offset);
+            compile(ast->slice->offset);
         }
         printf("}");
         break;
     case AST_TEMP_VAR:
-        emit_tmpvar(ast);
+        emit_tempvar(ast);
         break;
     case AST_COPY:
         emit_copy(ast);
         break;
     case AST_HOLD:
-        if (ast->type == AST_STRUCT) {
-        } else {
-            switch (var_type(ast->expr)->base) {
-            case STATIC_ARRAY_T: {
-                Type *t = var_type(ast->expr);
-                if (is_dynamic(t->inner)) {
-                    printf("(struct array_type){.data=_hold_%d(", t->id);
-                    compile(ast->expr);
-                    printf("),.length=%ld}", t->length);
-                } else { // TODO this isn't copying, duh!
-                    printf("(struct array_type){.data=calloc(%ld, sizeof(", t->length);
-                    emit_type(t->inner);
-                    printf(")),.length=%ld}", t->length);
-                }
-                break;
+        switch (ast->hold->object->var_type->base) {
+        case STATIC_ARRAY_T: {
+            Type *t = ast->hold->object->var_type;
+            if (is_dynamic(t->inner)) {
+                printf("(struct array_type){.data=_hold_%d(", t->id);
+                compile(ast->hold->object);
+                printf("),.length=%ld}", t->length);
+            } else { // TODO this isn't copying, duh!
+                printf("(struct array_type){.data=calloc(%ld, sizeof(", t->length);
+                emit_type(t->inner);
+                printf(")),.length=%ld}", t->length);
             }
-            case STRING_T:
-                /*emit_tmpvar(ast->expr);*/
-                /*break;*/
-            default:
-                printf("(_tmp%d = ", ast->tmpvar->id);
-                printf("malloc(sizeof(");
-                emit_type(var_type(ast->expr));
-
-                printf(")), *_tmp%d = ", ast->tmpvar->id);
-                compile(ast->expr);
-                printf(", _tmp%d", ast->tmpvar->id);
-                printf(")");
-            }
+            break;
         }
-        if (ast->expr->type == AST_TEMP_VAR) {
-            ast->expr->tmpvar->consumed = 1;
+        case STRING_T:
+            /*emit_tmpvar(ast->expr);*/
+            /*break;*/
+        default:
+            printf("(_tmp%d = ", ast->hold->tempvar->id);
+            printf("malloc(sizeof(");
+            emit_type(ast->hold->object->var_type);
+
+            printf(")), *_tmp%d = ", ast->hold->tempvar->id);
+            compile(ast->hold->object);
+            printf(", _tmp%d", ast->hold->tempvar->id);
+            printf(")");
+        }
+        if (ast->hold->object->type == AST_TEMP_VAR) {
+            ast->hold->object->tempvar->var->consumed = 1;
         }
         break;
     case AST_IDENTIFIER:
-        if (!ast->var->ext) {
-            printf("_vs_");
+        if (ast->ident->var->ext) {
+            printf("%s", ast->ident->var->name);
+        } else if (ast->ident->var->type->base == FN_T && ast->ident->var->constant) {
+            printf("_vs_%d", ast->ident->var->id);
+        } else {
+            printf("_vs_%s", ast->ident->var->name);
         }
-        printf("%s", ast->var->name);
         break;
     case AST_RETURN:
-        if (ast->ret_expr != NULL) {
-            if (ast->ret_expr->type == AST_TEMP_VAR || ast->ret_expr->type == AST_ANON_FUNC_DECL) {
-                ast->ret_expr->tmpvar->consumed = 1;
+        if (ast->ret->expr != NULL) {
+            if (ast->ret->expr->type == AST_TEMP_VAR || ast->ret->expr->type == AST_ANON_FUNC_DECL) {
+                ast->ret->expr->tempvar->var->consumed = 1;
             }
-            emit_type(var_type(ast->ret_expr));
+            emit_type(ast->ret->expr->var_type);
             printf("_ret = ");
-            compile(ast->ret_expr); // need to do something with tmpvar instead
+            compile(ast->ret->expr); // need to do something with tmpvar instead
             printf(";");
         }
         printf("\n");
-        emit_free_locals(ast->fn_scope);
+        emit_free_locals(ast->ret->scope);
         indent();
         printf("return");
-        if (ast->ret_expr != NULL) {
-            if (ast->ret_expr->type == AST_IDENTIFIER) {
+        if (ast->ret->expr != NULL) {
+            if (ast->ret->expr->type == AST_IDENTIFIER) {
                 printf(" ");
-                compile(ast->ret_expr);
+                compile(ast->ret->expr);
             } else {
                 printf(" _ret");
             }
         }
         break;
     case AST_RELEASE:
-        if (ast->release_target->type == AST_IDENTIFIER) {
-            emit_free(ast->release_target->var);
-        } else if (ast->release_target->type == AST_DOT) {
+        if (ast->release->object->type == AST_IDENTIFIER) {
+            emit_free(ast->release->object->ident->var);
+        } else if (ast->release->object->type == AST_DOT) {
             indent();
             printf ("{\n");
             _indent++;
             indent();
-            Var *v = make_var("0", var_type(ast->release_target));
+            Var *v = make_var("0", ast->release->object->var_type);
             emit_type(v->type);
             printf("_vs_0 = ");
-            compile(ast->release_target);
+            compile(ast->release->object);
             printf(";\n");
             emit_free(v);
             _indent--;
@@ -799,9 +844,9 @@ void compile(Ast *ast) {
     case AST_FUNC_DECL: 
         break;
     case AST_ANON_FUNC_DECL: 
-        if (ast->tmpvar->type->bindings != NULL) {
-            int id = ast->fn_decl_var->type->bindings_id;
-            TypeList *bindings = ast->fn_decl_var->type->bindings;
+        if (ast->fn_decl->var->type->bindings != NULL) {
+            int id = ast->fn_decl->var->type->bindings_id;
+            TypeList *bindings = ast->fn_decl->var->type->bindings;
             AstList *bind_exprs = get_binding_exprs(id);
 
             printf("(_cl_%d = malloc(%d),", id, bindings->item->offset + bindings->item->size);
@@ -814,9 +859,9 @@ void compile(Ast *ast) {
                 printf("*)(_cl_%d+%d))=", id, bindings->item->offset);
                 compile(bind_exprs->item);
                 if (bind_exprs->item->type == AST_TEMP_VAR) {
-                    bind_exprs->item->tmpvar->consumed = 1;
+                    bind_exprs->item->tempvar->var->consumed = 1;
                 } else if (bind_exprs->item->type == AST_IDENTIFIER) {
-                    bind_exprs->item->var->consumed = 1;
+                    bind_exprs->item->ident->var->consumed = 1;
                 }
                 printf(",");
                 bindings = bindings->next;
@@ -827,41 +872,54 @@ void compile(Ast *ast) {
             }
         }
         /*compile(ast->expr);*/
-        printf("_vs_%s", ast->fn_decl_var->name);
-        if (ast->tmpvar->type->bindings != NULL) {
+        printf("_vs_%d", ast->fn_decl->var->id);
+        if (ast->fn_decl->var->type->bindings != NULL) {
             printf(")");
         }
         break;
     case AST_EXTERN_FUNC_DECL: 
         break;
     case AST_CALL: {
-        Type *t = var_type(ast->fn);
-        printf("((");
-        emit_type(t->ret);
-        printf("(*)(");
-        if (t->nargs == 0) {
-            printf("void");
-        } else {
-            TypeList *args = t->args;
-            while (args != NULL) {
-                emit_type(args->item);
-                if (args->next != NULL) {
-                    printf(",");
-                }
-                args = args->next;
-            }
+        Type *t = ast->call->fn->var_type;
+        unsigned char needs_wrapper = 1;
+        if (ast->call->fn->type == AST_IDENTIFIER) {
+            Var *v = ast->call->fn->ident->var;
+            needs_wrapper = !v->ext && !v->constant;
         }
-        printf("))(");
-        compile(ast->fn);
-        printf("))");
+        if (needs_wrapper) {
+            printf("((");
+            emit_type(t->fn.ret);
+            printf("(*)(");
+            if (t->fn.nargs == 0) {
+                printf("void");
+            } else {
+                TypeList *args = t->fn.args;
+                while (args != NULL) {
+                    emit_type(args->item);
+                    if (args->next != NULL) {
+                        printf(",");
+                    }
+                    args = args->next;
+                }
+            }
+            printf("))(");
+            compile(ast->call->fn);
+            printf("))");
+        } else {
+            compile(ast->call->fn);
+        }
 
         printf("(");
-        AstList *args = ast->args;
-        TypeList *argtypes = t->args;
+        AstList *args = ast->call->args;
+        TypeList *argtypes = t->fn.args;
         while (args != NULL) {
-            Type *t = var_type(args->item);
+            Type *t = args->item->var_type;
             if (t->base == STRUCT_T && is_dynamic(t)) {
-                printf("_copy_%s(", t->name);
+                if (t->builtin) {
+                    printf("_copy_%s(", t->name);
+                } else {
+                    printf("_copy_%d(", t->id);
+                }
                 compile(args->item);
                 printf(")");
             } else {
@@ -872,7 +930,7 @@ void compile(Ast *ast) {
                 }
             }
             if (args->item->type == AST_TEMP_VAR && is_dynamic(t)) {
-                args->item->tmpvar->consumed = 1;
+                args->item->tempvar->var->consumed = 1;
             }
             if (args->next != NULL) {
                 printf(",");
@@ -885,7 +943,7 @@ void compile(Ast *ast) {
     }
     case AST_INDEX: {
         /*int ptr = 0;*/
-        Type *lt = var_type(ast->left);
+        Type *lt = ast->index->object->var_type;
         /*if (lt->base == PTR_T) {*/
             /*lt = lt->inner;*/
             /*ptr = 1;*/
@@ -894,56 +952,43 @@ void compile(Ast *ast) {
             printf("(");
             if (lt->base == ARRAY_T) {
                 printf("(");
-                emit_type(var_type(ast->left)->inner);
+                emit_type(ast->index->object->var_type->inner);
                 printf("*)");
             }
             /*if (ptr) {*/
                 /*printf("*");*/
             /*}*/
-            compile_static_array(ast->left);
+            compile_static_array(ast->index->object);
             printf(")[");
-            compile(ast->right);
+            compile(ast->index->index);
             printf("]");
         } else {
             // TODO why is this here? strings? ptrs?
-            compile(ast->left);
+            compile(ast->index->object);
             printf("[");
-            compile(ast->right);
+            compile(ast->index->index);
             printf("]");
         }
         break;
     }
     case AST_BLOCK:
-        for (int i = 0; i < ast->num_statements; i++) {
-            if (ast->statements[i]->type == AST_FUNC_DECL || ast->statements[i]->type == AST_EXTERN_FUNC_DECL) {
-                continue;
-            }
-            if (ast->statements[i]->type != AST_RELEASE) {
-                indent();
-            }
-            compile(ast->statements[i]);
-            if (ast->statements[i]->type != AST_CONDITIONAL && ast->statements[i]->type != AST_RELEASE && ast->statements[i]->type != AST_WHILE && ast->statements[i]->type != AST_FOR) {
-                printf(";\n");
-            }
-        }
+        compile_block(ast->block);
         break;
     case AST_SCOPE:
-        emit_scope_start(ast);
-        compile(ast->body);
-        emit_scope_end(ast);
+        compile_scope(ast->scope);
         break;
     case AST_CONDITIONAL:
         printf("if (");
-        compile(ast->condition);
+        compile(ast->cond->condition);
         printf(") {\n");
         _indent++;
-        compile(ast->if_body);
+        compile_block(ast->cond->if_body);
         _indent--;
-        if (ast->else_body != NULL) {
+        if (ast->cond->else_body != NULL) {
             indent();
             printf("} else {\n");
             _indent++;
-            compile(ast->else_body);
+            compile_block(ast->cond->else_body);
             _indent--;
         }
         indent();
@@ -951,14 +996,9 @@ void compile(Ast *ast) {
         break;
     case AST_WHILE:
         printf("while (");
-        compile(ast->while_condition);
-        printf(") {\n");
-        _indent++;
-        indent();
-        compile(ast->while_body);
-        _indent--;
-        indent();
-        printf("}\n");
+        compile(ast->while_loop->condition);
+        printf(") ");
+        compile_scope(ast->while_loop->body);
         break;
     case AST_FOR:
         // TODO loop depth should change iter var name?
@@ -966,20 +1006,22 @@ void compile(Ast *ast) {
         _indent++;
         indent();
         printf("struct array_type _iter = ");
-        compile_unspecified_array(ast->for_iterable);
+        compile_unspecified_array(ast->for_loop->iterable);
         printf(";\n");
         indent();
         printf("for (long _i = 0; _i < _iter.length; _i++) {\n");
         _indent++;
         indent();
-        emit_type(ast->for_itervar->type);
-        printf("_vs_%s = ((", ast->for_itervar->name);
-        emit_type(ast->for_itervar->type);
+        emit_type(ast->for_loop->itervar->type);
+        printf("_vs_%s = ((", ast->for_loop->itervar->name);
+        emit_type(ast->for_loop->itervar->type);
         printf("*)_iter.data)[_i];\n");
 
         indent();
+        emit_scope_start(ast->for_loop->body);
         // TODO don't clear these vars!
-        compile(ast->for_body);
+        compile_block(ast->for_loop->body->body);
+        emit_scope_end(ast->for_loop->body);
 
         _indent--;
         indent();
@@ -991,18 +1033,20 @@ void compile(Ast *ast) {
         break;
     case AST_BIND:
         printf("*((");
-        emit_type(var_type(ast->bind_expr));
-        printf("*)_cl_%d+%d)", ast->bind_id, ast->bind_offset);
+        emit_type(ast->bind->expr->var_type);
+        printf("*)_cl_%d+%d)", ast->bind->bind_id, ast->bind->offset);
         break;
     case AST_TYPEINFO:
-        printf("((struct _vs_Type *)&_type_info%d)", ast->typeinfo_target->id);
+        printf("((struct _vs_Type *)&_type_info%d)", ast->typeinfo->typeinfo_target->id);
+        break;
+    case AST_TYPE_DECL:
         break;
     default:
         error(ast->line, "No idea how to deal with this.");
     }
 }
 
-void emit_scope_start(Ast *scope) {
+void emit_scope_start(AstScope *scope) {
     printf("{\n");
     _indent++;
     VarList *list = scope->locals;
@@ -1020,22 +1064,22 @@ void emit_scope_start(Ast *scope) {
 
 void emit_free_struct(char *name, Type *st, int is_ptr) {
     char *sep = is_ptr ? "->" : ".";
-    for (int i = 0; i < st->nmembers; i++) {
-        switch (st->member_types[i]->base) {
+    for (int i = 0; i < st->st.nmembers; i++) {
+        switch (st->st.member_types[i]->base) {
         case STRING_T:
             indent();
-            printf("if (%s%s%s.bytes != NULL) {\n", name, sep, st->member_names[i]);
+            printf("if (%s%s%s.bytes != NULL) {\n", name, sep, st->st.member_names[i]);
             _indent++;
             indent();
-            printf("free(%s%s%s.bytes);\n", name, sep, st->member_names[i]);
+            printf("free(%s%s%s.bytes);\n", name, sep, st->st.member_names[i]);
             _indent--;
             indent();
             printf("}\n");
             break;
         case STRUCT_T: {
-            char *memname = malloc(sizeof(char) * (strlen(name) + strlen(sep) + strlen(st->member_names[i]) + 2));
-            sprintf(memname, "%s%s%s", name, sep, st->member_names[i]);
-            emit_free_struct(memname, st->member_types[i], (st->member_types[i]->base == PTR_T || st->member_types[i]->base == BASEPTR_T));
+            char *memname = malloc(sizeof(char) * (strlen(name) + strlen(sep) + strlen(st->st.member_names[i]) + 2));
+            sprintf(memname, "%s%s%s", name, sep, st->st.member_names[i]);
+            emit_free_struct(memname, st->st.member_types[i], (st->st.member_types[i]->base == PTR_T || st->st.member_types[i]->base == BASEPTR_T));
             free(memname);
             break;
         }
@@ -1180,7 +1224,7 @@ void emit_free_bindings(int id, TypeList *bindings) {
     }
 }
 
-void emit_free_locals(Ast *scope) {
+void emit_free_locals(AstScope *scope) {
     VarList *locals = scope->locals;
     while (locals != NULL) {
         Var *v = locals->item;
@@ -1198,7 +1242,7 @@ void emit_free_locals(Ast *scope) {
     }
 }
 
-void emit_scope_end(Ast *scope) {
+void emit_scope_end(AstScope *scope) {
     if (!scope->has_return) {
         emit_free_locals(scope);
     }
@@ -1212,7 +1256,7 @@ void emit_var_decl(Var *v) {
         printf("extern ");
     }
     if (v->type->base == FN_T) {
-        emit_type(v->type->ret);
+        emit_type(v->type->fn.ret);
         printf("(*");
     } else if (v->type->base == STATIC_ARRAY_T) {
         emit_type(v->type->inner);
@@ -1230,7 +1274,7 @@ void emit_var_decl(Var *v) {
     printf("%s", v->name);
     if (v->type->base == FN_T) {
         printf(")(");
-        TypeList *args = v->type->args;
+        TypeList *args = v->type->fn.args;
         for (int i = 0; args != NULL; i++) {
             emit_type(args->item);
             printf("a%d", i);
@@ -1244,15 +1288,21 @@ void emit_var_decl(Var *v) {
     printf(";\n");
 }
 void emit_forward_decl(Var *v) {
+    printf("/* %s */\n", v->name);
     if (v->ext) {
         printf("extern ");
     }
-    emit_type(v->type->ret);
+    emit_type(v->type->fn.ret);
     if (!v->ext) {
         printf("_vs_");
     }
-    printf("%s(", v->name);
-    TypeList *args = v->type->args;
+    // TODO do this in a non-hacky way
+    if (!strcmp(v->name, "main")) {
+        printf("%s(", v->name);
+    } else {
+        printf("%d(", v->id);
+    }
+    TypeList *args = v->type->fn.args;
     for (int i = 0; args != NULL; i++) {
         emit_type(args->item);
         printf("a%d", i);
@@ -1289,39 +1339,72 @@ void emit_hold_func_decl(Type *t) {
 void emit_typeinfo_decl(Type *t) {
     switch (t->base) {
     case PTR_T:
-        printf("struct _vs_PtrType _type_info%d = {%d, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id);
+        printf("struct _vs_PtrType _type_info%d;\n", t->id);
         break;
     case INT_T:
     case UINT_T:
     case FLOAT_T:
-        printf("struct _vs_NumType _type_info%d = {%d, {%ld, \"%s\"}, %d};\n", t->id, t->id, strlen(t->name), t->name, t->size);
+        printf("struct _vs_NumType _type_info%d;\n", t->id);
         break;
     case STRUCT_T:
-        printf("struct _vs_StructMember _type_info%d_members[] = {\n", t->id);
-        for (int i = 0; i < t->nmembers; i++) {
-            printf("  {{%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d},\n", strlen(t->member_names[i]), t->member_names[i], t->member_types[i]->id);
-        }
-        printf("};\n");
-        printf("struct _vs_StructType _type_info%d = {%d, {%ld, \"%s\"}, {%d, _type_info%d_members}};\n", t->id, t->id, strlen(t->name), t->name, t->nmembers, t->id);
-        /*emit_struct_decl(stlist->item);*/
+        printf("struct _vs_StructMember _type_info%d_members[%d];\n", t->id, t->st.nmembers);
+        printf("struct _vs_StructType _type_info%d;", t->id);
         break;
     case STATIC_ARRAY_T:
-    case ARRAY_T: // TODO make this not have a name? switch Type to hae enum in name slot for base type
-        printf("struct _vs_ArrayType _type_info%d = {%d, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d, %ld, %d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id, t->length, t->base == STATIC_ARRAY_T);
+    case ARRAY_T:
+        printf("struct _vs_ArrayType _type_info%d;\n", t->id);
         break;
     case FN_T:
-        printf("struct _vs_Type *_type_info%d_args[] = {\n", t->id);
-        for (TypeList *list = t->args; list != NULL; list = list->next) {
-            printf("  (struct _vs_Type *)&_type_info%d,\n", list->item->id);
-        }
-        printf("};\n");
-        printf("struct _vs_FnType _type_info%d = {%d, {%ld, \"%s\"}, {%d, (struct _vs_Type **)_type_info%d_args}, (struct _vs_Type *)&_type_info%d, %d};\n", t->id, t->id, strlen(t->name), t->name, t->nargs, t->id, t->ret->id, !t->named);
+        printf("struct _vs_Type *_type_info%d_args[%d];\n", t->id, t->fn.nargs);
+        printf("struct _vs_FnType _type_info%d;\n", t->id);
         break;
     case BASEPTR_T:
     case STRING_T:
     case BOOL_T:
     default:
-        printf("struct _vs_Type _type_info%d = {%d, {%ld, \"%s\"}};\n", t->id, t->id, strlen(t->name), t->name);
+        printf("struct _vs_Type _type_info%d;\n", t->id);
+        break;
+    }
+}
+
+void emit_typeinfo_init(Type *t) {
+    switch (t->base) {
+    case PTR_T:
+        printf("_type_info%d = (struct _vs_PtrType){%d, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id);
+        break;
+    case INT_T:
+    case UINT_T:
+    case FLOAT_T:
+        printf("_type_info%d = (struct _vs_NumType){%d, {%ld, \"%s\"}, %d};\n", t->id, t->id, strlen(t->name), t->name, t->size);
+        break;
+    case STRUCT_T:
+        for (int i = 0; i < t->st.nmembers; i++) {
+            printf("_type_info%d_members[%d] = (struct _vs_StructMember){{%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d};\n",
+                    t->id, i, strlen(t->st.member_names[i]), t->st.member_names[i],
+                    t->st.member_types[i]->id);
+            indent();
+        }
+        printf("_type_info%d = (struct _vs_StructType){%d, {%ld, \"%s\"}, {%d, _type_info%d_members}};\n", t->id, t->id, strlen(t->name), t->name, t->st.nmembers, t->id);
+        break;
+    case STATIC_ARRAY_T:
+    case ARRAY_T: // TODO make this not have a name? switch Type to have enum in name slot for base type
+        printf("_type_info%d = (struct _vs_ArrayType){%d, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d, %ld, %d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id, t->length, t->base == STATIC_ARRAY_T);
+        break;
+    case FN_T: {
+        int i = 0;
+        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
+            printf("_type_info%d_args[%d] = (struct _vs_Type *)&_type_info%d;\n", t->id, i, list->item->id);
+            i++;
+            indent();
+        }
+        printf("_type_info%d = (struct _vs_FnType){%d, {%ld, \"%s\"}, {%d, (struct _vs_Type **)_type_info%d_args}, (struct _vs_Type *)&_type_info%d, %d};\n", t->id, t->id, strlen(t->name), t->name, t->fn.nargs, t->id, t->fn.ret->id, !t->named);
+        break;
+    }
+    case BASEPTR_T:
+    case STRING_T:
+    case BOOL_T:
+    default:
+        printf("_type_info%d = (struct _vs_Type){%d, {%ld, \"%s\"}};\n", t->id, t->id, strlen(t->name), t->name);
         break;
     }
 }
@@ -1331,10 +1414,12 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "-a")) {
         just_ast = 1;
     }
-    init_types();
+    
+    AstScope *root_scope = new_scope(NULL);
+    init_types(root_scope);
+    Ast *root = parse_scope(root_scope, NULL);
     init_builtins();
-    Ast *root = parse_scope(NULL);
-    root = parse_semantics(root, root);
+    root = parse_semantics(root, root->scope);
     if (just_ast) {
         print_ast(root);
     } else {
@@ -1353,14 +1438,7 @@ int main(int argc, char **argv) {
             varlist = varlist->next;
         }
 
-        /*TypeList *stlist = get_global_structs();*/
-        /*while (stlist != NULL) {*/
-            /*emit_struct_decl(stlist->item);*/
-            /*stlist = stlist->next;*/
-        /*}*/
-
         TypeList *reg = get_used_types();
-        fprintf(stderr, "_----------------------------------___________\n");
         TypeList *tmp = reg;
         while (tmp != NULL) {
             if (tmp->item->base == STRUCT_T) {
@@ -1371,11 +1449,24 @@ int main(int argc, char **argv) {
         if (reg != NULL) {
             /*fprintf(stderr, "Types in use:\n");*/
             while (reg != NULL) {
-                /*fprintf(stderr, "\t%s\n", reg->item->name);*/
+                if (reg->item->unresolved) {
+                    error(-1, "[INTERNAL] Undefined type '%s'.", reg->item->name);
+                }
                 emit_typeinfo_decl(reg->item);
                 reg = reg->next;
             }
         }
+
+        printf("void _verse_init_typeinfo() {\n");
+        _indent++;
+        reg = get_used_types();
+        while (reg != NULL) {
+            indent();
+            emit_typeinfo_init(reg->item);
+            reg = reg->next;
+        }
+        _indent--;
+        printf("}\n");
 
         TypeList *holds = get_global_hold_funcs();
         while (holds != NULL) {
@@ -1385,7 +1476,7 @@ int main(int argc, char **argv) {
 
         AstList *fnlist = get_global_funcs();
         while (fnlist != NULL) {
-            emit_forward_decl(fnlist->item->fn_decl_var);
+            emit_forward_decl(fnlist->item->fn_decl->var);
             fnlist = fnlist->next;
         }
 
@@ -1400,6 +1491,7 @@ int main(int argc, char **argv) {
         compile(root);
 
         printf("int main(int argc, char** argv) {\n"
+               "    _verse_init_typeinfo();\n"
                "    _verse_init();\n"
                "    return _vs_main();\n"
                "}");
