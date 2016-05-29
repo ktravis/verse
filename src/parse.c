@@ -1247,7 +1247,7 @@ Ast *parse_scope(AstScope *scope, AstScope *parent) {
     return s;
 }
 
-AstBlock *parse_block_semantics(AstBlock *block, AstScope *scope) {
+AstBlock *parse_block_semantics(AstBlock *block, AstScope *scope, int fn_body) {
     Ast *last = NULL;
     int mainline_return_reached = 0;
     for (AstList *list = block->statements; list != NULL; list = list->next) {
@@ -1261,7 +1261,7 @@ AstBlock *parse_block_semantics(AstBlock *block, AstScope *scope) {
         last = list->item;
     }
     // if it's a function that needs return and return wasn't reached, break
-    if (!mainline_return_reached && scope->is_function &&
+    if (!mainline_return_reached && fn_body &&
       current_fn_scope->fn_decl->var->type->fn.ret->base != VOID_T) {
         error(block->endline, "Control reaches end of function '%s' without a return statement.",
             current_fn_scope->fn_decl->anon ? "(anonymous)" :
@@ -1271,8 +1271,8 @@ AstBlock *parse_block_semantics(AstBlock *block, AstScope *scope) {
 }
 
 
-AstScope *parse_scope_semantics(AstScope *scope, AstScope *parent) {
-    scope->body = parse_block_semantics(scope->body, scope);
+AstScope *parse_scope_semantics(AstScope *scope, AstScope *parent, int fn) {
+    scope->body = parse_block_semantics(scope->body, scope, fn);
     return scope;
 }
 
@@ -1280,7 +1280,7 @@ Ast *parse_directive_semantics(Ast *ast, AstScope *scope) {
     // TODO does this checking need to happen in the first pass? may be a
     // reason to do this later!
     char *n = ast->directive->name;
-    if (!strcmp(n, "type")) {
+    if (!strcmp(n, "typeof")) {
         ast->directive->object = parse_semantics(ast->directive->object, scope);
         // TODO should this only be acceptible on identifiers? That would be
         // more consistent (don't have to explain that #type does NOT evaluate
@@ -1605,9 +1605,8 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         int prev = parser_state;
         parser_state = PARSE_FUNC;
 
-        // TODO need a check here for no return or return of wrong type
         PUSH_FN_SCOPE(ast);
-        ast->fn_decl->scope = parse_scope_semantics(ast->fn_decl->scope, scope);
+        ast->fn_decl->scope = parse_scope_semantics(ast->fn_decl->scope, scope, 1);
         POP_FN_SCOPE();
         parser_state = prev;
 
@@ -1700,9 +1699,9 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         if (c->condition->var_type->base != BOOL_T) {
             error(ast->line, "Non-boolean ('%s') condition for if statement.", c->condition->var_type->name);
         }
-        c->if_body = parse_block_semantics(c->if_body, scope);
+        c->if_body = parse_block_semantics(c->if_body, scope, 0);
         if (c->else_body != NULL) {
-            c->else_body = parse_block_semantics(c->else_body, scope);
+            c->else_body = parse_block_semantics(c->else_body, scope, 0);
         }
         ast->var_type = base_type(VOID_T);
         break;
@@ -1717,7 +1716,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
 
         int _old = loop_state;
         loop_state = 1;
-        lp->body = parse_scope_semantics(lp->body, scope);
+        lp->body = parse_scope_semantics(lp->body, scope, 0);
         loop_state = _old;
 
         ast->var_type = base_type(VOID_T);
@@ -1735,14 +1734,14 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         int _old = loop_state;
         loop_state = 1;
         attach_var(lp->itervar, lp->body);
-        lp->body = parse_scope_semantics(lp->body, scope);
+        lp->body = parse_scope_semantics(lp->body, scope, 0);
         loop_state = _old;
 
         ast->var_type = base_type(VOID_T);
         break;
     }
     case AST_SCOPE:
-        ast->scope = parse_scope_semantics(ast->scope, scope);
+        ast->scope = parse_scope_semantics(ast->scope, scope, 0);
         break;
     case AST_BIND: {
         if (current_fn_scope == NULL || current_fn_scope->type != AST_ANON_FUNC_DECL) {
@@ -1804,7 +1803,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         ast->var_type = base_type(VOID_T);
         break;
     case AST_BLOCK:
-        ast->block = parse_block_semantics(ast->block, scope);
+        ast->block = parse_block_semantics(ast->block, scope, 0);
         break;
     case AST_DIRECTIVE:
         return parse_directive_semantics(ast, scope);

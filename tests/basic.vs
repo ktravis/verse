@@ -62,5 +62,6 @@ fn main():int {
     }
 
     println("Tests passed.");
+
     return 0;
 }
