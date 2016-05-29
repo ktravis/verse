@@ -174,7 +174,6 @@ Type *define_type(Type *type, AstScope *scope) {
                     type = res->type;
 
                     remove_resolution(res);
-                    /*break;*/
                 }
 
                 res = res->next_in_scope;
@@ -1194,6 +1193,7 @@ Ast *parse_conditional(AstScope *scope) {
 
 Ast *parse_block(AstScope *scope, int bracketed) {
     Ast *b = ast_alloc(AST_BLOCK);
+    b->block->startline = lineno();
 
     AstList *statements = NULL;
     Tok *t;
@@ -1224,6 +1224,7 @@ Ast *parse_block(AstScope *scope, int bracketed) {
         }
         // statements = astlist_append(statements, stmt); 
     }
+    b->block->endline = lineno();
     // b->block->statements = reverse_astlist(statements);
     return b;
 }
@@ -1247,8 +1248,24 @@ Ast *parse_scope(AstScope *scope, AstScope *parent) {
 }
 
 AstBlock *parse_block_semantics(AstBlock *block, AstScope *scope) {
+    Ast *last = NULL;
+    int mainline_return_reached = 0;
     for (AstList *list = block->statements; list != NULL; list = list->next) {
+        if (last != NULL && last->type == AST_RETURN) {
+            error(list->item->line, "Unreachable statements following return.");
+        }
         list->item = parse_semantics(list->item, scope);
+        if (list->item->type == AST_RETURN) {
+            mainline_return_reached = 1;
+        }
+        last = list->item;
+    }
+    // if it's a function that needs return and return wasn't reached, break
+    if (!mainline_return_reached && scope->is_function &&
+      current_fn_scope->fn_decl->var->type->fn.ret->base != VOID_T) {
+        error(block->endline, "Control reaches end of function '%s' without a return statement.",
+            current_fn_scope->fn_decl->anon ? "(anonymous)" :
+            current_fn_scope->fn_decl->var->name);
     }
     return block;
 }
@@ -1800,10 +1817,6 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
 AstList *get_global_funcs() {
     return global_fn_decls;
 }
-
-/*TypeList *get_global_structs() {*/
-    /*return reverse_typelist(global_struct_decls);*/
-/*}*/
 
 TypeList *get_global_hold_funcs() {
     return global_hold_funcs;

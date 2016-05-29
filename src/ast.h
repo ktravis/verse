@@ -171,6 +171,8 @@ typedef struct AstBind {
 
 typedef struct AstBlock {
     struct AstList *statements;
+    int startline;
+    int endline;
 } AstBlock;
 
 typedef struct ResolutionList {
