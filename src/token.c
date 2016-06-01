@@ -355,6 +355,8 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_BREAK);
     } else if (!strcmp(buf, "continue")) {
         return make_token(TOK_CONTINUE);
+    } else if (!strcmp(buf, "enum")) {
+        return make_token(TOK_ENUM);
     } else if (!strcmp(buf, "as")) {
         Tok *t = make_token(TOK_OP);
         t->op = OP_CAST;
@@ -522,6 +524,8 @@ const char *to_string(Tok *t) {
         return "continue";
     case TOK_ELLIPSIS:
         return "...";
+    case TOK_ENUM:
+        return "enum";
     default:
         return NULL;
     }
@@ -577,6 +581,8 @@ const char *token_type(int type) {
         return "CONTINUE";
     case TOK_ELLIPSIS:
         return "ELLIPSIS";
+    case TOK_ENUM:
+        return "ENUM";
     default:
         return "BAD TOKEN";
     }

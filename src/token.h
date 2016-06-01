@@ -42,7 +42,8 @@ enum {
     TOK_BREAK,
     TOK_CONTINUE,
     TOK_DIRECTIVE,
-    TOK_ELLIPSIS
+    TOK_ELLIPSIS,
+    TOK_ENUM
 };
 
 enum {

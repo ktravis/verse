@@ -303,6 +303,9 @@ void emit_type(Type *type) {
         }
         break;
     }
+    case ENUM_T:
+        emit_type(type->_enum.inner);
+        break;
     default:
         error(-1, "wtf type");
     }
@@ -681,6 +684,9 @@ void compile(Ast *ast) {
             }
             printf("}");
             break;
+        case ENUM:
+            printf("%ld", ast->lit->enum_val.enum_type->_enum.member_values[ast->lit->enum_val.enum_index]);
+            break;
         }
         break;     
     case AST_DOT:
@@ -698,7 +704,7 @@ void compile(Ast *ast) {
     case AST_CAST:
         if (is_any(ast->cast->cast_type)) {
             // TODO how do I deal with passing like an int or something
-            printf("(struct _vs_DoomGuy){.value_pointer=");
+            printf("(struct _vs_Any){.value_pointer=");
             compile_pointer(ast->cast->object);
             printf(",.type=(struct _vs_Type *)&_type_info%d}", ast->cast->object->var_type->id);
             break;
@@ -1041,6 +1047,8 @@ void compile(Ast *ast) {
         break;
     case AST_TYPE_DECL:
         break;
+    case AST_ENUM_DECL:
+        break;
     default:
         error(ast->line, "No idea how to deal with this.");
     }
@@ -1054,9 +1062,11 @@ void emit_scope_start(AstScope *scope) {
         if (list->item->temp) {
             indent();
             emit_type(list->item->type);
-            printf("_tmp%d;\n", list->item->id);
-            /*printf("= NULL");*/
-            /*printf(";\n");*/
+            printf("_tmp%d", list->item->id);
+            if (list->item->type->base == STRING_T || list->item->type->base == STRUCT_T) {
+                printf(" = {0}");
+            }
+            printf(";\n");
         }
         list = list->next;
     }
@@ -1225,6 +1235,7 @@ void emit_free_bindings(int id, TypeList *bindings) {
 }
 
 void emit_free_locals(AstScope *scope) {
+    // TODO change this to be "initialized in scope"
     VarList *locals = scope->locals;
     while (locals != NULL) {
         Var *v = locals->item;
@@ -1346,6 +1357,20 @@ void emit_typeinfo_decl(Type *t) {
     case FLOAT_T:
         printf("struct _vs_NumType _type_info%d;\n", t->id);
         break;
+    case ENUM_T:
+        printf("struct string_type _type_info%d_members[%d] = {\n", t->id, t->_enum.nmembers);
+        for (int i = 0; i < t->_enum.nmembers; i++) {
+            printf("  {%ld, \"%s\"},", strlen(t->_enum.member_names[i]), t->_enum.member_names[i]);
+        }
+        printf("};\n");
+        /*emit_type(t->_enum.inner);*/
+        /*printf("_type_info%d_values[%d] = {\n", t->id, t->_enum.nmembers);*/
+        /*for (int i = 0; i < t->_enum.nmembers; i++) {*/
+            /*printf("  %ld,", t->_enum.member_values[i]);*/
+        /*}*/
+        /*printf("};\n");*/
+        printf("struct _vs_EnumType _type_info%d;", t->id);
+        break;
     case STRUCT_T:
         printf("struct _vs_StructMember _type_info%d_members[%d];\n", t->id, t->st.nmembers);
         printf("struct _vs_StructType _type_info%d;", t->id);
@@ -1369,6 +1394,14 @@ void emit_typeinfo_decl(Type *t) {
 
 void emit_typeinfo_init(Type *t) {
     switch (t->base) {
+    case ENUM_T:
+        /*printf("_type_info%d = (struct _vs_EnumType){%d, {%ld, \"%s\"}, _type_info%d, {%d, _type_info%d_members}, {%d, _type_info%d_values}};\n",*/
+                /*t->id, t->id, strlen(t->name), t->name, t->_enum.inner->id, t->st.nmembers,*/
+                /*t->id, t->st.nmembers, t->id);*/
+        printf("_type_info%d = (struct _vs_EnumType){%d, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d, {%d, _type_info%d_members}};\n",
+                t->id, t->id, strlen(t->name), t->name, t->_enum.inner->id, t->st.nmembers,
+                t->id);
+        break;
     case PTR_T:
         printf("_type_info%d = (struct _vs_PtrType){%d, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id);
         break;
@@ -1388,7 +1421,8 @@ void emit_typeinfo_init(Type *t) {
         break;
     case STATIC_ARRAY_T:
     case ARRAY_T: // TODO make this not have a name? switch Type to have enum in name slot for base type
-        printf("_type_info%d = (struct _vs_ArrayType){%d, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d, %ld, %d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id, t->length, t->base == STATIC_ARRAY_T);
+        printf("_type_info%d = (struct _vs_ArrayType){%d, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d, %ld, %d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id,
+                t->base == STATIC_ARRAY_T ? t->length : 0, t->base == STATIC_ARRAY_T);
         break;
     case FN_T: {
         int i = 0;

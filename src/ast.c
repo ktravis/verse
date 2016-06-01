@@ -89,6 +89,9 @@ Ast *ast_alloc(AstType type) {
     case AST_TYPEINFO:
         ast->typeinfo = calloc(sizeof(AstTypeInfo), 1);
         break;
+    case AST_ENUM_DECL:
+        ast->enum_decl = calloc(sizeof(AstEnumDecl), 1);
+        break;
     }
     return ast;
 }
@@ -328,6 +331,35 @@ Ast *cast_to_any(Ast *ast) {
     return c;
 }
 
+Ast *coerce_literal(Ast *ast, Type *t) {
+    // parse_semantics must already be completed on ast
+    if (is_numeric(t) && is_numeric(ast->var_type)) {
+        int loss = 0;
+        if (ast->lit->lit_type == INTEGER) {
+            if (t->base == UINT_T) {
+                if (ast->lit->int_val < 0) {
+                    error(ast->line, "Cannot coerce negative literal value into integer type '%s'.", t->name);
+                }
+                loss = precision_loss_uint(t, ast->lit->int_val);
+            } else {
+                loss = precision_loss_int(t, ast->lit->int_val);
+            }
+        } else if (ast->lit->lit_type == FLOAT) {
+            if (t->base != FLOAT_T) {
+                error(ast->line, "Cannot coerce floating point literal into integer type '%s'.", t->name);
+            }
+            loss = precision_loss_float(t, ast->lit->float_val);
+        }
+        if (loss) {
+            error(ast->line, "Cannot coerce literal value of type '%s' into type '%s' due to precision loss.", ast->var_type->name, t->name);
+        }
+        ast->var_type = t;
+    } else {
+            error(ast->line, "Cannot coerce literal value of type '%s' into type '%s'.", ast->var_type->name, t->name);
+    }
+    return ast;
+}
+
 Ast *cast_literal(Type *t, Ast *ast) {
     Type *ast_type = ast->var_type;
     if (can_cast(t, ast_type)) {
@@ -341,7 +373,7 @@ Ast *cast_literal(Type *t, Ast *ast) {
         if (ast->lit->lit_type == INTEGER) {
             if (t->base == UINT_T) {
                 if (ast->lit->int_val < 0) {
-                    error(ast->line, "Cannot implicitly cast negative literal value to integer type '%s'.", t->name);
+                    error(ast->line, "Cannot use negative literal value as integer type '%s'.", t->name);
                 }
                 loss = precision_loss_uint(t, ast->lit->int_val);
             } else {
@@ -349,12 +381,12 @@ Ast *cast_literal(Type *t, Ast *ast) {
             }
         } else if (ast->lit->lit_type == FLOAT) {
             if (t->base != FLOAT_T) {
-                error(ast->line, "Cannot implicitly cast floating point literal to integer type '%s'.", t->name);
+                error(ast->line, "Cannot use floating point literal as integer type '%s'.", t->name);
             }
             loss = precision_loss_float(t, ast->lit->float_val);
         }
         if (loss) {
-            error(ast->line, "Cannot implicitly cast literal value of type '%s' to type '%s' due to precision loss.", ast_type->name, t->name);
+            error(ast->line, "Cannot use literal value of type '%s' as type '%s' due to precision loss.", ast_type->name, t->name);
         }
         Ast *c = ast_alloc(AST_CAST);
         c->cast->object = ast;
@@ -362,18 +394,25 @@ Ast *cast_literal(Type *t, Ast *ast) {
         c->var_type = t;
         return c;
     }
-    error(ast->line, "Cannot implicitly cast value of type '%s' to type '%s'", ast_type->name, t->name);
+    error(ast->line, "Cannot use value of type '%s' as type '%s'", ast_type->name, t->name);
     return NULL;
 }
 
 Ast *try_implicit_cast(Type *t, Ast *ast) {
+    Ast *c = try_implicit_cast_no_error(t, ast);
+    if (c == NULL) {
+        error(ast->line, "Cannot implicitly cast value of type '%s' to type '%s'", ast->var_type->name, t->name);
+    }
+    return c;
+}
+
+Ast *try_implicit_cast_no_error(Type *t, Ast *ast) {
     if (is_any(t)) {
         return cast_to_any(ast); 
     }
     if (ast->type == AST_LITERAL || (ast->type == AST_TEMP_VAR && ast->tempvar->expr->type == AST_LITERAL)) {
         return cast_literal(t, ast);
     }
-    error(ast->line, "Cannot implicitly cast value of type '%s' to type '%s'", ast->var_type->name, t->name);
     return NULL;
 }
 

@@ -286,7 +286,43 @@ Ast *parse_uop_semantics(Ast *ast, AstScope *scope) {
     return ast;
 }
 
+Type *find_type_by_name_no_unresolved(char *name, AstScope *scope) {
+    for (TypeList *list = builtin_types; list != NULL; list = list->next) {
+        if (!strcmp(name, list->item->name)) {
+            return list->item;
+        }
+    }
+    TypeList *types = scope->local_types;
+    while (types != NULL) {
+        if (!strcmp(types->item->name, name)) {
+            return types->item;
+        }
+        types = types->next;
+    }
+    return NULL;
+}
+
 Ast *parse_dot_op_semantics(Ast *ast, AstScope *scope) {
+    if (ast->dot->object->type == AST_IDENTIFIER) {
+        Type *t = find_type_by_name_no_unresolved(ast->dot->object->ident->varname, scope);
+        if (t != NULL) {
+            if (t->base == ENUM_T) {
+                for (int i = 0; i < t->_enum.nmembers; i++) {
+                    if (!strcmp(t->_enum.member_names[i], ast->dot->member_name)) {
+                        Ast *a = ast_alloc(AST_LITERAL);
+                        a->lit->lit_type = ENUM;
+                        a->lit->enum_val.enum_index = i;
+                        a->lit->enum_val.enum_type = t;
+                        a->var_type = t;
+                        return a;
+                    }
+                }
+                error(ast->line, "No value '%s' in enum type '%s'.", ast->dot->member_name, t->name);
+            } else {
+                error(ast->line, "Can't get member '%s' from non-enum type '%s'.", ast->dot->member_name, t->name);
+            }
+        }
+    }
     ast->dot->object = parse_semantics(ast->dot->object, scope);
     Type *orig = ast->dot->object->var_type;
     Type *t = orig->base == PTR_T ? orig->inner : orig;
@@ -335,8 +371,18 @@ Ast *parse_assignment_semantics(Ast *ast, AstScope *scope) {
     Type *lt = ast->binary->left->var_type;
     Type *rt = ast->binary->right->var_type;
     if (!(check_type(lt, rt) || type_can_coerce(rt, lt))) {
-        error(ast->line, "LHS of assignment has type '%s', while RHS has type '%s'.",
-                lt->name, rt->name);
+        if (is_any(lt)) {
+            if (!(is_lvalue(ast->binary->right) || ast->binary->right->type == AST_TEMP_VAR)) {
+                ast->binary->right = make_ast_tempvar(ast->binary->right, make_temp_var(rt, scope));
+            }
+        }
+        Ast *c = try_implicit_cast_no_error(lt, ast->binary->right);
+        if (c != NULL) {
+            ast->binary->right = c;
+        } else {
+            error(ast->binary->left->line, "LHS of assignment has type '%s', while RHS has type '%s'.",
+                    lt->name, rt->name);
+        }
     }
     if (ast->binary->right->type != AST_TEMP_VAR &&
             is_dynamic(lt) && ast->binary->right->type != AST_LITERAL) {
@@ -865,6 +911,85 @@ Ast *parse_type_decl(AstScope *scope) {
     return ast;
 }
 
+Ast *parse_enum_decl(AstScope *scope) {
+    Ast *ast = ast_alloc(AST_ENUM_DECL);
+    char *name = expect(TOK_ID)->sval;
+    Tok *next = next_token();
+    Type *inner = base_type(INT_T);
+    if (next->type == TOK_COLON) {
+        inner = parse_type(next_token(), scope);
+        next = next_token();
+    }
+    if (next->type != TOK_LBRACE) {
+        error(lineno(), "Unexpected token '%s' while parsing enum declaration (expected '{').", to_string(next));
+    }
+    int nmembers = 0;
+    int alloc = 8;
+    char **names = malloc(sizeof(char*)*alloc);
+    Ast **exprs = malloc(sizeof(Ast)*alloc);
+    while ((next = next_token())->type != TOK_RBRACE) {
+        if (next->type != TOK_ID) {
+            error(lineno(), "Unexpected token '%s' while parsing enum declaration (expected an identifier).", to_string(next));
+        }
+        if (nmembers >= alloc) {
+            alloc *= 2;
+            names = realloc(names, sizeof(char*)*alloc);
+            exprs = realloc(exprs, sizeof(Ast)*alloc);
+        }
+        names[nmembers] = next->sval;
+        next = next_token();
+        if (next->type == TOK_OP && next->op == OP_ASSIGN) {
+            exprs[nmembers] = parse_expression(next_token(), 0, scope);
+            Tok *n = next_token();
+            if (n->type == TOK_RBRACE) {
+                break;
+            } else if (n->type != TOK_COMMA) {
+                error(lineno(), "Unexpected token '%s' while parsing enum declaration (expected ',' or '}').", to_string(next));
+            }
+        } else if (next->type == TOK_COMMA) {
+            exprs[nmembers] = NULL;
+        } else {
+            error(lineno(), "Unexpected token '%s' while parsing enum declaration (expected ',' or '=').", to_string(next));
+        }
+        nmembers++;
+    }
+    long *values = malloc(sizeof(long)*nmembers);
+    for (TypeList *list = scope->local_types; list != NULL; list = list->next) {
+        if (!strcmp(name, list->item->name)) {
+            error(lineno(), "Type named '%s' already exists in local scope.", name);
+        }
+    }
+    ast->enum_decl->enum_name = name;
+    ast->enum_decl->enum_type = define_type(make_enum_type(name, inner, nmembers, names, values), scope);
+    ast->enum_decl->exprs = exprs;
+    return ast;
+}
+
+Ast *parse_enum_decl_semantics(Ast *ast, AstScope *scope) {
+    Type *et = ast->enum_decl->enum_type; 
+    Ast **exprs = ast->enum_decl->exprs;
+
+    long val = 0;
+    // TODO check for duplicate name, check for duplicate value
+    for (int i = 0; i < et->_enum.nmembers; i++) {
+        if (exprs[i] != NULL) {
+            exprs[i] = parse_semantics(exprs[i], scope);
+            // TODO allow const other stuff in here
+            if (exprs[i]->type != AST_LITERAL) {
+                error(exprs[i]->line, "Cannot initialize enum '%s' member '%s' with non-constant expression.", et->name, et->_enum.member_names[i]);
+            } else if (exprs[i]->var_type->base != INT_T) {
+                error(exprs[i]->line, "Cannot initialize enum '%s' member '%s' with non-integer expression.", et->name, et->_enum.member_names[i]);
+            }
+            exprs[i] = coerce_literal(exprs[i], et->_enum.inner);
+            val = exprs[i]->lit->int_val;
+        }
+        et->_enum.member_values[i] = val;
+        val += 1;
+    }
+    ast->var_type = base_type(VOID_T);
+    return ast;
+}
+
 Type *parse_struct_type(AstScope *scope) {
     expect(TOK_LBRACE);
 
@@ -908,16 +1033,6 @@ Type *parse_struct_type(AstScope *scope) {
 
     Type *st = make_struct_type(NULL, nmembers, member_names, member_types);
     st = register_type(st);
-
-    /*TypeList *decl = global_struct_decls;*/
-    /*while (decl != NULL) {*/
-        /*if (check_type(decl->item, st)) {*/
-            /*return decl->item;*/
-        /*}*/
-        /*decl = decl->next;*/
-    /*}*/
-
-    /*global_struct_decls = typelist_append(global_struct_decls, st);*/
     return st;
 }
 
@@ -933,6 +1048,8 @@ Ast *parse_statement(Tok *t, AstScope *scope) {
         error(lineno(), "Cannot start a statement with 'hold';");
     } else if (t->type == TOK_TYPE) {
         ast = parse_type_decl(scope);
+    } else if (t->type == TOK_ENUM) {
+        ast = parse_enum_decl(scope);
     } else if (t->type == TOK_FN) {
         Tok *next = next_token();
         unget_token(next);
@@ -1062,6 +1179,11 @@ Ast *parse_directive(Tok *t, AstScope *scope) {
     Tok *next = next_token();
     if (next == NULL) {
         error(lineno(), "Unexpected end of input.");
+    }
+    if (!strcmp(t->sval, "type")) {
+        dir->directive->object = NULL;
+        dir->var_type = parse_type(next, scope);
+        return dir;
     }
     if (next->type != TOK_LPAREN) {
         error(lineno(), "Unexpected token '%s' while parsing directive '%s'", to_string(next), t->sval);
@@ -1290,6 +1412,12 @@ Ast *parse_directive_semantics(Ast *ast, AstScope *scope) {
         t->typeinfo->typeinfo_target = ast->directive->object->var_type;
         t->var_type = register_type(typeinfo_ptr());
         return t;
+    } else if (!strcmp(n, "type")) {
+        Ast *t = ast_alloc(AST_TYPEINFO);
+        t->line = ast->line;
+        t->typeinfo->typeinfo_target = ast->var_type;
+        t->var_type = register_type(typeinfo_ptr());
+        return t;
     }
     error(ast->line, "Unrecognized directive '%s'.", n);
     return NULL;
@@ -1346,6 +1474,9 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
             }
             break;
         }
+        case ENUM: {
+            break;
+        }
         }
         break;
     }
@@ -1353,6 +1484,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         Var *v = find_var(ast->ident->varname, scope);
         if (v == NULL) {
             error(ast->line, "Undefined identifier '%s' encountered.", ast->ident->varname);
+            // TODO better error for an enum here
         }
         ast->ident->var = v;
         ast->var_type = ast->ident->var->type;
@@ -1401,8 +1533,12 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
     case AST_CAST: {
         AstCast *cast = ast->cast;
         cast->object = parse_semantics(cast->object, scope);
-        if (!can_cast(cast->object->var_type, cast->cast_type)) {
-            error(ast->line, "Cannot cast type '%s' to type '%s'.", cast->object->var_type->name, cast->cast_type->name);
+        if (cast->object->type == AST_LITERAL) {
+            cast->object = coerce_literal(cast->object, cast->cast_type);
+        } else {
+            if (!can_cast(cast->object->var_type, cast->cast_type)) {
+                error(ast->line, "Cannot cast type '%s' to type '%s'.", cast->object->var_type->name, cast->cast_type->name);
+            }
         }
         if (is_any(cast->cast_type)) {
             if (!is_lvalue(cast->object)) {
@@ -1777,7 +1913,6 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         if (ret_t->base == STATIC_ARRAY_T) {
             error(ast->line, "Cannot return a static array from a function.");
         }
-        // TODO not everything is being correctly reassigned from auto
         if (fn_ret_t->base == AUTO_T) {
             current_fn_scope->fn_decl->var->type->fn.ret = ret_t;
         } else if (!check_type(fn_ret_t, ret_t)) {
@@ -1807,6 +1942,8 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         break;
     case AST_DIRECTIVE:
         return parse_directive_semantics(ast, scope);
+    case AST_ENUM_DECL:
+        return parse_enum_decl_semantics(ast, scope);
     default:
         error(-1, "idk parse semantics");
     }

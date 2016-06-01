@@ -29,22 +29,6 @@ Type *make_type(char *name, int base, int size) {
 }
 
 Type *register_type(Type *t) {
-    /*fprintf(stderr, "Checking %s %d\n", t->name, t->id);*/
-    // TypeList *reg = type_registry_tail;
-    /*fprintf(stderr, "checking %d %s\n", t->id, t->name);*/
-    // while (reg != NULL) {
-    //     /*fprintf(stderr, "\tcomparing %d to %d\n", t->id, reg->item->id);*/
-    //     if (reg->item->unresolved && !strcmp(reg->item->name, t->name)) {
-    //         fprintf(stderr, "Found an unresolved %s %d\n", reg->item->name, t->size);
-    //         reg->item = t;
-    //         return t;
-    //     }
-    //     if (types_are_equal(reg->item, t)) {
-    //         /*fprintf(stderr, "match\n");*/
-    //         return reg->item;
-    //     }
-    //     reg = reg->prev;
-    // }
     for (int i = 0; i < num_registered_types; i++) {
         if (types_are_equal(t, registry[i])) {
             return registry[i];
@@ -73,17 +57,6 @@ Type *register_type(Type *t) {
     }
     registry[num_registered_types++] = t;
     return t;
-    // TypeList *new_tail = malloc(sizeof(TypeList));
-    // if (type_registry_tail != NULL) {
-    //     type_registry_tail->next = new_tail;
-    // }
-    // new_tail->item = t;
-    // new_tail->prev = type_registry_tail;
-    // type_registry_tail = new_tail;
-    // if (type_registry_head == NULL) {
-    //     type_registry_head = type_registry_tail;
-    // }
-    // return t;
 }
 
 TypeList *get_used_types() {
@@ -181,6 +154,15 @@ Type *make_array_type(Type *inner) {
     return type;
 }
 
+Type *make_enum_type(char *name, Type *inner, int nmembers, char **member_names, long *member_values) {
+    Type *t = make_type(name, ENUM_T, -1);
+    t->_enum.inner = inner;
+    t->_enum.nmembers = nmembers;
+    t->_enum.member_names = member_names;
+    t->_enum.member_values = member_values;
+    return t;
+}
+
 Type *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types) {
     int named = (name != NULL);
     if (!named) {
@@ -266,6 +248,11 @@ long array_size(Type *type) {
 }
 
 int can_cast(Type *from, Type *to) {
+    if (from->base == ENUM_T) {
+        return can_cast(from->_enum.inner, to);
+    } else if (to->base == ENUM_T) {
+        return can_cast(from, to->_enum.inner);
+    }
     switch (from->base) {
     case BASEPTR_T:
         return (to->base == PTR_T || to->base == BASEPTR_T);
@@ -395,6 +382,16 @@ int types_are_equal(Type *a, Type *b) {
         return 0;
     case PTR_T:
         return types_are_equal(a->inner, b->inner);
+    case ENUM_T:
+        if (a->_enum.nmembers != b->_enum.nmembers || !types_are_equal(a->_enum.inner, b->_enum.inner)) {
+            return 0;
+        }
+        for (int i = 0; i < a->_enum.nmembers; i++) {
+            if (strcmp(a->_enum.member_names[i], b->_enum.member_names[i])) {
+                return 0;
+            }
+        }
+        return 1;
     case STRUCT_T:
         if (a->st.nmembers != b->st.nmembers) {
             return 0;
@@ -465,6 +462,7 @@ int check_type(Type *a, Type *b) {
     return 0;
 }
 
+// TODO add Any to this
 int type_can_coerce(Type *from, Type *to) {
     return is_array(from) && to->base == ARRAY_T;
 }
@@ -531,12 +529,13 @@ static Type *numtype_type = NULL;
 static Type *ptrtype_type = NULL;
 static Type *structmember_type = NULL;
 static Type *structtype_type = NULL;
+static Type *enumtype_type = NULL;
 static Type *arraytype_type = NULL;
 static Type *fntype_type = NULL;
-static Type *doomguy_type = NULL;
+static Type *any_type = NULL;
 
 int is_any(Type *t) {
-    return t->id == doomguy_type->id;
+    return t->id == any_type->id;
 }
 
 // TODO inline?
@@ -562,7 +561,7 @@ Type *base_type(int t) {
     case TYPE_T:
         return typeinfo_type;
     case ANY_T:
-        return doomguy_type;
+        return any_type;
     case FN_T:
     case AUTO_T:
     case STRUCT_T:
@@ -688,6 +687,20 @@ void init_types(struct AstScope *scope) {
     member_types[2] = structmember_array_type;
     structtype_type = define_builtin_type(make_struct_type("StructType", 3, member_names, member_types));
 
+    Type *string_array_type = define_builtin_type(make_array_type(string_type));
+
+    member_names = malloc(sizeof(char*)*4);
+    member_names[0] = "id";
+    member_names[1] = "name";
+    member_names[2] = "inner";
+    member_names[3] = "members";
+    member_types = malloc(sizeof(Type*)*4);
+    member_types[0] = int_type;
+    member_types[1] = string_type;
+    member_types[2] = typeinfo_ptr_type;
+    member_types[3] = string_array_type;
+    enumtype_type = define_builtin_type(make_struct_type("EnumType", 4, member_names, member_types));
+
     member_names = malloc(sizeof(char*)*5);
     member_names[0] = "id";
     member_names[1] = "name";
@@ -726,7 +739,7 @@ void init_types(struct AstScope *scope) {
     member_types = malloc(sizeof(Type*)*2);
     member_types[0] = baseptr_type;
     member_types[1] = typeinfo_ptr_type;
-    doomguy_type = define_builtin_type(make_struct_type("DoomGuy", 2, member_names, member_types));
+    any_type = define_builtin_type(make_struct_type("Any", 2, member_names, member_types));
 
     types_initialized = 1;
 }

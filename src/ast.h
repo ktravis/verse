@@ -41,6 +41,7 @@ typedef enum {
     AST_CAST,
     AST_DIRECTIVE,
     AST_TYPEINFO,
+    AST_ENUM_DECL,
 } AstType;
 
 struct AstList;
@@ -67,6 +68,7 @@ typedef struct Ast {
         struct AstScope         *scope;
         struct AstConditional   *cond;
         struct AstTypeDecl      *type_decl;
+        struct AstEnumDecl      *enum_decl;
         struct AstTempVar       *tempvar;
         struct AstCopy          *copy;
         struct AstReturn        *ret;
@@ -84,6 +86,7 @@ typedef enum {
     FLOAT,
     BOOL,
     STRUCT,
+    ENUM,
 } LiteralType;
 
 typedef struct AstLiteral {
@@ -100,6 +103,10 @@ typedef struct AstLiteral {
 
             Ast **member_exprs;
         } struct_val;
+        struct {
+            long enum_index;
+            Type *enum_type;
+        } enum_val;
     };
 } AstLiteral;
 
@@ -244,6 +251,12 @@ typedef struct AstDirective {
     Ast *object;
 } AstDirective;
 
+typedef struct AstEnumDecl {
+    char *enum_name;
+    Type *enum_type;
+    Ast **exprs;
+} AstEnumDecl;
+
 typedef struct AstList {
     Ast *item;
     struct AstList *next;
@@ -276,8 +289,10 @@ AstList *reverse_astlist();
 
 int is_lvalue(Ast *ast);
 //int is_literal(Ast *ast);
+Ast *coerce_literal(Ast *ast, Type *t);
 Ast *cast_literal(Type *t, Ast *ast);
 Ast *try_implicit_cast(Type *t, Ast *ast);
+Ast *try_implicit_cast_no_error(Type *t, Ast *ast);
 
 void print_ast(Ast *ast);
 
