@@ -157,6 +157,7 @@ typedef struct AstCall {
     Ast *fn; // obj?
     int nargs;
     struct AstList *args;
+    Var *variadic_tempvar;
 } AstCall;
 
 typedef struct AstSlice {

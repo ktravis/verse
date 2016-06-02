@@ -39,7 +39,6 @@ fn main():int {
         floop:float;
     };
 
-
     x:struct{
         a:int;
         b:blerg;

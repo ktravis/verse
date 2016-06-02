@@ -317,13 +317,18 @@ Ast *parse_dot_op_semantics(Ast *ast, AstScope *scope) {
                         return a;
                     }
                 }
+                // TODO allow BaseType.members
+                /*if (!strcmp("members", ast->dot->member_name)) {*/
+                    
+                /*}*/
                 error(ast->line, "No value '%s' in enum type '%s'.", ast->dot->member_name, t->name);
             } else {
                 error(ast->line, "Can't get member '%s' from non-enum type '%s'.", ast->dot->member_name, t->name);
             }
         }
-    }
+    } 
     ast->dot->object = parse_semantics(ast->dot->object, scope);
+
     Type *orig = ast->dot->object->var_type;
     Type *t = orig->base == PTR_T ? orig->inner : orig;
     if (is_array(t) || (t->base == PTR_T && is_array(t->inner))) {
@@ -578,7 +583,7 @@ Ast *parse_expression(Tok *t, int priority, AstScope *scope) {
             return ast;
         } else if (t->type == TOK_OP) {
             if (t->op == OP_ASSIGN) {
-                ast = make_ast_assign(ast, parse_expression(next_token(), next_priority + 1, scope));
+                ast = make_ast_assign(ast, parse_expression(next_token(), 0, scope));
             } else if (t->op == OP_DOT) {
                 Tok *next = next_token();
                 if (next->type != TOK_ID) {
@@ -605,7 +610,7 @@ Ast *parse_expression(Tok *t, int priority, AstScope *scope) {
         } else if (t->type == TOK_LSQUARE) {
             ast = parse_array_index(ast, scope);
         } else {
-            error(lineno(), "Unexpected token '%s'.", to_string(t));
+            error(lineno(), "Unexpected token '%s' in expression.", to_string(t));
             return NULL;
         }
     }
@@ -684,6 +689,7 @@ Type *parse_type(Tok *t, AstScope *scope) {
 
         TypeList *args = NULL;
         int nargs = 0;
+        int variadic = 0;
 
         expect(TOK_LPAREN);
         t = next_token();
@@ -698,6 +704,13 @@ Type *parse_type(Tok *t, AstScope *scope) {
                 if (t == NULL) {
                     error(lineno(), "Unexpected EOF while parsing type.");
                 } else if (t->type == TOK_RPAREN) {
+                    break;
+                } else if (t->type == TOK_ELLIPSIS) {
+                    variadic = 1;
+                    t = next_token();
+                    if (t->type != TOK_RPAREN) {
+                        error(lineno(), "Only the last parameter to a function can be variadic.");
+                    }
                     break;
                 } else if (t->type == TOK_COMMA) {
                     t = next_token();
@@ -717,7 +730,7 @@ Type *parse_type(Tok *t, AstScope *scope) {
             unget_token(t);
         }
 
-        Type *type = make_fn_type(nargs, args, ret);
+        Type *type = make_fn_type(nargs, args, ret, variadic);
         type = register_type(type);
 
         return type;
@@ -729,6 +742,7 @@ Type *parse_type(Tok *t, AstScope *scope) {
     return NULL;
 }
 
+// TODO factor this with parse_func_decl
 Ast *parse_extern_func_decl(AstScope *scope) {
     Tok *t = expect(TOK_FN);
     t = expect(TOK_ID);
@@ -738,15 +752,32 @@ Ast *parse_extern_func_decl(AstScope *scope) {
     Ast *func = ast_alloc(AST_EXTERN_FUNC_DECL); 
 
     int n = 0;
+    int variadic = 0;
     TypeList* arg_types = NULL;
     for (;;) {
         t = next_token();
         if (t->type == TOK_RPAREN) {
             break;
+        } else if (t->type == TOK_ELLIPSIS) {
+            
         }
-        arg_types = typelist_append(arg_types, parse_type(t, scope));
+
+        Type *argtype = parse_type(t, scope);
         n++;
+
         t = next_token();
+        if (t->type == TOK_ELLIPSIS) {
+            variadic = 1;
+            t = next_token();
+            if (t->type != TOK_RPAREN) {
+                error(lineno(), "Only the last parameter to a function can be variadic.");
+            }
+            arg_types = typelist_append(arg_types, argtype);
+            break;
+        }
+
+        arg_types = typelist_append(arg_types, argtype);
+
         if (t->type == TOK_RPAREN) {
             break;
         } else if (t->type != TOK_COMMA) {
@@ -761,7 +792,7 @@ Ast *parse_extern_func_decl(AstScope *scope) {
     } else {
         unget_token(t);
     }
-    Type *fn_type = make_fn_type(n, arg_types, ret);
+    Type *fn_type = make_fn_type(n, arg_types, ret, variadic);
     Var *fn_decl_var = make_var(fname, fn_type);
     fn_decl_var->ext = 1;
     func->fn_decl->var = fn_decl_var;
@@ -795,6 +826,7 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
     fn_scope->is_function = 1;
 
     int n = 0;
+    int variadic = 0;
     VarList *args = func->fn_decl->args;
     TypeList *arg_types = NULL;
     for (;;) {
@@ -810,16 +842,31 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
         }
         expect(TOK_COLON);
 
-        args = varlist_append(args, make_var(t->sval, parse_type(next_token(), scope)));
+        char *argname = t->sval;
+        Type *argtype = parse_type(next_token(), scope);
+        n++;
 
+        t = next_token();
+        if (t->type == TOK_ELLIPSIS) {
+            variadic = 1;
+            t = next_token();
+            if (t->type != TOK_RPAREN) {
+                error(lineno(), "Only the last parameter to a function can be variadic.");
+            }
+
+            argtype = define_type(make_array_type(argtype), scope);
+            args = varlist_append(args, make_var(argname, argtype));
+            attach_var(args->item, fn_scope);
+            args->item->initialized = 1;
+            arg_types = typelist_append(arg_types, argtype->inner);
+            break;
+        }
+
+        args = varlist_append(args, make_var(argname, argtype));
         attach_var(args->item, fn_scope);
-
         args->item->initialized = 1;
-
         arg_types = typelist_append(arg_types, args->item->type);
 
-        n++;
-        t = next_token();
         if (t->type == TOK_RPAREN) {
             break;
         } else if (t->type != TOK_COMMA) {
@@ -837,7 +884,7 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
     } else {
         error(lineno(), "Unexpected token '%s' in function signature.", to_string(t));
     }
-    Type *fn_type = make_fn_type(n, arg_types, ret);
+    Type *fn_type = make_fn_type(n, arg_types, ret, variadic);
     expect(TOK_LBRACE);
     Var *fn_decl_var = make_var(fname, fn_type);
     fn_decl_var->ext = 0;
@@ -1280,7 +1327,7 @@ Ast *parse_primary(Tok *t, AstScope *scope) {
         return b;
     }
     }
-    error(lineno(), "Unexpected token '%s'.", to_string(t));
+    error(lineno(), "Unexpected token '%s' (primary).", to_string(t));
     return NULL;
 }
 
@@ -1710,6 +1757,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         break;
     }
     case AST_EXTERN_FUNC_DECL:
+        // TODO fix this
         if (parser_state != PARSE_MAIN) {
             error(ast->line, "Cannot declare an extern inside scope ('%s').", ast->fn_decl->var->name);
         }
@@ -1722,6 +1770,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         /*}*/
     case AST_ANON_FUNC_DECL: {
         Var *bindings_var = NULL;
+        Type *fn_t = ast->fn_decl->var->type;
 
         if (ast->type == AST_ANON_FUNC_DECL) {
             bindings_var = malloc(sizeof(Var));
@@ -1730,11 +1779,11 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
             bindings_var->id = new_var_id();
             bindings_var->temp = 1;
             bindings_var->consumed = 0;
-            ast->fn_decl->var->type->bindings_id = bindings_var->id;
-            ast->var_type = ast->fn_decl->var->type;
+            fn_t->bindings_id = bindings_var->id;
+            ast->var_type = fn_t;
         }
 
-        for (TypeList *args = ast->fn_decl->var->type->fn.args; args != NULL; args = args->next) {
+        for (TypeList *args = fn_t->fn.args; args != NULL; args = args->next) {
             args->item = register_type(args->item);
         }
 
@@ -1748,7 +1797,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
 
         detach_var(ast->fn_decl->var, ast->fn_decl->scope);
 
-        if (ast->fn_decl->var->type->bindings != NULL) {
+        if (fn_t->bindings != NULL) {
             global_fn_bindings = varlist_append(global_fn_bindings, bindings_var);
         }
         break;
@@ -1763,7 +1812,22 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         if (ast->call->fn->type == AST_ANON_FUNC_DECL) {
             ast->call->fn = make_ast_tempvar(ast->call->fn, make_temp_var(t, scope));
         }
-        if (ast->call->nargs != t->fn.nargs) {
+        if (t->fn.variadic) {
+            if (ast->call->nargs < t->fn.nargs - 1) {
+                error(ast->line, "Expected at least %d arguments to variadic function, but only got %d.", t->fn.nargs-1, ast->call->nargs);
+            } else {
+                TypeList *list = t->fn.args;
+                Type *a = list->item;
+                while (list != NULL) {
+                    a = list->item;
+                    list = list->next;
+                }
+                a = make_static_array_type(a, ast->call->nargs - (t->fn.nargs - 1));;
+                if (!(ast->call->fn->type == AST_IDENTIFIER && ast->call->fn->ident->var)) {
+                    ast->call->variadic_tempvar = make_temp_var(a, scope);
+                }
+            }
+        } else if (ast->call->nargs != t->fn.nargs) {
             error(ast->line, "Incorrect argument count to function (expected %d, got %d)", t->fn.nargs, ast->call->nargs);
         }
         AstList *args = ast->call->args;
@@ -1794,7 +1858,9 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
             }
             args->item = arg;
             args = args->next;
-            arg_types = arg_types->next;
+            if (!t->fn.variadic || i < t->fn.nargs - 1) {
+                arg_types = arg_types->next;
+            }
         }
 
         ast->var_type = t->fn.ret;
@@ -1967,27 +2033,27 @@ VarList *get_global_bindings() {
 }
 
 void init_builtins() {
-    Var *v = make_var("assert", make_fn_type(1, typelist_append(NULL, base_type(BOOL_T)), base_type(VOID_T)));
+    Var *v = make_var("assert", make_fn_type(1, typelist_append(NULL, base_type(BOOL_T)), base_type(VOID_T), 0));
     v->ext = 1;
     v->constant = 1;
     builtin_vars = varlist_append(builtin_vars, v);
 
-    v = make_var("print_str", make_fn_type(1, typelist_append(NULL, base_type(STRING_T)), base_type(VOID_T)));
+    v = make_var("print_str", make_fn_type(1, typelist_append(NULL, base_type(STRING_T)), base_type(VOID_T), 0));
     v->ext = 1;
     v->constant = 1;
     builtin_vars = varlist_append(builtin_vars, v);
 
-    v = make_var("println", make_fn_type(1, typelist_append(NULL, base_type(STRING_T)), base_type(VOID_T)));
+    v = make_var("println", make_fn_type(1, typelist_append(NULL, base_type(STRING_T)), base_type(VOID_T), 0));
     v->ext = 1;
     v->constant = 1;
     builtin_vars = varlist_append(builtin_vars, v);
 
-    v = make_var("itoa", make_fn_type(1, typelist_append(NULL, base_type(INT_T)), base_type(STRING_T)));
+    v = make_var("itoa", make_fn_type(1, typelist_append(NULL, base_type(INT_T)), base_type(STRING_T), 0));
     v->ext = 1;
     v->constant = 1;
     builtin_vars = varlist_append(builtin_vars, v);
 
-    v = make_var("validptr", make_fn_type(1, typelist_append(NULL, base_type(BASEPTR_T)), base_type(BOOL_T)));
+    v = make_var("validptr", make_fn_type(1, typelist_append(NULL, base_type(BASEPTR_T)), base_type(BOOL_T), 0));
     v->ext = 1;
     v->constant = 1;
     builtin_vars = varlist_append(builtin_vars, v);

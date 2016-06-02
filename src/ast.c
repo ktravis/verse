@@ -362,7 +362,7 @@ Ast *coerce_literal(Ast *ast, Type *t) {
 
 Ast *cast_literal(Type *t, Ast *ast) {
     Type *ast_type = ast->var_type;
-    if (can_cast(t, ast_type)) {
+    if (can_cast(ast_type, t)) {
         Ast *c = ast_alloc(AST_CAST);
         c->cast->object = ast;
         c->cast->cast_type = t;

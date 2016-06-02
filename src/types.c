@@ -25,6 +25,7 @@ Type *make_type(char *name, int base, int size) {
     t->unresolved = 0;
     t->builtin = 0;
     t->name = name;
+    t->bindings = 0;
     return t;
 }
 
@@ -76,7 +77,7 @@ TypeList *get_used_types() {
     return list;
 }
 
-Type *make_fn_type(int nargs, TypeList *args, Type *ret) {
+Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic) {
     char *parts[10]; // TODO duh
     size_t size = 6; // fn + ( + ) + : + \0
     TypeList *_args = args;
@@ -91,6 +92,9 @@ Type *make_fn_type(int nargs, TypeList *args, Type *ret) {
     char *retname = ret->name;
     size_t retlen = strlen(retname);
     size += retlen;
+    if (variadic) {
+        size += 3;
+    }
     char *buf = malloc(sizeof(char) * size);
     strncpy(buf, "fn(", 3);
     char *m = buf + 3;
@@ -108,6 +112,10 @@ Type *make_fn_type(int nargs, TypeList *args, Type *ret) {
         }
         _args = _args->next;
     }
+    if (variadic) {
+        strncpy(m, "...", 3);
+        m += 3;
+    }
     strncpy(m, "):", 2);
     m += 2;
     strncpy(m, retname, retlen);
@@ -120,6 +128,7 @@ Type *make_fn_type(int nargs, TypeList *args, Type *ret) {
     t->fn.nargs = nargs;
     t->fn.args = args;
     t->fn.ret = ret;
+    t->fn.variadic = variadic;
     t->bindings = NULL;
     t->named = 0;
 
@@ -151,6 +160,7 @@ Type *make_array_type(Type *inner) {
     Type *type = make_type(name, ARRAY_T, 16);
     type->inner = inner;
     type->named = 0;
+    type->length = 0;
     return type;
 }
 
@@ -523,6 +533,7 @@ static Type *float64_type = NULL;
 static Type *bool_type = NULL;
 static Type *string_type = NULL;
 static Type *baseptr_type = NULL;
+static Type *basetype_type = NULL;
 static Type *typeinfo_type = NULL;
 static Type *typeinfo_ptr_type = NULL;
 static Type *numtype_type = NULL;
@@ -632,106 +643,149 @@ void init_types(struct AstScope *scope) {
 
     string_type = define_builtin_type(make_type("string", STRING_T, 16)); // should be checked that non-pointer is used in bindings
 
+    char **member_names = malloc(sizeof(char*)*11);
+    member_names[0] = "INT";
+    member_names[1] = "BOOL";
+    member_names[2] = "FLOAT";
+    member_names[3] = "VOID";
+    member_names[4] = "ANY";
+    member_names[5] = "STRING";
+    member_names[6] = "ARRAY";
+    member_names[7] = "FN";
+    member_names[8] = "ENUM";
+    member_names[9] = "PTR";
+    member_names[10] = "STRUCT";
+    long *member_values = malloc(sizeof(long)*11);
+    member_values[0] = 1;
+    member_values[1] = 2;
+    member_values[2] = 3;
+    member_values[3] = 4;
+    member_values[4] = 5;
+    member_values[5] = 6;
+    member_values[6] = 7;
+    member_values[7] = 8;
+    member_values[8] = 9;
+    member_values[9] = 10;
+    member_values[10] = 11;
+    basetype_type = define_builtin_type(make_enum_type("BaseType", int32_type, 11, member_names, member_values));
+
     baseptr_type = define_builtin_type(make_type("ptr", BASEPTR_T, 8)); // should be checked that non-pointer is used in bindings
 
     // TODO can these be defined in a "basic.vs" ?
-    char **member_names = malloc(sizeof(char*)*2);
+    member_names = malloc(sizeof(char*)*3);
     member_names[0] = "id";
-    member_names[1] = "name";
-    Type **member_types = malloc(sizeof(Type*)*2);
+    member_names[1] = "base";
+    member_names[2] = "name";
+    Type **member_types = malloc(sizeof(Type*)*3);
     member_types[0] = int_type;
-    member_types[1] = string_type;
-    typeinfo_type = define_builtin_type(make_struct_type("Type", 2, member_names, member_types));
+    member_types[1] = basetype_type;
+    member_types[2] = string_type;
+    typeinfo_type = define_builtin_type(make_struct_type("Type", 3, member_names, member_types));
 
     typeinfo_ptr_type = define_builtin_type(make_ptr_type(typeinfo_type));
 
+    member_names = malloc(sizeof(char*)*5);
+    member_names[0] = "id";
+    member_names[1] = "base";
+    member_names[2] = "name";
+    member_names[3] = "size";
+    member_names[4] = "is_signed";
+    member_types = malloc(sizeof(Type*)*5);
+    member_types[0] = int_type;
+    member_types[1] = basetype_type;
+    member_types[2] = string_type;
+    member_types[3] = int_type;
+    member_types[4] = bool_type;
+    numtype_type = define_builtin_type(make_struct_type("NumType", 5, member_names, member_types));
+
     member_names = malloc(sizeof(char*)*4);
     member_names[0] = "id";
-    member_names[1] = "name";
-    member_names[2] = "size";
-    member_names[3] = "is_signed";
+    member_names[1] = "base";
+    member_names[2] = "name";
+    member_names[3] = "inner";
     member_types = malloc(sizeof(Type*)*4);
     member_types[0] = int_type;
-    member_types[1] = string_type;
-    member_types[2] = int_type;
-    member_types[3] = bool_type;
-    numtype_type = define_builtin_type(make_struct_type("NumType", 4, member_names, member_types));
+    member_types[1] = basetype_type;
+    member_types[2] = string_type;
+    member_types[3] = typeinfo_ptr_type;
+    ptrtype_type = define_builtin_type(make_struct_type("PtrType", 4, member_names, member_types));
 
     member_names = malloc(sizeof(char*)*3);
-    member_names[0] = "id";
-    member_names[1] = "name";
-    member_names[2] = "inner";
-    member_types = malloc(sizeof(Type*)*3);
-    member_types[0] = int_type;
-    member_types[1] = string_type;
-    member_types[2] = typeinfo_ptr_type;
-    ptrtype_type = define_builtin_type(make_struct_type("PtrType", 3, member_names, member_types));
-
-    member_names = malloc(sizeof(char*)*2);
     member_names[0] = "name";
     member_names[1] = "type";
-    member_types = malloc(sizeof(Type*)*2);
+    member_types = malloc(sizeof(Type*)*3);
     member_types[0] = string_type;
     member_types[1] = typeinfo_ptr_type;
     structmember_type = define_builtin_type(make_struct_type("StructMember", 2, member_names, member_types));
 
     Type *structmember_array_type = define_builtin_type(make_array_type(structmember_type));
 
-    member_names = malloc(sizeof(char*)*3);
-    member_names[0] = "id";
-    member_names[1] = "name";
-    member_names[2] = "members";
-    member_types = malloc(sizeof(Type*)*3);
-    member_types[0] = int_type;
-    member_types[1] = string_type;
-    member_types[2] = structmember_array_type;
-    structtype_type = define_builtin_type(make_struct_type("StructType", 3, member_names, member_types));
-
-    Type *string_array_type = define_builtin_type(make_array_type(string_type));
-
     member_names = malloc(sizeof(char*)*4);
     member_names[0] = "id";
-    member_names[1] = "name";
-    member_names[2] = "inner";
+    member_names[1] = "base";
+    member_names[2] = "name";
     member_names[3] = "members";
     member_types = malloc(sizeof(Type*)*4);
     member_types[0] = int_type;
-    member_types[1] = string_type;
-    member_types[2] = typeinfo_ptr_type;
-    member_types[3] = string_array_type;
-    enumtype_type = define_builtin_type(make_struct_type("EnumType", 4, member_names, member_types));
+    member_types[1] = basetype_type;
+    member_types[2] = string_type;
+    member_types[3] = structmember_array_type;
+    structtype_type = define_builtin_type(make_struct_type("StructType", 4, member_names, member_types));
 
-    member_names = malloc(sizeof(char*)*5);
+    Type *string_array_type = define_builtin_type(make_array_type(string_type));
+    Type *int64_array_type = define_builtin_type(make_array_type(int64_type));
+
+    member_names = malloc(sizeof(char*)*6);
     member_names[0] = "id";
-    member_names[1] = "name";
-    member_names[2] = "inner";
-    member_names[3] = "size";
-    member_names[4] = "is_static";
-    member_types = malloc(sizeof(Type*)*5);
+    member_names[1] = "base";
+    member_names[2] = "name";
+    member_names[3] = "inner";
+    member_names[4] = "members";
+    member_names[5] = "values";
+    member_types = malloc(sizeof(Type*)*6);
     member_types[0] = int_type;
-    member_types[1] = string_type;
-    member_types[2] = typeinfo_ptr_type;
-    member_types[3] = int_type;
-    member_types[4] = bool_type;
-    arraytype_type = define_builtin_type(make_struct_type("ArrayType", 5, member_names, member_types));
+    member_types[1] = basetype_type;
+    member_types[2] = string_type;
+    member_types[3] = typeinfo_ptr_type;
+    member_types[4] = string_array_type;
+    member_types[5] = int64_array_type;
+    enumtype_type = define_builtin_type(make_struct_type("EnumType", 6, member_names, member_types));
+
+    member_names = malloc(sizeof(char*)*6);
+    member_names[0] = "id";
+    member_names[1] = "base";
+    member_names[2] = "name";
+    member_names[3] = "inner";
+    member_names[4] = "size";
+    member_names[5] = "is_static";
+    member_types = malloc(sizeof(Type*)*6);
+    member_types[0] = int_type;
+    member_types[1] = basetype_type;
+    member_types[2] = string_type;
+    member_types[3] = typeinfo_ptr_type;
+    member_types[4] = int_type;
+    member_types[5] = bool_type;
+    arraytype_type = define_builtin_type(make_struct_type("ArrayType", 6, member_names, member_types));
 
     Type *typeinfo_array_type = define_builtin_type(make_array_type(typeinfo_type));
 
-    member_names = malloc(sizeof(char*)*5);
+    member_names = malloc(sizeof(char*)*6);
     member_names[0] = "id";
-    member_names[1] = "name";
-    member_names[2] = "args";
-    member_names[3] = "return_type";
-    member_names[4] = "anonymous";
+    member_names[1] = "base";
+    member_names[2] = "name";
+    member_names[3] = "args";
+    member_names[4] = "return_type";
+    member_names[5] = "anonymous";
     /*member_names[4] = "is_static";*/
-    member_types = malloc(sizeof(Type*)*5);
+    member_types = malloc(sizeof(Type*)*6);
     member_types[0] = int_type;
-    member_types[1] = string_type;
-    member_types[2] = typeinfo_array_type;
-    member_types[3] = typeinfo_ptr_type;
-    member_types[4] = bool_type;
+    member_types[1] = basetype_type;
+    member_types[2] = string_type;
+    member_types[3] = typeinfo_array_type;
+    member_types[4] = typeinfo_ptr_type;
+    member_types[5] = bool_type;
     /*member_types[4] = bool_type;*/
-    fntype_type = define_builtin_type(make_struct_type("FnType", 5, member_names, member_types));
+    fntype_type = define_builtin_type(make_struct_type("FnType", 6, member_names, member_types));
 
     member_names = malloc(sizeof(char*)*2);
     member_names[0] = "value_pointer";

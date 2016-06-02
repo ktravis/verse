@@ -48,6 +48,7 @@ typedef struct Type {
             int nargs;
             struct TypeList *args;
             struct Type *ret;
+            int variadic;
         } fn;
         struct Type *inner;
         struct {
@@ -84,7 +85,7 @@ Type *make_type(char *name, int base, int size);
 Type *make_ptr_type(Type *inner);
 Type *make_static_array_type(Type *inner, long length);
 Type *make_array_type(Type *inner);
-Type *make_fn_type(int nargs, TypeList *args, Type *ret);
+Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic);
 Type *make_enum_type(char *name, Type *inner, int nmembers, char **member_names, long *member_values);
 Type *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types);
 
