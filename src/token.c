@@ -103,9 +103,21 @@ Tok *next_token() {
         return read_number(c);
     } else if (isalpha(c) || c == '_') {
         return read_identifier(c);
-    } else if (c == '\"' || c == '\'') {
+    } else if (c == '\'') {
+        Tok *t = make_token(TOK_CHAR);
+        c = getc(stdin);
+        if (c == '\\') {
+            c = getc(stdin);
+        }
+        t->ival = c;
+        c = getc(stdin);
+        if (c != '\'') {
+            error(line, "Invalid character literal sequence.");
+        }
+        return t;
+    } else if (c == '\"') {
         Tok *t = make_token(TOK_STR);
-        t->sval = read_string(c);
+        t->sval = read_string();
         return t;
     } else if (c == '(') {
         return make_token(TOK_LPAREN);
@@ -166,8 +178,6 @@ Tok *next_token() {
         return make_token(TOK_SEMI);
     } else if (c == ':') {
         return make_token(TOK_COLON);
-    } else if (c == '^') {
-        return make_token(TOK_CARET);
     } else if (c == '+') {
         Tok *t = make_token(TOK_OP);
         t->op = OP_PLUS;
@@ -207,10 +217,6 @@ Tok *next_token() {
             ungetc(d, stdin);
             t->op = OP_LT;
         } // TODO binary shift
-        return t;
-    } else if (c == '@') {
-        Tok *t = make_token(TOK_UOP);
-        t->op = OP_DEREF;
         return t;
     } else if (c == '!') {
         Tok *t;
@@ -297,14 +303,14 @@ Tok *read_number(char c) {
     return t;
 }
 
-char *read_string(char quote) {
+char *read_string() {
     int alloc = 8;
     char *buf = malloc(alloc);
     int len = 0;
     char c;
     int start = line;
     while ((c = getc(stdin)) != EOF) {
-        if (c == quote && (len == 0 || buf[len-1] != '\\')) {
+        if (c == '\"' && (len == 0 || buf[len-1] != '\\')) {
             buf[len] = 0;
             return buf;
         }
@@ -413,8 +419,9 @@ int valid_unary_op(int op) {
     case OP_NOT:
     case OP_PLUS:
     case OP_MINUS:
-    case OP_ADDR:
-    case OP_DEREF:
+    case OP_REF:
+    case OP_MUL:
+    case OP_BINAND:
         return 1;
     }
     return 0;
@@ -449,9 +456,9 @@ int priority_of(Tok *t) {
             return 11;
         case OP_CAST:
             return 12; // TODO this priority might be wrong
-        case OP_DOT:
+        case OP_REF: case OP_DEREF:
             return 13;
-        case OP_ADDR: case OP_DEREF:
+        case OP_DOT:
             return 14;
         default:
             return -1;
@@ -608,8 +615,8 @@ const char *op_to_str(int op) {
     case OP_LT: return "<";
     case OP_LTE: return "<=";
     case OP_DOT: return ".";
-    case OP_ADDR: return "^";
-    case OP_DEREF: return "@";
+    case OP_REF: return "&";
+    case OP_DEREF: return "*";
     case OP_CAST: return "as";
     default:
         return "BAD OP";

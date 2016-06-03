@@ -17,13 +17,13 @@ fn main():int {
     b.z = fn (a:int,b:int):int {
         return a*b;
     };
-    a:^string = ^b.y;
-    c:^int = ^b.x;
-    assert(b.y == @a);
-    assert(b.x == @c);
+    a:&string = &b.y;
+    c:&int = &b.x;
+    assert(b.y == *a);
+    assert(b.x == *c);
     check(b);
-    assert(b.y == @a);
-    assert(b.x == @c);
+    assert(b.y == *a);
+    assert(b.x == *c);
     assert(b.z(1,2) == 2);
     wee:bool = fn ():bool {
         print_str("weeee\n");
@@ -35,9 +35,9 @@ fn main():int {
     }()));
     p:ptr;
     assert(!validptr(p));
-    p = ^b;
+    p = &b;
     assert(validptr(p));
-    assert(validptr(^b.x));
+    assert(validptr(&b.x));
     print_str("Success!\n");
-    return @c - 1;
+    return *c - 1;
 }

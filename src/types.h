@@ -111,7 +111,7 @@ int precision_loss_uint(Type *t, unsigned long ival);
 int precision_loss_int(Type *t, long ival);
 int precision_loss_float(Type *t, double ival);
 
-Type *promote_number_type(Type *a, Type *b);
+Type *promote_number_type(Type *a, int left_lit, Type *b, int right_lit);
 
 TypeList *reverse_typelist(TypeList *list);
 TypeList *typelist_append(TypeList *list, Type *t);

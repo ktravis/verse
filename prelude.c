@@ -84,6 +84,11 @@ int streq(struct string_type left, struct string_type right) {
     return 1;
 }
 
+struct array_type string_as_array(struct string_type str) {
+    struct array_type arr = {.data=str.bytes, .length=str.length};
+    return arr;
+}
+
 // builtins
 /*void assert(unsigned char a) {*/
     /*assert(a);*/

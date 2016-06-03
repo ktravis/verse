@@ -6,7 +6,7 @@ type vec3: struct {
 
 v1:vec3 = vec3{x = 1, z = 2};
 
-fn doathing(a:^vec3) {
+fn doathing(a:&vec3) {
     a.x = a.x + a.y * a.z;
 }
 
@@ -17,7 +17,7 @@ fn otherthing(b:vec3):vec3 {
     return b;
 }
 
-fn hold_struct(): ^vec3 {
+fn hold_struct(): &vec3 {
     return hold vec3{x=1,y=2,z=3};
 }
 
@@ -37,7 +37,7 @@ fn main():int {
     assert(otherthing(vec3{x=1,y=2,z=3}).x == 2);
     x:struct { b: int; };
     x.b = 1;
-    y:^struct{b:int;} = hold x;
+    y:&struct{b:int;} = hold x;
     assert(1 == y.b);
     release y;
     a1 := hold_struct();

@@ -8,7 +8,7 @@ fn test(x:blerg) {
 type blerg : struct {
     a:int;
     b:string;
-    c:^blerg;
+    c:&blerg;
 };
 
 fn main():int {
@@ -16,8 +16,8 @@ fn main():int {
     // that definition will take precedence
     b:blerg;
 
-    // use #typeof to get the ^Type of a value/expression (at compile time)
-    t := #typeof(b) as ^StructType;
+    // use #typeof to get the &Type of a value/expression (at compile time)
+    t := #typeof(b) as &StructType;
 
     i := 0;
     for m in t.members {

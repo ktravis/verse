@@ -14,7 +14,7 @@ clean:
 	@rm -rf bin prelude.bin prelude.h $(OBJS) 2>/dev/null
 
 test: compiler
-	for f in tests/*.vs; do ./verse $$f; done 
+	@for f in tests/*.vs; do echo "Testing $$f..."; ./verse $$f >/dev/null; done;
 
 bin/includer: binpack.c
 	mkdir -p bin

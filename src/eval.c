@@ -112,7 +112,7 @@ Ast *eval_const_binop(Ast *ast) {
     AstLiteral *left_lit = ast->binary->left->lit;
     AstLiteral *right_lit = ast->binary->right->lit;
 
-    if (left_lit->lit_type == FLOAT || left_lit->lit_type == INTEGER) {
+    if (left_lit->lit_type == FLOAT || left_lit->lit_type == INTEGER || left_lit->lit_type == CHAR) {
         if (left_lit->lit_type == FLOAT || right_lit->lit_type == FLOAT) {
             return eval_float_binop(ast);
         }

@@ -137,7 +137,7 @@ Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic) {
 
 Type *make_ptr_type(Type *inner) {
     char *name = malloc((strlen(inner->name) + 2) * sizeof(char));
-    sprintf(name, "^%s", inner->name);
+    sprintf(name, "&%s", inner->name);
     Type *type = make_type(name, PTR_T, 8);
     type->inner = inner;
     type->named = 0;
@@ -501,7 +501,7 @@ int is_dynamic(Type *t) {
     return t->base == STRING_T || (t->base == FN_T && t->bindings != NULL);
 }
 
-Type *promote_number_type(Type *a, Type *b) {
+Type *promote_number_type(Type *a, int left_lit, Type *b, int right_lit) {
     if (a->base == FLOAT_T) {
         if (b->base != FLOAT_T) {
             return a; // TODO address precision loss if a->size < b->size
@@ -510,6 +510,11 @@ Type *promote_number_type(Type *a, Type *b) {
         if (a->base != FLOAT_T) {
             return b; // TODO address precision loss if b->size < a->size
         }
+    }
+    if (left_lit) {
+        return a->size > b->size ? a : b;
+    } else if (right_lit) {
+        return b->size > a->size ? b : a;
     }
     return a->size > b->size ? a : b;
 }
@@ -624,16 +629,16 @@ void init_types(struct AstScope *scope) {
     void_type = define_builtin_type(make_type("void", VOID_T, 0));
 
     int_type = define_builtin_type(make_type("int", INT_T, 4));
-    int8_type = define_builtin_type(make_type("int8", INT_T, 1));
-    int16_type = define_builtin_type(make_type("int16", INT_T, 2));
-    int32_type = define_builtin_type(make_type("int32", INT_T, 4));
-    int64_type = define_builtin_type(make_type("int64", INT_T, 8));
+    int8_type = define_builtin_type(make_type("s8", INT_T, 1));
+    int16_type = define_builtin_type(make_type("s16", INT_T, 2));
+    int32_type = define_builtin_type(make_type("s32", INT_T, 4));
+    int64_type = define_builtin_type(make_type("s64", INT_T, 8));
 
     uint_type = define_builtin_type(make_type("uint", UINT_T, 4));
-    uint8_type = define_builtin_type(make_type("uint8", UINT_T, 1));
-    uint16_type = define_builtin_type(make_type("uint16", UINT_T, 2));
-    uint32_type = define_builtin_type(make_type("uint32", UINT_T, 4));
-    uint64_type = define_builtin_type(make_type("uint64", UINT_T, 8));
+    uint8_type = define_builtin_type(make_type("u8", UINT_T, 1));
+    uint16_type = define_builtin_type(make_type("u16", UINT_T, 2));
+    uint32_type = define_builtin_type(make_type("u32", UINT_T, 4));
+    uint64_type = define_builtin_type(make_type("u64", UINT_T, 8));
 
     float_type = define_builtin_type(make_type("float", FLOAT_T, 4));
     float32_type = define_builtin_type(make_type("float32", FLOAT_T, 4));

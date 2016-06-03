@@ -10,12 +10,13 @@
 
 enum {
     TOK_STR,
+    TOK_CHAR,
     TOK_INT,
     TOK_FLOAT,
     TOK_BOOL,
     TOK_COLON,
     TOK_SEMI,
-    TOK_CARET,
+    TOK_REF,
     TOK_ID,
     TOK_FN,
     TOK_TYPE,
@@ -65,7 +66,7 @@ enum {
     OP_GTE,
     OP_LT,
     OP_LTE,
-    OP_ADDR,
+    OP_REF,
     OP_DEREF,
     OP_CAST
 };
@@ -106,7 +107,7 @@ void unget_token(Tok *tok);
 
 double read_decimal(char c);
 Tok *read_number(char c);
-char *read_string(char quote);
+char *read_string();
 Tok *read_identifier(char c);
 Tok *check_reserved(char *buf);
 

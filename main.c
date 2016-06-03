@@ -337,6 +337,10 @@ void compile_unspecified_array(Ast *ast) {
         printf("(struct array_type){.data=");
         compile(ast);
         printf(",.length=%ld}", t->length);
+    } else if (t->base == STRING_T) {
+        printf("string_as_array(");
+        compile(ast);
+        printf(")");
     } else {
         error(ast->line, "Was expecting an array of some kind here, man.");
     }
@@ -675,6 +679,9 @@ void compile(Ast *ast) {
         case FLOAT: // TODO this is truncated
             printf("%F", ast->lit->float_val);
             break;
+        case CHAR:
+            printf("'%c'", (unsigned char)ast->lit->int_val);
+            break;
         case BOOL:
             printf("%d", (unsigned char)ast->lit->int_val);
             break;
@@ -910,11 +917,9 @@ void compile(Ast *ast) {
     case AST_CALL: {
         Type *t = ast->call->fn->var_type;
         unsigned char needs_wrapper = 1;
-        unsigned char external = 0;
         if (ast->call->fn->type == AST_IDENTIFIER) {
             Var *v = ast->call->fn->ident->var;
             needs_wrapper = !v->ext && !v->constant;
-            external = v->ext;
         }
         if (needs_wrapper) {
             printf("((");
@@ -945,7 +950,7 @@ void compile(Ast *ast) {
         int i = 0;
         while (args != NULL) {
             Type *a = args->item->var_type;
-            if (t->fn.variadic && !external) {
+            if (t->fn.variadic) {
                 if (i == t->fn.nargs - 1) {
                     printf("(");
                 }
@@ -980,9 +985,9 @@ void compile(Ast *ast) {
                 argtypes = argtypes->next;
             }
         }
-        if (t->fn.variadic && !external) {
-            if (ast->call->nargs == 0) {
-                printf("(struct array_type){0, NULL}");
+        if (t->fn.variadic) {
+            if (ast->call->nargs - (t->fn.nargs) < 0) {
+                printf(", (struct array_type){0, NULL}");
             } else if (ast->call->nargs > t->fn.nargs - 1) {
                 printf(", (struct array_type){%ld, _tmp%d})", ast->call->variadic_tempvar->type->length, ast->call->variadic_tempvar->id);
             }
@@ -991,12 +996,7 @@ void compile(Ast *ast) {
         break;
     }
     case AST_INDEX: {
-        /*int ptr = 0;*/
         Type *lt = ast->index->object->var_type;
-        /*if (lt->base == PTR_T) {*/
-            /*lt = lt->inner;*/
-            /*ptr = 1;*/
-        /*}*/
         if (is_array(lt)) {
             printf("(");
             if (lt->base == ARRAY_T) {
@@ -1004,16 +1004,15 @@ void compile(Ast *ast) {
                 emit_type(ast->index->object->var_type->inner);
                 printf("*)");
             }
-            /*if (ptr) {*/
-                /*printf("*");*/
-            /*}*/
             compile_static_array(ast->index->object);
             printf(")[");
             compile(ast->index->index);
             printf("]");
-        } else {
+        } else { // string
             // TODO why is this here? strings? ptrs?
+            printf("((uint8_t*)");
             compile(ast->index->object);
+            printf(".bytes)");
             printf("[");
             compile(ast->index->index);
             printf("]");
@@ -1029,19 +1028,13 @@ void compile(Ast *ast) {
     case AST_CONDITIONAL:
         printf("if (");
         compile(ast->cond->condition);
-        printf(") {\n");
-        _indent++;
-        compile_block(ast->cond->if_body);
-        _indent--;
+        printf(") ");
+        compile_scope(ast->cond->if_body);
         if (ast->cond->else_body != NULL) {
             indent();
-            printf("} else {\n");
-            _indent++;
-            compile_block(ast->cond->else_body);
-            _indent--;
+            printf(" else ");
+            compile_scope(ast->cond->else_body);
         }
-        indent();
-        printf("}\n");
         break;
     case AST_WHILE:
         printf("while (");

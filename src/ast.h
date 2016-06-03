@@ -82,6 +82,7 @@ typedef struct Ast {
 
 typedef enum {
     INTEGER,
+    CHAR,
     STRING,
     FLOAT,
     BOOL,
@@ -204,8 +205,8 @@ typedef struct AstScope {
 
 typedef struct AstConditional {
     Ast *condition;
-    AstBlock *if_body;
-    AstBlock *else_body;
+    AstScope *if_body;
+    AstScope *else_body;
 } AstConditional;
 
 typedef struct AstTypeDecl {
