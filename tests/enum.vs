@@ -17,6 +17,8 @@ fn main():int {
         i = i + 1;
     }
 
+    assert((hi.c as int) == 4);
+
     enum hi:u8 {
         a = 2,
         b,

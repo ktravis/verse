@@ -1604,7 +1604,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         AstCast *cast = ast->cast;
         cast->object = parse_semantics(cast->object, scope);
         if (cast->object->type == AST_LITERAL) {
-            cast->object = coerce_literal(cast->object, cast->cast_type);
+            cast->object = cast_literal(cast->cast_type, cast->object);
         } else {
             if (!can_cast(cast->object->var_type, cast->cast_type)) {
                 error(ast->line, "Cannot cast type '%s' to type '%s'.", cast->object->var_type->name, cast->cast_type->name);
