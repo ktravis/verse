@@ -179,24 +179,74 @@ Tok *next_token() {
     } else if (c == ':') {
         return make_token(TOK_COLON);
     } else if (c == '+') {
-        Tok *t = make_token(TOK_OP);
+        char n = getc(stdin);
+        Tok *t = NULL;
+        if (n == '=') {
+            t = make_token(TOK_OPASSIGN);
+        } else {
+            t = make_token(TOK_OP);
+            ungetc(n, stdin);
+        }
         t->op = OP_PLUS;
         return t;
     } else if (c == '-') {
-        Tok *t = make_token(TOK_OP);
+        char n = getc(stdin);
+        Tok *t = NULL;
+        if (n == '=') {
+            t = make_token(TOK_OPASSIGN);
+        } else {
+            t = make_token(TOK_OP);
+            ungetc(n, stdin);
+        }
         t->op = OP_MINUS;
         return t;
     } else if (c == '*') {
-        Tok *t = make_token(TOK_OP);
+        char n = getc(stdin);
+        Tok *t = NULL;
+        if (n == '=') {
+            t = make_token(TOK_OPASSIGN);
+        } else {
+            t = make_token(TOK_OP);
+            ungetc(n, stdin);
+        }
         t->op = OP_MUL;
         return t;
     } else if (c == '/') {
-        Tok *t = make_token(TOK_OP);
+        char n = getc(stdin);
+        Tok *t = NULL;
+        if (n == '=') {
+            t = make_token(TOK_OPASSIGN);
+        } else {
+            t = make_token(TOK_OP);
+            ungetc(n, stdin);
+        }
         t->op = OP_DIV;
         return t;
     } else if (c == '^') {
-        Tok *t = make_token(TOK_OP);
+        char n = getc(stdin);
+        Tok *t = NULL;
+        if (n == '=') {
+            t = make_token(TOK_OPASSIGN);
+        } else {
+            t = make_token(TOK_OP);
+            ungetc(n, stdin);
+        }
         t->op = OP_XOR;
+        return t;
+    } else if (c == '&') {
+        char n = getc(stdin);
+        Tok *t = NULL;
+        int op = OP_BINAND;
+        if (n == '=') {
+            t = make_token(TOK_OPASSIGN);
+        } else if (n == '&') {
+            t = make_token(TOK_OP);
+            op = OP_AND;
+        } else {
+            t = make_token(TOK_OP);
+            ungetc(n, stdin);
+        }
+        t->op = op;
         return t;
     } else if (c == '>') {
         Tok *t = make_token(TOK_OP);
@@ -230,7 +280,7 @@ Tok *next_token() {
             t->op = OP_NOT;
         }
         return t;
-    } else if (c == '&' || c == '|' || c == '=') {
+    } else if (c == '|' || c == '=') {
         int d = getc(stdin);
         int same = (d == c);
         if (!same) {
@@ -430,6 +480,8 @@ int valid_unary_op(int op) {
 int priority_of(Tok *t) {
     if (t->type == TOK_LPAREN || t->type == TOK_LSQUARE) {
         return 13;
+    } else if (t->type == TOK_OPASSIGN) {
+        return 1;
     } else if (t->type == TOK_OP || t->type == TOK_UOP) {
         switch (t->op) {
         case OP_ASSIGN:
@@ -507,6 +559,13 @@ const char *to_string(Tok *t) {
     case TOK_OP:
     case TOK_UOP:
         return op_to_str(t->op);
+    case TOK_OPASSIGN: {
+        const char *op = op_to_str(t->op);
+        char *m = malloc(sizeof(char) * (strlen(op) + 1));
+        sprintf(m, "%s=", op);
+        m[strlen(op)+1] = 0;
+        return m;
+    }
     case TOK_RETURN:
         return "return";
     case TOK_STRUCT:
@@ -560,6 +619,8 @@ const char *token_type(int type) {
         return "LSQURE";
     case TOK_RSQUARE:
         return "RSQURE";
+    case TOK_OPASSIGN:
+        return "OPASSIGN";
     case TOK_OP:
         return "OP";
     case TOK_UOP:

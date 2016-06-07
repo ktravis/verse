@@ -21,6 +21,7 @@ enum {
     TOK_FN,
     TOK_TYPE,
     TOK_OP,
+    TOK_OPASSIGN,
     TOK_UOP,
     TOK_LPAREN,
     TOK_RPAREN,

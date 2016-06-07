@@ -583,6 +583,12 @@ Ast *parse_expression(Tok *t, int priority, AstScope *scope) {
         if (next_priority < 0 || next_priority < priority) {
             unget_token(t);
             return ast;
+        } else if (t->type == TOK_OPASSIGN) {
+            Ast *rhs = parse_expression(next_token(), 0, scope);
+            rhs = make_ast_binop(t->op, ast, rhs);
+            rhs->line = ast->line; // are these necessary?
+            ast = make_ast_assign(ast, rhs);
+            ast->line = rhs->line;
         } else if (t->type == TOK_OP) {
             if (t->op == OP_ASSIGN) {
                 ast = make_ast_assign(ast, parse_expression(next_token(), 0, scope));
