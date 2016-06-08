@@ -1116,13 +1116,10 @@ Ast *parse_statement(Tok *t, AstScope *scope) {
         ast = parse_enum_decl(scope);
     } else if (t->type == TOK_DIRECTIVE) {
         if (!strcmp(t->sval, "import")) {
-            /*Ast *ast = ast_alloc(AST_DIRECTIVE);*/
-            /*ast->directive->name = t->sval;*/
             t = next_token();
-            if (t->type != TOK_STR || !expect_line_break()) {
+            if (t->type != TOK_STR || !expect_line_break_or_semicolon()) {
                 error(lineno(), current_file_name(), "Unexpected token '%s' while parsing import directive.", to_string(t));
             }
-            /*ast->directive->object = make_ast_string(t->sval);*/
             Ast *ast = parse_source_file(t->sval, scope);
             pop_file_source();
             return ast;

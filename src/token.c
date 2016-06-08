@@ -140,6 +140,17 @@ int expect_line_break() {
     unget_char(c);
     return 0;
 }
+int expect_line_break_or_semicolon() {
+    if (expect_line_break()) {
+        return 1;
+    }
+    char c = get_char();
+    if (c == ';') {
+        return 1;
+    }
+    unget_char(c);
+    return 0;
+}
 
 Tok *next_token() {
     if (unwind_stack != NULL) {

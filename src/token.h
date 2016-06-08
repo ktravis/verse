@@ -124,6 +124,7 @@ void pop_file_source();
 
 Tok *expect(int type);
 int expect_line_break();
+int expect_line_break_or_semicolon();
 
 int lineno();
 char *current_file_name();
