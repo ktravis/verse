@@ -16,7 +16,7 @@ Ast *eval_float_binop(Ast *ast) {
         case OP_GTE: return make_ast_bool(fval >= r);
         case OP_LT: return make_ast_bool(fval < r);
         case OP_LTE: return make_ast_bool(fval <= r);
-        default: error(ast->line, "Unknown binary operator '%s'.", op_to_str(ast->binary->op));
+        default: error(ast->line, ast->file, "Unknown binary operator '%s'.", op_to_str(ast->binary->op));
     }
     Ast *ret = left->lit_type == FLOAT ? ast->binary->left : ast->binary->right;
     ret->lit->float_val = fval;
@@ -40,7 +40,7 @@ Ast *eval_int_binop(Ast *ast) {
         case OP_GTE: return make_ast_bool(ival >= r);
         case OP_LT: return make_ast_bool(ival < r);
         case OP_LTE: return make_ast_bool(ival <= r);
-        default: error(ast->line, "Unknown binary operator '%s'.", op_to_str(ast->binary->op));
+        default: error(ast->line, ast->file, "Unknown binary operator '%s'.", op_to_str(ast->binary->op));
     }
     ast->binary->left->lit->int_val = ival;
     return ast->binary->left;
@@ -69,7 +69,7 @@ Ast *eval_string_binop(Ast *ast) {
         }
         case OP_EQUALS: return make_ast_bool(!strcmp(l->string_val, r->string_val));
         case OP_NEQUALS: return make_ast_bool(strcmp(l->string_val, r->string_val));
-        default: error(ast->line, "Unknown binary operator '%s' for type string.", op_to_str(ast->binary->op));
+        default: error(ast->line, ast->file, "Unknown binary operator '%s' for type string.", op_to_str(ast->binary->op));
     }
     return NULL;
 }
@@ -102,7 +102,7 @@ Ast *eval_const_uop(Ast *ast) {
     default:
         break;
     }
-    error(ast->line, "Cannot evaluate constant unary op of type %d.", lit->lit_type);
+    error(ast->line, ast->file, "Cannot evaluate constant unary op of type %d.", lit->lit_type);
     return NULL;
 }
 
@@ -129,11 +129,11 @@ Ast *eval_const_binop(Ast *ast) {
             }
             return ast->binary->right;
         }
-        error (ast->line, "Unrecognized operator for bool types: '%s'.", op_to_str(op));
+        error (ast->line, ast->file, "Unrecognized operator for bool types: '%s'.", op_to_str(op));
         return NULL;
     } else if (is_string_literal(ast->binary->left) && is_string_literal(ast->binary->right)) {
         return eval_string_binop(ast);
     }
-    error (ast->line, "Cannot evaluate constant binop of type %d.", left_lit->lit_type);
+    error (ast->line, ast->file, "Cannot evaluate constant binop of type %d.", left_lit->lit_type);
     return NULL;
 }

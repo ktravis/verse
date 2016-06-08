@@ -253,7 +253,7 @@ long array_size(Type *type) {
     case STATIC_ARRAY_T:
         return t->length;
     }
-    error(-1, "Not an array, man ('%s').", type->name);
+    error(-1, "internal", "Not an array, man ('%s').", type->name);
     return -1;
 }
 
@@ -557,7 +557,7 @@ int is_any(Type *t) {
 // TODO inline?
 Type *base_type(int t) {
     if (!types_initialized) {
-        error (-1, "Must first initialize types before calling base_type(...)");
+        error (-1, "internal", "Must first initialize types before calling base_type(...)");
     }
     switch (t) {
     case INT_T:
@@ -585,14 +585,14 @@ Type *base_type(int t) {
     case ARRAY_T:
     case DYN_ARRAY_T:
     default:
-        error(-1, "cmon man");
+        error(-1, "internal", "cmon man");
     }
     return NULL;
 }
 
 Type *base_numeric_type(int t, int size) {
     if (!types_initialized) {
-        error (-1, "Must first initialize types before calling base_type(...)");
+        error (-1, "internal", "Must first initialize types before calling base_type(...)");
     }
     switch (t) {
     case INT_T:
@@ -615,7 +615,7 @@ Type *base_numeric_type(int t, int size) {
         case 64: return float64_type;
         }
     default:
-        error(-1, "cmon man");
+        error(-1, "internal", "cmon man");
     }
     return NULL;
 }

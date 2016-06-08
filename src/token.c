@@ -1,21 +1,61 @@
 #include "token.h"
 #include "util.h"
 
-static int line = 1;
+typedef struct FileStack {
+    char *name;
+    int line;
+    FILE *handle;
+    struct FileStack *next;
+} FileStack;
+
 static TokList *unwind_stack = NULL;
+/*static FILE *source_file = NULL;*/
+/*static char *source_file_name = NULL;*/
+static FileStack *source_stack = NULL;
+
+void set_file_source(char *name, FILE *f) {
+    FileStack *stack = malloc(sizeof(struct FileStack));
+    stack->name = name;
+    stack->line = 1;
+    stack->handle = f;
+    stack->next = source_stack;
+    source_stack = stack;
+}
+
+void pop_file_source() {
+    if (source_stack->handle != stdin) {
+        fclose(source_stack->handle);
+    }
+    source_stack = source_stack->next;
+    /*if (source_stack == NULL) {*/
+        /*source_file = source_stack->handle;*/
+        /*source_file_name = source_stack->name;*/
+    /*} else {*/
+        /*source_file = stdin;*/
+        /*source_file_name = "<stdin>";*/
+    /*}*/
+}
+
+char get_char() {
+    return fgetc(source_stack->handle);
+}
+
+void unget_char(char c) {
+    ungetc(c, source_stack->handle);
+}
 
 void read_block_comment() {
     int count = 1;
     char c;
-    int start = line;
-    while ((c = getc(stdin)) != EOF) {
+    int start = source_stack->line;
+    while ((c = get_char()) != EOF) {
         if (c == '/') {
-            c = getc(stdin);
+            c = get_char();
             if (c == '*') {
                 count++;
             }
         } else if (c == '*') {
-            c = getc(stdin);
+            c = get_char();
             if (c == '/') {
                 count--;
                 if (count == 0) {
@@ -24,33 +64,33 @@ void read_block_comment() {
             }
         }
         if (c == '\n') {
-            line++;
+            source_stack->line++;
         }
     }
-    error(start, "Incompleted block comment");
+    error(start, current_file_name(), "Incompleted block comment");
 }
 
 char read_non_space() {
     char c, d;
-    while ((c = getc(stdin)) != EOF) {
+    while ((c = get_char()) != EOF) {
         if (c == '/') {
-            d = getc(stdin);
+            d = get_char();
             if (d == '/') {
                 while (c != '\n') {
-                    c = getc(stdin);
+                    c = get_char();
                 }
             } else if (d == '*') {
                 read_block_comment();
-                c = getc(stdin);
+                c = get_char();
             } else {
-                ungetc(d, stdin);
+                unget_char(d);
                 break;
             }
         }
         if (!(c == ' ' || c == '\t' || c == '\n' || c == '\r')) {
             break;
         } else if (c == '\n') {
-            line++;
+            source_stack->line++;
         }
     }
     return c;
@@ -89,6 +129,18 @@ Tok *make_token(int t) {
     return tok;
 }
 
+int expect_line_break() {
+    char c = get_char();
+    while (c == ' ') {
+        c = get_char();
+    }
+    if (c == '\n') {
+        return 1;
+    }
+    unget_char(c);
+    return 0;
+}
+
 Tok *next_token() {
     if (unwind_stack != NULL) {
         Tok *t = unwind_stack->item;
@@ -105,14 +157,14 @@ Tok *next_token() {
         return read_identifier(c);
     } else if (c == '\'') {
         Tok *t = make_token(TOK_CHAR);
-        c = getc(stdin);
+        c = get_char();
         if (c == '\\') {
-            c = getc(stdin);
+            c = get_char();
         }
         t->ival = c;
-        c = getc(stdin);
+        c = get_char();
         if (c != '\'') {
-            error(line, "Invalid character literal sequence.");
+            error(lineno(), current_file_name(), "Invalid character literal sequence.");
         }
         return t;
     } else if (c == '\"') {
@@ -128,7 +180,7 @@ Tok *next_token() {
     } else if (c == ']') {
         return make_token(TOK_RSQUARE);
     } else if (c == '#') {
-        c = getc(stdin);
+        c = get_char();
         if (c == '{') {
             return make_token(TOK_STARTBIND);
         } else if (isalpha(c) || c == '_') {
@@ -139,9 +191,9 @@ Tok *next_token() {
             buf[0] = c;
             int len = 1;
             for (;;) {
-                c = getc(stdin);
+                c = get_char();
                 if (!is_id_char(c)) {
-                    ungetc(c, stdin);
+                    unget_char(c);
                     break;
                 }
                 buf[len++] = c;
@@ -154,7 +206,7 @@ Tok *next_token() {
             t->sval = buf;
             return t;
         } else {
-            error(line, "Unexpected character sequence '#%c'", c);
+            error(lineno(), current_file_name(), "Unexpected character sequence '#%c'", c);
         }
     } else if (c == '{') {
         return make_token(TOK_LBRACE);
@@ -163,13 +215,13 @@ Tok *next_token() {
     } else if (c == ',') {
         return make_token(TOK_COMMA);
     } else if (c == '.') {
-        if ((c = getc(stdin)) == '.') { // TODO are multiple dots in a row (but not three) ever valid?
-            if ((c = getc(stdin)) == '.') {
+        if ((c = get_char()) == '.') { // TODO are multiple dots in a row (but not three) ever valid?
+            if ((c = get_char()) == '.') {
                 return make_token(TOK_ELLIPSIS); 
             }
-            error(line, "Unexected character '%c' following '..'", c);
+            error(lineno(), current_file_name(), "Unexected character '%c' following '..'", c);
         } else {
-            ungetc(c, stdin);
+            unget_char(c);
         }
         Tok *t = make_token(TOK_OP);
         t->op = OP_DOT;
@@ -179,62 +231,62 @@ Tok *next_token() {
     } else if (c == ':') {
         return make_token(TOK_COLON);
     } else if (c == '+') {
-        char n = getc(stdin);
+        char n = get_char();
         Tok *t = NULL;
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
         } else {
             t = make_token(TOK_OP);
-            ungetc(n, stdin);
+            unget_char(n);
         }
         t->op = OP_PLUS;
         return t;
     } else if (c == '-') {
-        char n = getc(stdin);
+        char n = get_char();
         Tok *t = NULL;
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
         } else {
             t = make_token(TOK_OP);
-            ungetc(n, stdin);
+            unget_char(n);
         }
         t->op = OP_MINUS;
         return t;
     } else if (c == '*') {
-        char n = getc(stdin);
+        char n = get_char();
         Tok *t = NULL;
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
         } else {
             t = make_token(TOK_OP);
-            ungetc(n, stdin);
+            unget_char(n);
         }
         t->op = OP_MUL;
         return t;
     } else if (c == '/') {
-        char n = getc(stdin);
+        char n = get_char();
         Tok *t = NULL;
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
         } else {
             t = make_token(TOK_OP);
-            ungetc(n, stdin);
+            unget_char(n);
         }
         t->op = OP_DIV;
         return t;
     } else if (c == '^') {
-        char n = getc(stdin);
+        char n = get_char();
         Tok *t = NULL;
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
         } else {
             t = make_token(TOK_OP);
-            ungetc(n, stdin);
+            unget_char(n);
         }
         t->op = OP_XOR;
         return t;
     } else if (c == '&') {
-        char n = getc(stdin);
+        char n = get_char();
         Tok *t = NULL;
         int op = OP_BINAND;
         if (n == '=') {
@@ -244,47 +296,47 @@ Tok *next_token() {
             op = OP_AND;
         } else {
             t = make_token(TOK_OP);
-            ungetc(n, stdin);
+            unget_char(n);
         }
         t->op = op;
         return t;
     } else if (c == '>') {
         Tok *t = make_token(TOK_OP);
-        int d = getc(stdin);
+        int d = get_char();
         if (d == '=') {
             t->op = OP_GTE;
         } else {
-            ungetc(d, stdin);
+            unget_char(d);
             t->op = OP_GT;
         } // TODO binary shift
         return t;
     } else if (c == '<') {
         Tok *t = make_token(TOK_OP);
-        int d = getc(stdin);
+        int d = get_char();
         if (d == '=') {
             t->op = OP_LTE;
         } else {
-            ungetc(d, stdin);
+            unget_char(d);
             t->op = OP_LT;
         } // TODO binary shift
         return t;
     } else if (c == '!') {
         Tok *t;
-        int d = getc(stdin);
+        int d = get_char();
         if (d == '=') {
             t = make_token(TOK_OP);
             t->op = OP_NEQUALS;
         } else {
-            ungetc(d, stdin);
+            unget_char(d);
             t = make_token(TOK_UOP);
             t->op = OP_NOT;
         }
         return t;
     } else if (c == '|' || c == '=') {
-        int d = getc(stdin);
+        int d = get_char();
         int same = (d == c);
         if (!same) {
-            ungetc(d, stdin);
+            unget_char(d);
         }
         Tok *t = make_token(TOK_OP);
         switch (c) {
@@ -294,7 +346,7 @@ Tok *next_token() {
         }
         return t;
     }
-    error(line, "Unexpected character '%c'.", c);
+    error(lineno(), current_file_name(), "Unexpected character '%c'.", c);
     return NULL;
 }
 
@@ -314,12 +366,12 @@ double read_decimal(char c) {
 
     for (;;) {
         if (!isdigit(c)) {
-            ungetc(c, stdin);
+            unget_char(c);
             break;
         }
         d += (c - '0') / n;
         n *= 10;
-        c = getc(stdin);
+        c = get_char();
     }
     return d;
 }
@@ -327,23 +379,23 @@ double read_decimal(char c) {
 Tok *read_number(char c) {
     int n = c - '0';
     for (;;) {
-        char c = getc(stdin);
+        char c = get_char();
         if (!isdigit(c)) {
             if (c == '.') {
                 Tok *t = make_token(TOK_FLOAT);
-                c = getc(stdin);
+                c = get_char();
                 if (!isdigit(c)) {
                     if (c == '.') { // reading a possible ellipsis?
-                        ungetc(c, stdin);
-                        ungetc('.', stdin);
+                        unget_char(c);
+                        unget_char('.');
                         break;
                     }
-                    error(line, "Unexpected non-numeric character '%c' while reading float.", c);
+                    error(lineno(), current_file_name(), "Unexpected non-numeric character '%c' while reading float.", c);
                 }
                 t->fval = n + read_decimal(c);
                 return t;
             }
-            ungetc(c, stdin);
+            unget_char(c);
             break;
         }
         n = n * 10 + (c - '0');
@@ -358,8 +410,8 @@ char *read_string() {
     char *buf = malloc(alloc);
     int len = 0;
     char c;
-    int start = line;
-    while ((c = getc(stdin)) != EOF) {
+    int start = source_stack->line;
+    while ((c = get_char()) != EOF) {
         if (c == '\"' && (len == 0 || buf[len-1] != '\\')) {
             buf[len] = 0;
             return buf;
@@ -370,7 +422,7 @@ char *read_string() {
             buf = realloc(buf, alloc);
         }
     }
-    error(start, "EOF encountered while reading string literal.");
+    error(start, current_file_name(), "EOF encountered while reading string literal.");
     return NULL;
 }
 
@@ -427,9 +479,9 @@ Tok *read_identifier(char c) {
     buf[0] = c;
     int len = 1;
     for (;;) {
-        c = getc(stdin);
+        c = get_char();
         if (!is_id_char(c)) {
-            ungetc(c, stdin);
+            unget_char(c);
             break;
         }
         buf[len++] = c;
@@ -687,7 +739,7 @@ const char *op_to_str(int op) {
 Tok *expect(int type) {
     Tok *t = next_token();
     if (t == NULL || t->type != type) {
-        error(line, "Expected token of type '%s', got '%s'.", token_type(type), to_string(t));
+        error(lineno(), current_file_name(), "Expected token of type '%s', got '%s'.", token_type(type), to_string(t));
     }
     return t;
 }
@@ -698,5 +750,15 @@ int is_comparison(int op) {
 }
 
 int lineno() {
-    return line;
+    if (source_stack == NULL) {
+        error(-1, "internal", "Trying to get line number with no source file");
+    }
+    return source_stack->line;
+}
+
+char *current_file_name() {
+    if (source_stack == NULL) {
+        error(-1, "internal", "No file on the source stack!");
+    }
+    return source_stack->name;
 }

@@ -17,7 +17,7 @@ void emit_string_comparison(Ast *ast) {
     if (bin->op == OP_NEQUALS) {
         printf("!");
     } else if (bin->op != OP_EQUALS) {
-        error(ast->line, "Comparison of type '%s' is not valid for type 'string'.", op_to_str(bin->op));
+        error(ast->line, ast->file, "Comparison of type '%s' is not valid for type 'string'.", op_to_str(bin->op));
     }
     if (bin->left->type == AST_LITERAL && bin->right->type == AST_LITERAL) {
         printf("%d", strcmp(bin->left->lit->string_val, bin->right->lit->string_val) ? 0 : 1);
@@ -78,7 +78,7 @@ void emit_string_binop(Ast *ast) {
         printf("\",%d)", (int) escaped_strlen(ast->binary->right->lit->string_val));
         break;
     default:
-        error(-1, "Couldn't do the string binop? %d", ast->type);
+        error(-1, "internal", "Couldn't do the string binop? %d", ast->type);
     }
 }
 
@@ -125,7 +125,7 @@ void emit_uop(Ast *ast) {
     switch (ast->unary->op) {
     case OP_NOT:
         printf("!"); break;
-    case OP_ADDR:
+    case OP_REF:
         printf("&"); break;
     case OP_DEREF:
         printf("*"); break;
@@ -134,7 +134,7 @@ void emit_uop(Ast *ast) {
     case OP_PLUS:
         printf("+"); break;
     default:
-        error(ast->line,"Unkown unary operator '%s' (%s).", op_to_str(ast->unary->op), ast->unary->op);
+        error(ast->line, ast->file, "Unkown unary operator '%s' (%s).", op_to_str(ast->unary->op), ast->unary->op);
     }
     compile(ast->unary->object);
 }
@@ -284,7 +284,7 @@ void emit_type(Type *type) {
         } else if (type->size == 8) {
             printf("double ");
         } else {
-            error(-1, "Cannot compile floating-point type of size %d.", type->size);
+            error(-1, "internal", "Cannot compile floating-point type of size %d.", type->size);
         }
         break;
     case BOOL_T:
@@ -325,7 +325,7 @@ void emit_type(Type *type) {
         emit_type(type->_enum.inner);
         break;
     default:
-        error(-1, "wtf type");
+        error(-1, "internal", "wtf type");
     }
 }
 
@@ -342,7 +342,7 @@ void compile_unspecified_array(Ast *ast) {
         compile(ast);
         printf(")");
     } else {
-        error(ast->line, "Was expecting an array of some kind here, man.");
+        error(ast->line, ast->file, "Was expecting an array of some kind here, man.");
     }
 }
 
@@ -355,7 +355,7 @@ void compile_static_array(Ast *ast) {
         compile(ast);
         printf(").data");
     } else {
-        error(ast->line, "Was expecting a static array here, man.");
+        error(ast->line, ast->file, "Was expecting a static array here, man.");
     }
 }
 
@@ -771,7 +771,7 @@ void compile(Ast *ast) {
         } else {
             // TODO make this work (store tmpvar of thing being sliced to avoid
             // re-running whatever it is)
-            error(ast->line, "Slicing a slice, uh ohhhhh");
+            error(ast->line, ast->file, "Slicing a slice, uh ohhhhh");
         }
         if (ast->slice->offset != NULL) {
             printf("-");
@@ -903,7 +903,7 @@ void compile(Ast *ast) {
                 bind_exprs = bind_exprs->next;
             }
             if (bindings != NULL || bind_exprs != NULL) {
-                error(-1, "Length mismatch between binding types and expressions.");
+                error(-1, "internal", "Length mismatch between binding types and expressions.");
             }
         }
         /*compile(ast->expr);*/
@@ -1086,7 +1086,7 @@ void compile(Ast *ast) {
     case AST_ENUM_DECL:
         break;
     default:
-        error(ast->line, "No idea how to deal with this.");
+        error(ast->line, ast->file, "No idea how to deal with this.");
     }
 }
 
@@ -1496,9 +1496,19 @@ void emit_typeinfo_init(Type *t) {
 }
 
 int main(int argc, char **argv) {
-    int just_ast = 0;
-    if (argc > 1 && !strcmp(argv[1], "-a")) {
-        just_ast = 1;
+    /*int just_ast = 0;*/
+    /*if (argc > 1 && !strcmp(argv[1], "-a")) {*/
+        /*just_ast = 1;*/
+    /*}*/
+    if (argc == 2) {
+        // TODO some sort of util function for opening a file and gracefully
+        // handling errors (needs to be different for here vs. from #import
+        set_file_source(argv[1], fopen(argv[1], "r"));
+    } else if (argc == 1) {
+        set_file_source("<stdin>", stdin);
+    } else {
+        printf("Usage:\n\t%s [source.vs]\n", argv[0]);
+        exit(1);
     }
     
     AstScope *root_scope = new_scope(NULL);
@@ -1506,81 +1516,81 @@ int main(int argc, char **argv) {
     Ast *root = parse_scope(root_scope, NULL);
     init_builtins();
     root = parse_semantics(root, root->scope);
-    if (just_ast) {
-        print_ast(root);
-    } else {
-        printf("%.*s\n", prelude_length, prelude);
-        _indent = 0;
+    /*if (just_ast) {*/
+        /*print_ast(root);*/
+    /*} else {*/
+    printf("%.*s\n", prelude_length, prelude);
+    _indent = 0;
 
-        VarList *varlist = get_global_vars();
-        while (varlist != NULL) {
-            emit_var_decl(varlist->item);
-            varlist = varlist->next;
-        }
+    VarList *varlist = get_global_vars();
+    while (varlist != NULL) {
+        emit_var_decl(varlist->item);
+        varlist = varlist->next;
+    }
 
-        varlist = get_global_bindings();
-        while (varlist != NULL) {
-            printf("char *_cl_%d = NULL;\n", varlist->item->id);
-            varlist = varlist->next;
-        }
+    varlist = get_global_bindings();
+    while (varlist != NULL) {
+        printf("char *_cl_%d = NULL;\n", varlist->item->id);
+        varlist = varlist->next;
+    }
 
-        TypeList *reg = get_used_types();
-        TypeList *tmp = reg;
-        while (tmp != NULL) {
-            if (tmp->item->base == STRUCT_T) {
-                emit_struct_decl(tmp->item);
-            }
-            tmp = tmp->next;
+    TypeList *reg = get_used_types();
+    TypeList *tmp = reg;
+    while (tmp != NULL) {
+        if (tmp->item->base == STRUCT_T) {
+            emit_struct_decl(tmp->item);
         }
-        if (reg != NULL) {
-            /*fprintf(stderr, "Types in use:\n");*/
-            while (reg != NULL) {
-                if (reg->item->unresolved) {
-                    error(-1, "[INTERNAL] Undefined type '%s'.", reg->item->name);
-                }
-                emit_typeinfo_decl(reg->item);
-                reg = reg->next;
-            }
-        }
-
-        printf("void _verse_init_typeinfo() {\n");
-        _indent++;
-        reg = get_used_types();
+        tmp = tmp->next;
+    }
+    if (reg != NULL) {
+        /*fprintf(stderr, "Types in use:\n");*/
         while (reg != NULL) {
-            indent();
-            emit_typeinfo_init(reg->item);
+            if (reg->item->unresolved) {
+                error(-1, "internal", "Undefined type '%s'.", reg->item->name);
+            }
+            emit_typeinfo_decl(reg->item);
             reg = reg->next;
         }
-        _indent--;
-        printf("}\n");
-
-        TypeList *holds = get_global_hold_funcs();
-        while (holds != NULL) {
-            emit_hold_func_decl(holds->item);
-            holds = holds->next;
-        }
-
-        AstList *fnlist = get_global_funcs();
-        while (fnlist != NULL) {
-            emit_forward_decl(fnlist->item->fn_decl->var);
-            fnlist = fnlist->next;
-        }
-
-        fnlist = get_global_funcs();
-        while (fnlist != NULL) {
-            emit_func_decl(fnlist->item);
-            fnlist = fnlist->next;
-        }
-
-        printf("void _verse_init() ");
-
-        compile(root);
-
-        printf("int main(int argc, char** argv) {\n"
-               "    _verse_init_typeinfo();\n"
-               "    _verse_init();\n"
-               "    return _vs_main();\n"
-               "}");
     }
+
+    printf("void _verse_init_typeinfo() {\n");
+    _indent++;
+    reg = get_used_types();
+    while (reg != NULL) {
+        indent();
+        emit_typeinfo_init(reg->item);
+        reg = reg->next;
+    }
+    _indent--;
+    printf("}\n");
+
+    TypeList *holds = get_global_hold_funcs();
+    while (holds != NULL) {
+        emit_hold_func_decl(holds->item);
+        holds = holds->next;
+    }
+
+    AstList *fnlist = get_global_funcs();
+    while (fnlist != NULL) {
+        emit_forward_decl(fnlist->item->fn_decl->var);
+        fnlist = fnlist->next;
+    }
+
+    fnlist = get_global_funcs();
+    while (fnlist != NULL) {
+        emit_func_decl(fnlist->item);
+        fnlist = fnlist->next;
+    }
+
+    printf("void _verse_init() ");
+
+    compile(root);
+
+    printf("int main(int argc, char** argv) {\n"
+           "    _verse_init_typeinfo();\n"
+           "    _verse_init();\n"
+           "    return _vs_main();\n"
+           "}");
+    /*}*/
     return 0;
 }

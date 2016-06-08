@@ -4,6 +4,7 @@ Ast *ast_alloc(AstType type) {
     Ast *ast = malloc(sizeof(Ast));
     ast->type = type;
     ast->line = lineno();
+    ast->file = current_file_name();
     ast->var_type = NULL;
 
     switch (type) {
@@ -63,6 +64,8 @@ Ast *ast_alloc(AstType type) {
         break;
     case AST_BLOCK:
         ast->block = calloc(sizeof(AstBlock), 1);
+        ast->block->startline = lineno();
+        ast->block->file = ast->file;
         break;
     case AST_WHILE:
         ast->while_loop = calloc(sizeof(AstWhile), 1);
@@ -108,7 +111,7 @@ Type *type_of_directive(Ast *ast) {
     /*if (!strcmp(n, "type")) {*/
         /*return typeinfo_t();*/
     /*}*/
-    error(ast->line, "Cannot determine type of unknown directive '%s'.", n);
+    error(ast->line, ast->file, "Cannot determine type of unknown directive '%s'.", n);
     return NULL;
 }
 
@@ -338,7 +341,7 @@ Ast *coerce_literal(Ast *ast, Type *t) {
         if (ast->lit->lit_type == INTEGER) {
             if (t->base == UINT_T) {
                 if (ast->lit->int_val < 0) {
-                    error(ast->line, "Cannot coerce negative literal value into integer type '%s'.", t->name);
+                    error(ast->line, ast->file, "Cannot coerce negative literal value into integer type '%s'.", t->name);
                 }
                 /*loss = precision_loss_uint(t, ast->lit->int_val);*/
             } else {
@@ -346,7 +349,7 @@ Ast *coerce_literal(Ast *ast, Type *t) {
             }
         } else if (ast->lit->lit_type == FLOAT) {
             if (t->base != FLOAT_T) {
-                error(ast->line, "Cannot coerce floating point literal into integer type '%s'.", t->name);
+                error(ast->line, ast->file, "Cannot coerce floating point literal into integer type '%s'.", t->name);
             }
             /*loss = precision_loss_float(t, ast->lit->float_val);*/
         }
@@ -355,7 +358,7 @@ Ast *coerce_literal(Ast *ast, Type *t) {
         /*}*/
         ast->var_type = t;
     } else {
-        error(ast->line, "Cannot coerce literal value of type '%s' into type '%s'.", ast->var_type->name, t->name);
+        error(ast->line, ast->file, "Cannot coerce literal value of type '%s' into type '%s'.", ast->var_type->name, t->name);
     }
     return ast;
 }
@@ -373,7 +376,7 @@ Ast *cast_literal(Type *t, Ast *ast) {
         if (ast->lit->lit_type == INTEGER) {
             if (t->base == UINT_T) {
                 if (ast->lit->int_val < 0) {
-                    error(ast->line, "Cannot use negative literal value as integer type '%s'.", t->name);
+                    error(ast->line, ast->file, "Cannot use negative literal value as integer type '%s'.", t->name);
                 }
                 loss = precision_loss_uint(t, ast->lit->int_val);
             } else {
@@ -381,12 +384,12 @@ Ast *cast_literal(Type *t, Ast *ast) {
             }
         } else if (ast->lit->lit_type == FLOAT) {
             if (t->base != FLOAT_T) {
-                error(ast->line, "Cannot use floating point literal as integer type '%s'.", t->name);
+                error(ast->line, ast->file, "Cannot use floating point literal as integer type '%s'.", t->name);
             }
             loss = precision_loss_float(t, ast->lit->float_val);
         }
         if (loss) {
-            error(ast->line, "Cannot use literal value of type '%s' as type '%s' due to precision loss.", ast_type->name, t->name);
+            error(ast->line, ast->file, "Cannot use literal value of type '%s' as type '%s' due to precision loss.", ast_type->name, t->name);
         }
         Ast *c = ast_alloc(AST_CAST);
         c->cast->object = ast;
@@ -394,14 +397,14 @@ Ast *cast_literal(Type *t, Ast *ast) {
         c->var_type = t;
         return c;
     }
-    error(ast->line, "Cannot use value of type '%s' as type '%s'", ast_type->name, t->name);
+    error(ast->line, ast->file, "Cannot use value of type '%s' as type '%s'", ast_type->name, t->name);
     return NULL;
 }
 
 Ast *try_implicit_cast(Type *t, Ast *ast) {
     Ast *c = try_implicit_cast_no_error(t, ast);
     if (c == NULL) {
-        error(ast->line, "Cannot implicitly cast value of type '%s' to type '%s'", ast->var_type->name, t->name);
+        error(ast->line, ast->file, "Cannot implicitly cast value of type '%s' to type '%s'", ast->var_type->name, t->name);
     }
     return c;
 }
@@ -426,7 +429,7 @@ Var *get_ast_var(Ast *ast) {
                 return v->members[i];
             }
         }
-        error(ast->line, "Couldn't get member '%s' in struct '%s' (%d).", ast->dot->member_name, t->name, t->id);
+        error(ast->line, ast->file, "Couldn't get member '%s' in struct '%s' (%d).", ast->dot->member_name, t->name, t->id);
     }
     case AST_IDENTIFIER:
         return ast->ident->var;
@@ -437,7 +440,7 @@ Var *get_ast_var(Ast *ast) {
     default:
         break;
     }
-    error(ast->line, "Can't get_ast_var(%d)", ast->type);
+    error(ast->line, ast->file, "Can't get_ast_var(%d)", ast->type);
     return NULL;
 }
 

@@ -119,8 +119,13 @@ const char *op_to_str(int op);
 int is_comparison(int op);
 int valid_unary_op(int op);
 
+void set_file_source(char *name, FILE *f);
+void pop_file_source();
+
 Tok *expect(int type);
+int expect_line_break();
 
 int lineno();
+char *current_file_name();
 
 #endif

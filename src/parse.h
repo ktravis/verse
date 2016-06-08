@@ -29,6 +29,7 @@ TypeList *get_global_structs();
 Type *define_type(Type *type, AstScope *scope);
 Type *define_builtin_type(Type *type);
 Type *parse_type(Tok *t, AstScope *scope);
+Ast *parse_directive(Tok *t, AstScope *scope);
 Ast *parse_expression(Tok *t, int priority, AstScope *scope);
 Ast *parse_arg_list(Ast *left, AstScope *scope);
 Ast *parse_primary(Tok *t, AstScope *scope);
@@ -42,6 +43,7 @@ Ast *parse_conditional(AstScope *scope);
 Type *parse_struct_type(AstScope *scope);
 
 Ast *parse_semantics(Ast *ast, AstScope *scope);
+Ast *parse_source_file(char *filename, AstScope *scope);
 
 TypeList *get_builtin_types();
 VarList *get_global_vars();

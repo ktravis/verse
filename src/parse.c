@@ -128,7 +128,7 @@ TypeList *get_builtin_types() {
 Type *define_type(Type *type, AstScope *scope) {
     for (TypeList *types = scope->local_types; types != NULL; types = types->next) {
         if (!strcmp(types->item->name, type->name)) { // TODO reference site of declaration here
-            error(-1, "Type '%s' already declared within this scope.", type->name);
+            error(-1, "internal", "Type '%s' already declared within this scope.", type->name);
         }
     }
 
@@ -240,19 +240,19 @@ Ast *parse_uop_semantics(Ast *ast, AstScope *scope) {
     switch (ast->unary->op) {
     case OP_NOT:
         if (o->var_type->base != BOOL_T) {
-            error(ast->line, "Cannot perform logical negation on type '%s'.", o->var_type->name);
+            error(ast->line, ast->file, "Cannot perform logical negation on type '%s'.", o->var_type->name);
         }
         ast->var_type = base_type(BOOL_T);
         break;
     case OP_DEREF: // TODO precedence is wrong, see @x.data
         if (o->var_type->base != PTR_T) {
-            error(ast->line, "Cannot dereference a non-reference type (must cast baseptr).");
+            error(ast->line, ast->file, "Cannot dereference a non-reference type (must cast baseptr).");
         }
         ast->var_type = o->var_type->inner;
         break;
     case OP_REF:
         if (o->type != AST_IDENTIFIER && o->type != AST_DOT) {
-            error(ast->line, "Cannot take a reference to a non-variable.");
+            error(ast->line, ast->file, "Cannot take a reference to a non-variable.");
         }
         ast->var_type = register_type(make_ptr_type(o->var_type));
         break;
@@ -260,13 +260,13 @@ Ast *parse_uop_semantics(Ast *ast, AstScope *scope) {
     case OP_PLUS: {
         Type *t = o->var_type;
         if (!is_numeric(t)) { // TODO try implicit cast to base type
-            error(ast->line, "Cannot perform '%s' operation on non-numeric type '%s'.", op_to_str(ast->unary->op), t->name);
+            error(ast->line, ast->file, "Cannot perform '%s' operation on non-numeric type '%s'.", op_to_str(ast->unary->op), t->name);
         }
         ast->var_type = t;
         break;
     }
     default:
-        error(ast->line, "Unknown unary operator '%s' (%d).", op_to_str(ast->unary->op), ast->unary->op);
+        error(ast->line, ast->file, "Unknown unary operator '%s' (%d).", op_to_str(ast->unary->op), ast->unary->op);
     }
     if (o->type == AST_LITERAL) {
         if (ast->type == AST_TEMP_VAR) {
@@ -321,9 +321,9 @@ Ast *parse_dot_op_semantics(Ast *ast, AstScope *scope) {
                 /*if (!strcmp("members", ast->dot->member_name)) {*/
                     
                 /*}*/
-                error(ast->line, "No value '%s' in enum type '%s'.", ast->dot->member_name, t->name);
+                error(ast->line, ast->file, "No value '%s' in enum type '%s'.", ast->dot->member_name, t->name);
             } else {
-                error(ast->line, "Can't get member '%s' from non-enum type '%s'.", ast->dot->member_name, t->name);
+                error(ast->line, ast->file, "Can't get member '%s' from non-enum type '%s'.", ast->dot->member_name, t->name);
             }
         }
     } 
@@ -337,7 +337,7 @@ Ast *parse_dot_op_semantics(Ast *ast, AstScope *scope) {
         } else if (!strcmp(ast->dot->member_name, "data")) {
             ast->var_type = register_type(make_ptr_type(t->inner));
         } else {
-            error(ast->line, "Cannot dot access member '%s' on array (only length or data).", ast->dot->member_name);
+            error(ast->line, ast->file, "Cannot dot access member '%s' on array (only length or data).", ast->dot->member_name);
         }
     } else if (t->base == STRING_T || (t->base == PTR_T && t->inner->base == STRING_T)) {
         if (!strcmp(ast->dot->member_name, "length")) {
@@ -345,10 +345,10 @@ Ast *parse_dot_op_semantics(Ast *ast, AstScope *scope) {
         } else if (!strcmp(ast->dot->member_name, "bytes")) {
             ast->var_type = register_type(make_ptr_type(base_numeric_type(UINT_T, 8)));
         } else {
-            error(ast->line, "Cannot dot access member '%s' on string (only length or bytes).", ast->dot->member_name);
+            error(ast->line, ast->file, "Cannot dot access member '%s' on string (only length or bytes).", ast->dot->member_name);
         }
     } else if (t->base != STRUCT_T && !(t->base == PTR_T && t->inner->base == STRUCT_T)) {
-        error(ast->line, "Cannot use dot operator on non-struct type '%s'.", orig->name);
+        error(ast->line, ast->file, "Cannot use dot operator on non-struct type '%s'.", orig->name);
     } else {
         for (int i = 0; i < t->st.nmembers; i++) {
             if (!strcmp(ast->dot->member_name, t->st.member_names[i])) {
@@ -356,7 +356,7 @@ Ast *parse_dot_op_semantics(Ast *ast, AstScope *scope) {
                 return ast;
             }
         }
-        error(ast->line, "No member named '%s' in struct '%s'.", ast->dot->member_name, orig->name);
+        error(ast->line, ast->file, "No member named '%s' in struct '%s'.", ast->dot->member_name, orig->name);
     }
     return ast;
 }
@@ -366,14 +366,14 @@ Ast *parse_assignment_semantics(Ast *ast, AstScope *scope) {
     ast->binary->right = parse_semantics(ast->binary->right, scope);
 
     if (!is_lvalue(ast->binary->left)) {
-        error(ast->line, "LHS of assignment is not an lvalue.");
+        error(ast->line, ast->file, "LHS of assignment is not an lvalue.");
     } else if (ast->binary->left->type == AST_INDEX && ast->binary->left->index->object->var_type->base == STRING_T) {
-        error(ast->line, "Strings are immutable and cannot be subscripted for assignment.");
+        error(ast->line, ast->file, "Strings are immutable and cannot be subscripted for assignment.");
     }
     // TODO refactor to "is_constant"
     /*Var *v = get_ast_var(ast->binary->left);*/
     if (ast->binary->left->type == AST_IDENTIFIER && ast->binary->left->ident->var->constant) {
-        error(ast->line, "Cannot reassign constant '%s'.", ast->binary->left->ident->var->name);
+        error(ast->line, ast->file, "Cannot reassign constant '%s'.", ast->binary->left->ident->var->name);
     }
     Type *lt = ast->binary->left->var_type;
     Type *rt = ast->binary->right->var_type;
@@ -387,7 +387,7 @@ Ast *parse_assignment_semantics(Ast *ast, AstScope *scope) {
         if (c != NULL) {
             ast->binary->right = c;
         } else {
-            error(ast->binary->left->line, "LHS of assignment has type '%s', while RHS has type '%s'.",
+            error(ast->binary->left->line, ast->binary->left->file, "LHS of assignment has type '%s', while RHS has type '%s'.",
                     lt->name, rt->name);
         }
     }
@@ -412,7 +412,7 @@ Ast *parse_binop_semantics(Ast *ast, AstScope *scope) {
     switch (ast->binary->op) {
     case OP_PLUS:
         if (!(is_numeric(lt) && is_numeric(rt)) && !(lt->base == STRING_T && rt->base == STRING_T)) {
-            error(ast->line, "Operator '%s' is valid only for numeric or string arguments, not for type '%s'.",
+            error(ast->line, ast->file, "Operator '%s' is valid only for numeric or string arguments, not for type '%s'.",
                     op_to_str(ast->binary->op), lt->name);
         }
         break;
@@ -427,24 +427,24 @@ Ast *parse_binop_semantics(Ast *ast, AstScope *scope) {
     case OP_LT:
     case OP_LTE:
         if (!is_numeric(lt)) {
-            error(ast->line, "LHS of operator '%s' has invalid non-numeric type '%s'.",
+            error(ast->line, ast->file, "LHS of operator '%s' has invalid non-numeric type '%s'.",
                     op_to_str(ast->binary->op), lt->name);
         } else if (!is_numeric(rt)) {
-            error(ast->line, "RHS of operator '%s' has invalid non-numeric type '%s'.",
+            error(ast->line, ast->file, "RHS of operator '%s' has invalid non-numeric type '%s'.",
                     op_to_str(ast->binary->op), rt->name);
         }
         break;
     case OP_AND:
     case OP_OR:
         if (lt->base != BOOL_T) {
-            error(ast->line, "Operator '%s' is not valid for non-bool arguments of type '%s'.",
+            error(ast->line, ast->file, "Operator '%s' is not valid for non-bool arguments of type '%s'.",
                     op_to_str(ast->binary->op), lt->name);
         }
         break;
     case OP_EQUALS:
     case OP_NEQUALS:
         if (!type_equality_comparable(lt, rt)) {
-            error(ast->line, "Cannot compare equality of non-comparable types '%s' and '%s'.", lt->name, rt->name);
+            error(ast->line, ast->file, "Cannot compare equality of non-comparable types '%s' and '%s'.", lt->name, rt->name);
         }
         break;
     }
@@ -492,7 +492,7 @@ Ast *parse_array_slice(Ast *object, Ast *offset, AstScope *scope) {
     s->slice->offset = offset;
     Tok *t = next_token();
     if (t == NULL) {
-        error(lineno(), "Unexpected EOF while parsing array slice.");
+        error(lineno(), current_file_name(), "Unexpected EOF while parsing array slice.");
     } else if (t->type == TOK_RSQUARE) {
         s->slice->length = NULL;
     } else {
@@ -516,7 +516,7 @@ Ast *parse_array_index(Ast *object, AstScope *scope) {
         free(ind);
         return parse_array_slice(object, offset, scope);
     } else if (t->type != TOK_RSQUARE) {
-        error(lineno(), "Unexpected token '%s' while parsing array index.", to_string(t));
+        error(lineno(), current_file_name(), "Unexpected token '%s' while parsing array index.", to_string(t));
     }
     return ind; 
 }
@@ -538,7 +538,7 @@ Ast *parse_arg_list(Ast *left, AstScope *scope) {
         if (t->type == TOK_RPAREN) {
             break;
         } else if (t->type != TOK_COMMA) {
-            error(lineno(), "Unexpected token '%s' in argument list.", to_string(t));
+            error(lineno(), current_file_name(), "Unexpected token '%s' in argument list.", to_string(t));
         }
     }
     func->call->args = reverse_astlist(func->call->args);
@@ -558,11 +558,11 @@ Ast *parse_declaration(Tok *t, AstScope *scope) {
     }
     Ast *lhs = make_ast_decl(name, type);
     if (next == NULL) {
-        error(lhs->line, "Unexpected end of input while parsing declaration.");
+        error(lhs->line, lhs->file, "Unexpected end of input while parsing declaration.");
     } else if (next->type == TOK_OP && next->op == OP_ASSIGN) {
         lhs->decl->init = parse_expression(next_token(), 0, scope);
     } else if (next->type != TOK_SEMI) {
-        error(lineno(), "Unexpected token '%s' while parsing declaration.", to_string(next));
+        error(lineno(), current_file_name(), "Unexpected token '%s' while parsing declaration.", to_string(next));
     } else {
         unget_token(next);
     }
@@ -600,7 +600,7 @@ Ast *parse_expression(Tok *t, int priority, AstScope *scope) {
                         next->type = TOK_ID;
                         next->sval = "type";
                     } else {
-                        error(lineno(), "Unexpected token '%s' while parsing dot operation.", to_string(next));
+                        error(lineno(), current_file_name(), "Unexpected token '%s' while parsing dot operation.", to_string(next));
                     }
                 }
                 ast = make_ast_dot_op(ast, next->sval);
@@ -618,7 +618,7 @@ Ast *parse_expression(Tok *t, int priority, AstScope *scope) {
         } else if (t->type == TOK_LSQUARE) {
             ast = parse_array_index(ast, scope);
         } else {
-            error(lineno(), "Unexpected token '%s' in expression.", to_string(t));
+            error(lineno(), current_file_name(), "Unexpected token '%s' in expression.", to_string(t));
             return NULL;
         }
     }
@@ -626,7 +626,7 @@ Ast *parse_expression(Tok *t, int priority, AstScope *scope) {
 
 Type *parse_type(Tok *t, AstScope *scope) {
     if (t == NULL) {
-        error(lineno(), "Unexpected EOF while parsing type.");
+        error(lineno(), current_file_name(), "Unexpected EOF while parsing type.");
     }
 
     unsigned char ref = 0;
@@ -652,7 +652,7 @@ Type *parse_type(Tok *t, AstScope *scope) {
         int slice = 1;
 
         if (t == NULL) {
-            error(lineno(), "Unexpected EOF while parsing type.");
+            error(lineno(), current_file_name(), "Unexpected EOF while parsing type.");
         } else if (t->type != TOK_RSQUARE) {
             if (t->type == TOK_INT) {
                 length = t->ival;
@@ -660,7 +660,7 @@ Type *parse_type(Tok *t, AstScope *scope) {
             } else if (t->type == TOK_OP && t->op == OP_MINUS) {
                 slice = 0;
             } else {
-                error(lineno(), "Unexpected token '%s' while parsing array type.", to_string(t));
+                error(lineno(), current_file_name(), "Unexpected token '%s' while parsing array type.", to_string(t));
             }
 
             expect(TOK_RSQUARE);
@@ -693,7 +693,7 @@ Type *parse_type(Tok *t, AstScope *scope) {
         return type;
     } else if (t->type == TOK_FN) {
         if (ref) {
-            error(lineno(), "Cannot make a pointer to a function.");
+            error(lineno(), current_file_name(), "Cannot make a pointer to a function.");
         }
 
         TypeList *args = NULL;
@@ -704,27 +704,27 @@ Type *parse_type(Tok *t, AstScope *scope) {
         t = next_token();
 
         if (t == NULL) {
-            error(lineno(), "Unexpected EOF while parsing type.");
+            error(lineno(), current_file_name(), "Unexpected EOF while parsing type.");
         } else if (t->type != TOK_RPAREN) {
             for (;;) {
                 args = typelist_append(args, parse_type(t, scope));
                 nargs++;
                 t = next_token();
                 if (t == NULL) {
-                    error(lineno(), "Unexpected EOF while parsing type.");
+                    error(lineno(), current_file_name(), "Unexpected EOF while parsing type.");
                 } else if (t->type == TOK_RPAREN) {
                     break;
                 } else if (t->type == TOK_ELLIPSIS) {
                     variadic = 1;
                     t = next_token();
                     if (t->type != TOK_RPAREN) {
-                        error(lineno(), "Only the last parameter to a function can be variadic.");
+                        error(lineno(), current_file_name(), "Only the last parameter to a function can be variadic.");
                     }
                     break;
                 } else if (t->type == TOK_COMMA) {
                     t = next_token();
                 } else {
-                    error(lineno(), "Unexpected token '%s' while parsing type.", to_string(t));
+                    error(lineno(), current_file_name(), "Unexpected token '%s' while parsing type.", to_string(t));
                 }
             }
 
@@ -744,10 +744,10 @@ Type *parse_type(Tok *t, AstScope *scope) {
 
         return type;
     } else {
-        error(lineno(), "Unexpected token '%s' while parsing type.", to_string(t));
+        error(lineno(), current_file_name(), "Unexpected token '%s' while parsing type.", to_string(t));
     }
 
-    error(lineno(), "Failed to parse type.");
+    error(lineno(), current_file_name(), "Failed to parse type.");
     return NULL;
 }
 
@@ -788,7 +788,7 @@ Ast *parse_extern_func_decl(AstScope *scope) {
         if (t->type == TOK_RPAREN) {
             break;
         } else if (t->type != TOK_COMMA) {
-            error(lineno(), "Unexpected token '%s' in argument list.", to_string(t));
+            error(lineno(), current_file_name(), "Unexpected token '%s' in argument list.", to_string(t));
         }
     }
     arg_types = reverse_typelist(arg_types);
@@ -818,7 +818,7 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
         t = expect(TOK_ID);
         fname = t->sval;
         if (find_local_var(fname, scope) != NULL) {
-            error(lineno(), "Declared function name '%s' already exists in this scope.", fname);
+            error(lineno(), current_file_name(), "Declared function name '%s' already exists in this scope.", fname);
         }
     }
     expect(TOK_LPAREN);
@@ -842,10 +842,10 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
             break;
         }
         if (t->type != TOK_ID) {
-            error(lineno(), "Unexpected token (type '%s') in argument list of function declaration '%s'.", token_type(t->type), fname);
+            error(lineno(), current_file_name(), "Unexpected token (type '%s') in argument list of function declaration '%s'.", token_type(t->type), fname);
         }
         if (find_local_var(t->sval, fn_scope) != NULL) {
-            error(lineno(), "Declared variable '%s' already exists.", t->sval);
+            error(lineno(), current_file_name(), "Declared variable '%s' already exists.", t->sval);
         }
         expect(TOK_COLON);
 
@@ -858,7 +858,7 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
             variadic = 1;
             t = next_token();
             if (t->type != TOK_RPAREN) {
-                error(lineno(), "Only the last parameter to a function can be variadic.");
+                error(lineno(), current_file_name(), "Only the last parameter to a function can be variadic.");
             }
 
             argtype = define_type(make_array_type(argtype), scope);
@@ -877,7 +877,7 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
         if (t->type == TOK_RPAREN) {
             break;
         } else if (t->type != TOK_COMMA) {
-            error(lineno(), "Unexpected token '%s' in argument list.", to_string(t));
+            error(lineno(), current_file_name(), "Unexpected token '%s' in argument list.", to_string(t));
         }
     }
     func->fn_decl->args = reverse_varlist(args);
@@ -889,7 +889,7 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
     } else if (t->type == TOK_LBRACE) {
         unget_token(t);
     } else {
-        error(lineno(), "Unexpected token '%s' in function signature.", to_string(t));
+        error(lineno(), current_file_name(), "Unexpected token '%s' in function signature.", to_string(t));
     }
     Type *fn_type = make_fn_type(n, arg_types, ret, variadic);
     expect(TOK_LBRACE);
@@ -922,7 +922,7 @@ Ast *parse_return_statement(Tok *t, AstScope *scope) {
     ast->ret->scope = scope;
     t = next_token();
     if (t == NULL) {
-        error(lineno(), "EOF encountered in return statement.");
+        error(lineno(), current_file_name(), "EOF encountered in return statement.");
     } else if (t->type == TOK_SEMI) {
         unget_token(t);
         return ast;
@@ -975,7 +975,7 @@ Ast *parse_enum_decl(AstScope *scope) {
         next = next_token();
     }
     if (next->type != TOK_LBRACE) {
-        error(lineno(), "Unexpected token '%s' while parsing enum declaration (expected '{').", to_string(next));
+        error(lineno(), current_file_name(), "Unexpected token '%s' while parsing enum declaration (expected '{').", to_string(next));
     }
     int nmembers = 0;
     int alloc = 8;
@@ -983,7 +983,7 @@ Ast *parse_enum_decl(AstScope *scope) {
     Ast **exprs = malloc(sizeof(Ast)*alloc);
     while ((next = next_token())->type != TOK_RBRACE) {
         if (next->type != TOK_ID) {
-            error(lineno(), "Unexpected token '%s' while parsing enum declaration (expected an identifier).", to_string(next));
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing enum declaration (expected an identifier).", to_string(next));
         }
         if (nmembers >= alloc) {
             alloc *= 2;
@@ -998,19 +998,19 @@ Ast *parse_enum_decl(AstScope *scope) {
             if (n->type == TOK_RBRACE) {
                 break;
             } else if (n->type != TOK_COMMA) {
-                error(lineno(), "Unexpected token '%s' while parsing enum declaration (expected ',' or '}').", to_string(next));
+                error(lineno(), current_file_name(), "Unexpected token '%s' while parsing enum declaration (expected ',' or '}').", to_string(next));
             }
         } else if (next->type == TOK_COMMA) {
             exprs[nmembers] = NULL;
         } else {
-            error(lineno(), "Unexpected token '%s' while parsing enum declaration (expected ',' or '=').", to_string(next));
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing enum declaration (expected ',' or '=').", to_string(next));
         }
         nmembers++;
     }
     long *values = malloc(sizeof(long)*nmembers);
     for (TypeList *list = scope->local_types; list != NULL; list = list->next) {
         if (!strcmp(name, list->item->name)) {
-            error(lineno(), "Type named '%s' already exists in local scope.", name);
+            error(lineno(), current_file_name(), "Type named '%s' already exists in local scope.", name);
         }
     }
     ast->enum_decl->enum_name = name;
@@ -1029,9 +1029,9 @@ Ast *parse_enum_decl_semantics(Ast *ast, AstScope *scope) {
             exprs[i] = parse_semantics(exprs[i], scope);
             // TODO allow const other stuff in here
             if (exprs[i]->type != AST_LITERAL) {
-                error(exprs[i]->line, "Cannot initialize enum '%s' member '%s' with non-constant expression.", et->name, et->_enum.member_names[i]);
+                error(exprs[i]->line, exprs[i]->file, "Cannot initialize enum '%s' member '%s' with non-constant expression.", et->name, et->_enum.member_names[i]);
             } else if (exprs[i]->var_type->base != INT_T) {
-                error(exprs[i]->line, "Cannot initialize enum '%s' member '%s' with non-integer expression.", et->name, et->_enum.member_names[i]);
+                error(exprs[i]->line, exprs[i]->file, "Cannot initialize enum '%s' member '%s' with non-integer expression.", et->name, et->_enum.member_names[i]);
             }
             exprs[i] = coerce_literal(exprs[i], et->_enum.inner);
             val = exprs[i]->lit->int_val;
@@ -1040,11 +1040,11 @@ Ast *parse_enum_decl_semantics(Ast *ast, AstScope *scope) {
         val += 1;
         for (int j = 0; j < i; j++) {
             if (!strcmp(et->_enum.member_names[i], et->_enum.member_names[j])) {
-                error(ast->line, "Enum '%s' member name '%s' defined twice.",
+                error(ast->line, ast->file, "Enum '%s' member name '%s' defined twice.",
                         ast->enum_decl->enum_name, et->_enum.member_names[i]);
             }
             if (et->_enum.member_values[i] == et->_enum.member_values[j]) {
-                error(ast->line, "Enum '%s' contains duplicate values for members '%s' and '%s'.",
+                error(ast->line, ast->file, "Enum '%s' contains duplicate values for members '%s' and '%s'.",
                     ast->enum_decl->enum_name, et->_enum.member_names[j],
                     et->_enum.member_names[i]);
             }
@@ -1090,7 +1090,7 @@ Type *parse_struct_type(AstScope *scope) {
     for (int i = 0; i < nmembers-1; i++) {
         for (int j = i + 1; j < nmembers; j++) {
             if (!strcmp(member_names[i], member_names[j])) {
-                error(lineno(), "Repeat member name '%s' in struct.", member_names[i]);
+                error(lineno(), current_file_name(), "Repeat member name '%s' in struct.", member_names[i]);
             }
         }
     }
@@ -1109,11 +1109,26 @@ Ast *parse_statement(Tok *t, AstScope *scope) {
         ast = ast_alloc(AST_RELEASE);
         ast->release->object = parse_expression(next_token(), 0, scope);
     } else if (t->type == TOK_HOLD) {
-        error(lineno(), "Cannot start a statement with 'hold';");
+        error(lineno(), current_file_name(), "Cannot start a statement with 'hold';");
     } else if (t->type == TOK_TYPE) {
         ast = parse_type_decl(scope);
     } else if (t->type == TOK_ENUM) {
         ast = parse_enum_decl(scope);
+    } else if (t->type == TOK_DIRECTIVE) {
+        if (!strcmp(t->sval, "import")) {
+            /*Ast *ast = ast_alloc(AST_DIRECTIVE);*/
+            /*ast->directive->name = t->sval;*/
+            t = next_token();
+            if (t->type != TOK_STR || !expect_line_break()) {
+                error(lineno(), current_file_name(), "Unexpected token '%s' while parsing import directive.", to_string(t));
+            }
+            /*ast->directive->object = make_ast_string(t->sval);*/
+            Ast *ast = parse_source_file(t->sval, scope);
+            pop_file_source();
+            return ast;
+        }
+        // If not #import, default to normal behavior
+        ast = parse_expression(t, 0, scope);
     } else if (t->type == TOK_FN) {
         Tok *next = next_token();
         unget_token(next);
@@ -1130,7 +1145,7 @@ Ast *parse_statement(Tok *t, AstScope *scope) {
         ast->while_loop->condition = parse_expression(next_token(), 0, scope);
         Tok *next = next_token();
         if (next == NULL || next->type != TOK_LBRACE) {
-            error(lineno(), "Unexpected token '%s' while parsing while loop.", to_string(next));
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing while loop.", to_string(next));
         }
         ast->while_loop->body = parse_scope(NULL, scope)->scope;
         return ast;
@@ -1144,13 +1159,13 @@ Ast *parse_statement(Tok *t, AstScope *scope) {
 
         /*}*/
         if (next->type != TOK_IN) {
-            error(ast->line, "Unexpected token '%s' while parsing for loop.", to_string(next));
+            error(ast->line, ast->file, "Unexpected token '%s' while parsing for loop.", to_string(next));
         }
         ast->for_loop->iterable = parse_expression(next_token(), 0, scope);
         next = next_token();
         // TODO handle empty for body case by trying rollback here
         if (next == NULL || next->type != TOK_LBRACE) {
-            error(lineno(), "Unexpected token '%s' while parsing for loop.", to_string(next));
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing for loop.", to_string(next));
         }
         ast->for_loop->body = parse_scope(NULL, scope)->scope;
         return ast;
@@ -1172,7 +1187,7 @@ Ast *parse_statement(Tok *t, AstScope *scope) {
 Ast *parse_hold(AstScope *scope) {
     Tok *t = next_token();
     if (t == NULL) {
-        error(lineno(), "Unexpected end of file while parsing hold expression.");
+        error(lineno(), current_file_name(), "Unexpected end of file while parsing hold expression.");
     }
     Ast *ast = ast_alloc(AST_HOLD);
     ast->hold->object = parse_expression(t, 0, scope);
@@ -1200,10 +1215,9 @@ Ast *parse_struct_literal(char *name, AstScope *scope) {
         t = NEXT_TOKEN_UNWINDABLE;
 
         if (t == NULL) {
-            error(lineno(), "Unexpected EOF while parsing struct literal.");
+            error(lineno(), current_file_name(), "Unexpected EOF while parsing struct literal.");
         } else if (t->type != TOK_ID) {
             UNWIND_TOKENS;
-            /*error(lineno(), "Unexpected token '%s' while parsing struct literal.", to_string(t));*/
             return NULL;
         }
         if (ast->lit->struct_val.nmembers >= alloc) {
@@ -1214,22 +1228,19 @@ Ast *parse_struct_literal(char *name, AstScope *scope) {
         ast->lit->struct_val.member_names[ast->lit->struct_val.nmembers] = t->sval;
         t = NEXT_TOKEN_UNWINDABLE;
         if (t == NULL) {
-            error(lineno(), "Unexpected EOF while parsing struct literal.");
+            error(lineno(), current_file_name(), "Unexpected EOF while parsing struct literal.");
         } else if (t->type != TOK_OP || t->op != OP_ASSIGN) {
             UNWIND_TOKENS;
-            /*error(lineno(), "Unexpected token '%s' while parsing struct literal.", to_string(t));*/
             return NULL;
         }
         ast->lit->struct_val.member_exprs[ast->lit->struct_val.nmembers++] = parse_expression(NEXT_TOKEN_UNWINDABLE, 0, scope);
         t = NEXT_TOKEN_UNWINDABLE;
         if (t == NULL) {
-            error(lineno(), "Unexpected EOF while parsing struct literal.");
+            error(lineno(), current_file_name(), "Unexpected EOF while parsing struct literal.");
         } else if (t->type == TOK_RBRACE) {
             break;
         } else if (t->type != TOK_COMMA) {
             UNWIND_TOKENS;
-            // eh?
-            /*error(lineno(), "Unexpected token '%s' while parsing struct literal.", to_string(t));*/
             return NULL;
         }
     }
@@ -1242,15 +1253,17 @@ Ast *parse_directive(Tok *t, AstScope *scope) {
     dir->directive->name = t->sval;
     Tok *next = next_token();
     if (next == NULL) {
-        error(lineno(), "Unexpected end of input.");
+        error(lineno(), current_file_name(), "Unexpected end of input.");
     }
     if (!strcmp(t->sval, "type")) {
         dir->directive->object = NULL;
         dir->var_type = parse_type(next, scope);
         return dir;
+    } else if (!strcmp(t->sval, "import")) {
+        error(lineno(), current_file_name(), "#import directive used outside of statement.");
     }
     if (next->type != TOK_LPAREN) {
-        error(lineno(), "Unexpected token '%s' while parsing directive '%s'", to_string(next), t->sval);
+        error(lineno(), current_file_name(), "Unexpected token '%s' while parsing directive '%s'", to_string(next), t->sval);
     }
     dir->directive->object = parse_expression(next_token(), 0, scope);
     expect(TOK_RPAREN);
@@ -1259,7 +1272,7 @@ Ast *parse_directive(Tok *t, AstScope *scope) {
 
 Ast *parse_primary(Tok *t, AstScope *scope) {
     if (t == NULL) {
-        error(lineno(), "Unexpected EOF while parsing primary.");
+        error(lineno(), current_file_name(), "Unexpected EOF while parsing primary.");
     }
     switch (t->type) {
     case TOK_CHAR: {
@@ -1287,7 +1300,7 @@ Ast *parse_primary(Tok *t, AstScope *scope) {
     case TOK_ID: {
         Tok *next = next_token();
         if (next == NULL) {
-            error(lineno(), "Unexpected end of input.");
+            error(lineno(), current_file_name(), "Unexpected end of input.");
         }
         unget_token(next);
         if (peek_token()->type == TOK_LBRACE) {
@@ -1309,7 +1322,7 @@ Ast *parse_primary(Tok *t, AstScope *scope) {
         return parse_hold(scope);
     case TOK_OP: {
         if (!valid_unary_op(t->op)) {
-            error(lineno(), "'%s' is not a valid unary operator.", op_to_str(t->op));
+            error(lineno(), current_file_name(), "'%s' is not a valid unary operator.", op_to_str(t->op));
         }
         Ast *ast = ast_alloc(AST_UOP);
         ast->unary->op = t->op;
@@ -1332,15 +1345,15 @@ Ast *parse_primary(Tok *t, AstScope *scope) {
     case TOK_LPAREN: {
         Tok *next = next_token();
         if (next == NULL) {
-            error(lineno(), "Unexpected end of input.");
+            error(lineno(), current_file_name(), "Unexpected end of input.");
         }
         Ast *ast = parse_expression(next, 0, scope);
         next = next_token();
         if (next == NULL) {
-            error(lineno(), "Unexpected end of input.");
+            error(lineno(), current_file_name(), "Unexpected end of input.");
         }
         if (next->type != TOK_RPAREN) {
-            error(lineno(), "Unexpected token '%s' encountered while parsing parenthetical expression (starting line %d).", to_string(next), ast->line);
+            error(lineno(), current_file_name(), "Unexpected token '%s' encountered while parsing parenthetical expression (starting line %d).", to_string(next), ast->line);
         }
         return ast;
     }
@@ -1351,7 +1364,7 @@ Ast *parse_primary(Tok *t, AstScope *scope) {
         return b;
     }
     }
-    error(lineno(), "Unexpected token '%s' (primary).", to_string(t));
+    error(lineno(), current_file_name(), "Unexpected token '%s' (primary).", to_string(t));
     return NULL;
 }
 
@@ -1360,7 +1373,7 @@ Ast *parse_conditional(AstScope *scope) {
     c->cond->condition = parse_expression(next_token(), 0, scope);
     Tok *next = next_token();
     if (next == NULL || next->type != TOK_LBRACE) {
-        error(lineno(), "Unexpected token '%s' while parsing conditional.", to_string(next));
+        error(lineno(), current_file_name(), "Unexpected token '%s' while parsing conditional.", to_string(next));
     }
     c->cond->if_body = parse_scope(NULL, scope)->scope;
     /*c->cond->if_body = parse_block(scope, 1)->block;*/
@@ -1368,7 +1381,7 @@ Ast *parse_conditional(AstScope *scope) {
     if (next != NULL && next->type == TOK_ELSE) {
         next = next_token();
         if (next == NULL) {
-            error(lineno(), "Unexpected EOF while parsing conditional.");
+            error(lineno(), current_file_name(), "Unexpected EOF while parsing conditional.");
         } else if (next->type == TOK_IF) {
             Ast *tmp = parse_conditional(scope);
             c->cond->else_body = new_scope(scope);
@@ -1376,7 +1389,7 @@ Ast *parse_conditional(AstScope *scope) {
             c->cond->else_body->body->statements = astlist_append(c->cond->else_body->body->statements, tmp);
             return c;
         } else if (next->type != TOK_LBRACE) {
-            error(lineno(), "Unexpected token '%s' while parsing conditional.", to_string(next));
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing conditional.", to_string(next));
         }
         c->cond->else_body = parse_scope(NULL, scope)->scope;
     } else {
@@ -1388,7 +1401,6 @@ Ast *parse_conditional(AstScope *scope) {
 
 Ast *parse_block(AstScope *scope, int bracketed) {
     Ast *b = ast_alloc(AST_BLOCK);
-    b->block->startline = lineno();
 
     AstList *statements = NULL;
     Tok *t;
@@ -1399,13 +1411,13 @@ Ast *parse_block(AstScope *scope, int bracketed) {
             if (!bracketed) {
                 break;
             } else {
-                error(lineno(), "Unexpected token '%s' while parsing statement block.", to_string(t));
+                error(lineno(), current_file_name(), "Unexpected token '%s' while parsing statement block.", to_string(t));
             }
         } else if (t->type == TOK_RBRACE) {
             if (bracketed) {
                 break;
             } else {
-                error(lineno(), "Unexpected token '%s' while parsing statement block.", to_string(t));
+                error(lineno(), current_file_name(), "Unexpected token '%s' while parsing statement block.", to_string(t));
             }
         }
         Ast *stmt = parse_statement(t, scope);
@@ -1447,7 +1459,7 @@ AstBlock *parse_block_semantics(AstBlock *block, AstScope *scope, int fn_body) {
     int mainline_return_reached = 0;
     for (AstList *list = block->statements; list != NULL; list = list->next) {
         if (last != NULL && last->type == AST_RETURN) {
-            error(list->item->line, "Unreachable statements following return.");
+            error(list->item->line, list->item->file, "Unreachable statements following return.");
         }
         list->item = parse_semantics(list->item, scope);
         if (list->item->type == AST_RETURN) {
@@ -1458,7 +1470,7 @@ AstBlock *parse_block_semantics(AstBlock *block, AstScope *scope, int fn_body) {
     // if it's a function that needs return and return wasn't reached, break
     if (!mainline_return_reached && fn_body &&
       current_fn_scope->fn_decl->var->type->fn.ret->base != VOID_T) {
-        error(block->endline, "Control reaches end of function '%s' without a return statement.",
+        error(block->endline, block->file, "Control reaches end of function '%s' without a return statement.",
             current_fn_scope->fn_decl->anon ? "(anonymous)" :
             current_fn_scope->fn_decl->var->name);
     }
@@ -1492,7 +1504,7 @@ Ast *parse_directive_semantics(Ast *ast, AstScope *scope) {
         t->var_type = register_type(typeinfo_ptr());
         return t;
     }
-    error(ast->line, "Unrecognized directive '%s'.", n);
+    error(ast->line, ast->file, "Unrecognized directive '%s'.", n);
     return NULL;
 }
 
@@ -1522,9 +1534,9 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
             Type *t = find_type_by_name(lit->struct_val.name, scope, NULL);
 
             if (t->unresolved) {
-                error(ast->line, "Undefined struct type '%s' encountered.", lit->struct_val.name);
+                error(ast->line, ast->file, "Undefined struct type '%s' encountered.", lit->struct_val.name);
             } else if (t->base != STRUCT_T) {
-                error(ast->line, "Type '%s' is not a struct.", lit->struct_val.name);
+                error(ast->line, ast->file, "Type '%s' is not a struct.", lit->struct_val.name);
             }
 
             lit->struct_val.type = t;
@@ -1539,7 +1551,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
                     }
                 }
                 if (!found) {
-                    error(ast->line, "Struct '%s' has no member named '%s'.", t->name, lit->struct_val.member_names[i]);
+                    error(ast->line, ast->file, "Struct '%s' has no member named '%s'.", t->name, lit->struct_val.member_names[i]);
                 }
 
                 Ast *expr = parse_semantics(lit->struct_val.member_exprs[i], scope);
@@ -1559,7 +1571,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
     case AST_IDENTIFIER: {
         Var *v = find_var(ast->ident->varname, scope);
         if (v == NULL) {
-            error(ast->line, "Undefined identifier '%s' encountered.", ast->ident->varname);
+            error(ast->line, ast->file, "Undefined identifier '%s' encountered.", ast->ident->varname);
             // TODO better error for an enum here
         }
         ast->ident->var = v;
@@ -1579,7 +1591,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         slice->object = parse_semantics(slice->object, scope);
         Type *a = slice->object->var_type;
         if (!is_array(a)) {
-            error(ast->line, "Cannot slice non-array type '%s'.", a->name);
+            error(ast->line, ast->file, "Cannot slice non-array type '%s'.", a->name);
         }
         ast->var_type = register_type(make_array_type(a->inner));
         if (slice->offset != NULL) {
@@ -1588,9 +1600,9 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
                 // TODO check that it's an int?
                 long o = slice->offset->lit->int_val;
                 if (o < 0) {
-                    error(ast->line, "Negative slice start is not allowed.");
+                    error(ast->line, ast->file, "Negative slice start is not allowed.");
                 } else if (o >= a->length) {
-                    error(ast->line, "Slice offset outside of array bounds (offset %ld to array length %ld).", o, a->length);
+                    error(ast->line, ast->file, "Slice offset outside of array bounds (offset %ld to array length %ld).", o, a->length);
                 }
             }
         }
@@ -1600,7 +1612,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
                 // TODO check that it's an int?
                 long l = slice->length->lit->int_val;
                 if (l > a->length) {
-                    error(ast->line, "Slice length outside of array bounds (%ld to array length %ld).", l, a->length);
+                    error(ast->line, ast->file, "Slice length outside of array bounds (%ld to array length %ld).", l, a->length);
                 }
             }
         }
@@ -1613,7 +1625,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
             cast->object = cast_literal(cast->cast_type, cast->object);
         } else {
             if (!can_cast(cast->object->var_type, cast->cast_type)) {
-                error(ast->line, "Cannot cast type '%s' to type '%s'.", cast->object->var_type->name, cast->cast_type->name);
+                error(ast->line, ast->file, "Cannot cast type '%s' to type '%s'.", cast->object->var_type->name, cast->cast_type->name);
             }
         }
         if (is_any(cast->cast_type)) {
@@ -1631,7 +1643,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         Type *t = rel->object->var_type;
 
         if (t->base != PTR_T && t->base != BASEPTR_T && t->base != ARRAY_T) {
-            error(ast->line, "Struct member release target must be a pointer.");
+            error(ast->line, ast->file, "Struct member release target must be a pointer.");
         }
         if (rel->object->type == AST_IDENTIFIER) {
             // TODO instead mark that var has been released for better errors in
@@ -1649,7 +1661,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         Type *t = hold->object->var_type;
 
         if (t->base == VOID_T || t->base == FN_T) {
-            error(ast->line, "Cannot hold a value of type '%s'.", t->name);
+            error(ast->line, ast->file, "Cannot hold a value of type '%s'.", t->name);
         }
 
         if (hold->object->type != AST_TEMP_VAR && is_dynamic(t)) {
@@ -1704,25 +1716,25 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
             if (init->type == AST_LITERAL && is_numeric(decl->var->type)) {
                 int b = decl->var->type->base;
                 if (init->lit->lit_type == FLOAT && (b == UINT_T || b == INT_T)) {
-                    error(ast->line, "Cannot implicitly cast float literal '%f' to integer type '%s'.", init->lit->float_val, decl->var->type->name);
+                    error(ast->line, ast->file, "Cannot implicitly cast float literal '%f' to integer type '%s'.", init->lit->float_val, decl->var->type->name);
                 }
                 if (b == UINT_T) {
                     if (init->lit->int_val < 0) {
-                        error(ast->line, "Cannot assign negative integer literal '%d' to unsigned type '%s'.", init->lit->int_val, decl->var->type->name);
+                        error(ast->line, ast->file, "Cannot assign negative integer literal '%d' to unsigned type '%s'.", init->lit->int_val, decl->var->type->name);
                     }
                     if (precision_loss_uint(decl->var->type, init->lit->int_val)) {
-                        error(ast->line, "Cannot assign value '%ld' to type '%s' without cast, loss of precision will occur.", init->lit->int_val, decl->var->type->name);
+                        error(ast->line, ast->file, "Cannot assign value '%ld' to type '%s' without cast, loss of precision will occur.", init->lit->int_val, decl->var->type->name);
                     }
                 } else if (b == INT_T) {
                     if (precision_loss_int(decl->var->type, init->lit->int_val)) {
-                        error(ast->line, "Cannot assign value '%ld' to type '%s' without cast, loss of precision will occur.", init->lit->int_val, decl->var->type->name);
+                        error(ast->line, ast->file, "Cannot assign value '%ld' to type '%s' without cast, loss of precision will occur.", init->lit->int_val, decl->var->type->name);
                     }
                 } else if (b == FLOAT_T) {
                     if (precision_loss_float(decl->var->type, init->lit->lit_type == FLOAT ? init->lit->float_val : init->lit->int_val)) {
-                        error(ast->line, "Cannot assign value '%ld' to type '%s' without cast, loss of precision will occur.", init->lit->float_val, decl->var->type->name);
+                        error(ast->line, ast->file, "Cannot assign value '%ld' to type '%s' without cast, loss of precision will occur.", init->lit->float_val, decl->var->type->name);
                     }
                 } else {
-                    error(-1, "wtf");
+                    error(-1, "internal", "wtf");
                 }
             }
 
@@ -1743,17 +1755,17 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
             ast->var_type = decl->var->type;
 
         } else if (decl->var->type->base == AUTO_T) {
-            error(ast->line, "Cannot use type 'auto' for variable '%s' without initialization.", decl->var->name);
+            error(ast->line, ast->file, "Cannot use type 'auto' for variable '%s' without initialization.", decl->var->name);
         } else if (decl->var->type->base == STATIC_ARRAY_T && decl->var->type->length == -1) {
-            error(ast->line, "Cannot use unspecified array type for variable '%s' without initialization.", decl->var->name);
+            error(ast->line, ast->file, "Cannot use unspecified array type for variable '%s' without initialization.", decl->var->name);
         }
 
         if (find_local_var(decl->var->name, scope) != NULL) {
-            error(ast->line, "Declared variable '%s' already exists.", decl->var->name);
+            error(ast->line, ast->file, "Declared variable '%s' already exists.", decl->var->name);
         }
 
         if (find_builtin_type(decl->var->name) != NULL || local_type_exists(decl->var->name, scope)) {
-            error(ast->line, "Variable name '%s' already in use by type.", decl->var->name);
+            error(ast->line, ast->file, "Variable name '%s' already in use by type.", decl->var->name);
         }
 
         ast->var_type = base_type(VOID_T);
@@ -1778,25 +1790,22 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
     case AST_TYPE_DECL: {
         Var *v = find_local_var(ast->type_decl->type_name, scope);
         if (v != NULL) {
-            error(ast->line, "Type name '%s' already exists as variable.", ast->type_decl->type_name);
+            error(ast->line, ast->file, "Type name '%s' already exists as variable.", ast->type_decl->type_name);
         }
         if (find_builtin_type(ast->type_decl->type_name) != NULL) {
-            error(ast->line, "Cannot shadow builtin type named '%s'.", ast->type_decl->type_name);
+            error(ast->line, ast->file, "Cannot shadow builtin type named '%s'.", ast->type_decl->type_name);
         }
         break;
     }
     case AST_EXTERN_FUNC_DECL:
         // TODO fix this
         if (parser_state != PARSE_MAIN) {
-            error(ast->line, "Cannot declare an extern inside scope ('%s').", ast->fn_decl->var->name);
+            error(ast->line, ast->file, "Cannot declare an extern inside scope ('%s').", ast->fn_decl->var->name);
         }
         attach_var(ast->fn_decl->var, scope);
         global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl->var);
         break;
     case AST_FUNC_DECL:
-        /*if (parser_state != PARSE_MAIN) {*/
-            /*error(ast->line, "Cannot declare a named function inside scope ('%s').", ast->fn_decl->var->name);*/
-        /*}*/
     case AST_ANON_FUNC_DECL: {
         Var *bindings_var = NULL;
         Type *fn_t = ast->fn_decl->var->type;
@@ -1836,14 +1845,14 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         ast->call->fn = parse_semantics(ast->call->fn, scope);
         Type *t = ast->call->fn->var_type;
         if (t->base != FN_T) {
-            error(ast->line, "Cannot perform call on non-function type '%s'", t->name);
+            error(ast->line, ast->file, "Cannot perform call on non-function type '%s'", t->name);
         }
         if (ast->call->fn->type == AST_ANON_FUNC_DECL) {
             ast->call->fn = make_ast_tempvar(ast->call->fn, make_temp_var(t, scope));
         }
         if (t->fn.variadic) {
             if (ast->call->nargs < t->fn.nargs - 1) {
-                error(ast->line, "Expected at least %d arguments to variadic function, but only got %d.", t->fn.nargs-1, ast->call->nargs);
+                error(ast->line, ast->file, "Expected at least %d arguments to variadic function, but only got %d.", t->fn.nargs-1, ast->call->nargs);
             } else {
                 TypeList *list = t->fn.args;
                 Type *a = list->item;
@@ -1855,7 +1864,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
                 ast->call->variadic_tempvar = make_temp_var(a, scope);
             }
         } else if (ast->call->nargs != t->fn.nargs) {
-            error(ast->line, "Incorrect argument count to function (expected %d, got %d)", t->fn.nargs, ast->call->nargs);
+            error(ast->line, ast->file, "Incorrect argument count to function (expected %d, got %d)", t->fn.nargs, ast->call->nargs);
         }
         AstList *args = ast->call->args;
         TypeList *arg_types = t->fn.args;
@@ -1917,18 +1926,18 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
 
             ast->var_type = obj_type->inner; // need to call something different?
         } else {
-            error(ast->index->object->line, "Cannot perform index/subscript operation on non-array type (type is '%s').", obj_type->name);
+            error(ast->index->object->line, ast->index->object->file, "Cannot perform index/subscript operation on non-array type (type is '%s').", obj_type->name);
         }
 
         if (ind_type->base != INT_T && ind_type->base != UINT_T) {
-            error(ast->line, "Cannot index array with non-integer type '%s'.", ind_type->name);
+            error(ast->line, ast->file, "Cannot index array with non-integer type '%s'.", ind_type->name);
         }
         if (ast->index->index->type == AST_LITERAL) {
             int i = ast->index->index->lit->int_val;
             if (i < 0) {
-                error(ast->line, "Negative index is not allowed.");
+                error(ast->line, ast->file, "Negative index is not allowed.");
             } else if (size != -1 && i >= size) {
-                error(ast->line, "Array index is larger than object length (%ld vs length %ld).", i, size);
+                error(ast->line, ast->file, "Array index is larger than object length (%ld vs length %ld).", i, size);
             }
         }
         break;
@@ -1937,7 +1946,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         AstConditional *c = ast->cond;
         c->condition = parse_semantics(c->condition, scope);
         if (c->condition->var_type->base != BOOL_T) {
-            error(ast->line, "Non-boolean ('%s') condition for if statement.", c->condition->var_type->name);
+            error(ast->line, ast->file, "Non-boolean ('%s') condition for if statement.", c->condition->var_type->name);
         }
         c->if_body = parse_scope_semantics(c->if_body, scope, 0);
         if (c->else_body != NULL) {
@@ -1951,7 +1960,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         lp->condition = parse_semantics(lp->condition, scope);
 
         if (lp->condition->var_type->base != BOOL_T) {
-            error(ast->line, "Non-boolean ('%s') condition for while loop.", lp->condition->var_type->name);
+            error(ast->line, ast->file, "Non-boolean ('%s') condition for while loop.", lp->condition->var_type->name);
         }
 
         int _old = loop_state;
@@ -1971,7 +1980,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         } else if (it_type->base == STRING_T) {
             lp->itervar->type = base_numeric_type(UINT_T, 8);
         } else {
-            error(ast->line, "Cannot use for loop on non-interable type '%s'.", it_type->name);
+            error(ast->line, ast->file, "Cannot use for loop on non-interable type '%s'.", it_type->name);
         }
         // TODO type check for when type of itervar is explicit
         int _old = loop_state;
@@ -1988,7 +1997,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         break;
     case AST_BIND: {
         if (current_fn_scope == NULL || current_fn_scope->type != AST_ANON_FUNC_DECL) {
-            error(ast->line, "Cannot make bindings outside of an inner function."); 
+            error(ast->line, ast->file, "Cannot make bindings outside of an inner function."); 
         }
         ast->bind->expr = parse_semantics(ast->bind->expr, current_fn_scope->fn_decl->scope->parent);
         ast->bind->offset = add_binding(current_fn_scope->fn_decl->var->type, ast->bind->expr->var_type);
@@ -2003,7 +2012,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
     case AST_RETURN: {
         // TODO don't need to copy string being returned?
         if (current_fn_scope == NULL || parser_state != PARSE_FUNC) {
-            error(ast->line, "Return statement outside of function body.");
+            error(ast->line, ast->file, "Return statement outside of function body.");
         }
         scope->has_return = 1;
         Type *fn_ret_t = current_fn_scope->fn_decl->var->type->fn.ret;
@@ -2018,7 +2027,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
             }
         }
         if (ret_t->base == STATIC_ARRAY_T) {
-            error(ast->line, "Cannot return a static array from a function.");
+            error(ast->line, ast->file, "Cannot return a static array from a function.");
         }
         if (fn_ret_t->base == AUTO_T) {
             current_fn_scope->fn_decl->var->type->fn.ret = ret_t;
@@ -2026,7 +2035,7 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
             if (ast->ret->expr->type == AST_LITERAL) {
                 ast->ret->expr = try_implicit_cast(fn_ret_t, ast->ret->expr);
             } else {
-                error(ast->line, "Return statement type '%s' does not match enclosing function's return type '%s'.", ret_t->name, fn_ret_t->name);
+                error(ast->line, ast->file, "Return statement type '%s' does not match enclosing function's return type '%s'.", ret_t->name, fn_ret_t->name);
             }
         }
         ast->var_type = base_type(VOID_T);
@@ -2034,13 +2043,13 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
     }
     case AST_BREAK:
         if (!loop_state) {
-            error(ast->line, "Break statement outside of loop.");
+            error(ast->line, ast->file, "Break statement outside of loop.");
         }
         ast->var_type = base_type(VOID_T);
         break;
     case AST_CONTINUE:
         if (!loop_state) {
-            error(ast->line, "Continue statement outside of loop.");
+            error(ast->line, ast->file, "Continue statement outside of loop.");
         }
         ast->var_type = base_type(VOID_T);
         break;
@@ -2052,9 +2061,17 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
     case AST_ENUM_DECL:
         return parse_enum_decl_semantics(ast, scope);
     default:
-        error(-1, "idk parse semantics %d", ast->type);
+        error(-1, "internal", "idk parse semantics %d", ast->type);
     }
     return ast;
+}
+
+Ast *parse_source_file(char *filename, AstScope *scope) {
+    if (scope == NULL) {
+        scope = new_scope(NULL);
+    }
+    set_file_source(filename, fopen(filename, "r"));
+    return parse_block(scope, 0);
 }
 
 AstList *get_global_funcs() {
@@ -2108,7 +2125,7 @@ AstList *get_binding_exprs(int id) {
         }
         l = l->next;
     }
-    error(-1, "Couldn't find binding exprs %d.", id);
+    error(-1, "internal", "Couldn't find binding exprs %d.", id);
     return NULL;
 }
 void add_binding_expr(int id, Ast *expr) {

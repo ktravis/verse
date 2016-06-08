@@ -9,8 +9,8 @@ void print_quoted_string(char *val) {
     }
 }
 
-void error(int line, char *fmt, ...) {
-    fprintf(stderr, "[line %d] ", line);
+void error(int line, char *file, char *fmt, ...) {
+    fprintf(stderr, "%s:%d: ", file, line);
     va_list args;
     va_start(args, fmt);
     vfprintf(stderr, fmt, args);

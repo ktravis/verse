@@ -49,6 +49,7 @@ struct AstList;
 typedef struct Ast {
     AstType type;
     int     line;
+    char    *file;
     Type    *var_type;
     union {
         struct AstLiteral       *lit;
@@ -180,6 +181,7 @@ typedef struct AstBind {
 
 typedef struct AstBlock {
     struct AstList *statements;
+    char *file;
     int startline;
     int endline;
 } AstBlock;
