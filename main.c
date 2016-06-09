@@ -652,18 +652,19 @@ void compile_scope(AstScope *scope) {
 }
 
 void compile_block(AstBlock *block) {
-    for (AstList *statements = block->statements; statements != NULL; statements = statements->next) {
-        if (statements->item->type == AST_FUNC_DECL || statements->item->type == AST_EXTERN_FUNC_DECL ||
-            statements->item->type == AST_TYPE_DECL) {
+    for (AstList *st = block->statements; st != NULL; st = st->next) {
+        if (st->item->type == AST_FUNC_DECL || st->item->type == AST_EXTERN_FUNC_DECL ||
+            st->item->type == AST_TYPE_DECL || (st->item->type == AST_DECL && st->item->decl->global)) {
             continue;
         }
-        if (statements->item->type != AST_RELEASE) {
+        if (st->item->type != AST_RELEASE) {
             indent();
         }
-        compile(statements->item);
-        if (statements->item->type != AST_CONDITIONAL && statements->item->type != AST_RELEASE && 
-            statements->item->type != AST_WHILE && statements->item->type != AST_FOR &&
-            statements->item->type != AST_TYPE_DECL && statements->item->type != AST_ENUM_DECL) {
+        compile(st->item);
+        if (st->item->type != AST_CONDITIONAL && st->item->type != AST_RELEASE && 
+            st->item->type != AST_WHILE && st->item->type != AST_FOR &&
+            st->item->type != AST_BLOCK && st->item->type != AST_TYPE_DECL &&
+            st->item->type != AST_ENUM_DECL) {
             printf(";\n");
         }
     }
@@ -1433,8 +1434,9 @@ void emit_typeinfo_decl(Type *t) {
     case BASEPTR_T:
     case STRING_T:
     case BOOL_T:
-    default:
         printf("struct _vs_Type _type_info%d;\n", t->id);
+        break;
+    default:
         break;
     }
 }
@@ -1445,49 +1447,58 @@ void emit_typeinfo_init(Type *t) {
         /*printf("_type_info%d = (struct _vs_EnumType){%d, {%ld, \"%s\"}, _type_info%d, {%d, _type_info%d_members}, {%d, _type_info%d_values}};\n",*/
                 /*t->id, t->id, strlen(t->name), t->name, t->_enum.inner->id, t->st.nmembers,*/
                 /*t->id, t->st.nmembers, t->id);*/
+        indent();
         printf("_type_info%d = (struct _vs_EnumType){%d, 9, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d, {%d, _type_info%d_members}, {%d, _type_info%d_values}};\n",
                 t->id, t->id, strlen(t->name), t->name, t->_enum.inner->id, t->st.nmembers,
                 t->id, t->st.nmembers, t->id);
         break;
     case PTR_T:
+        indent();
         printf("_type_info%d = (struct _vs_PtrType){%d, 10, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id);
         break;
     case INT_T:
     case UINT_T:
+        indent();
         printf("_type_info%d = (struct _vs_NumType){%d, 1, {%ld, \"%s\"}, %d};\n", t->id, t->id, strlen(t->name), t->name, t->size);
         break;
     case FLOAT_T:
+        indent();
         printf("_type_info%d = (struct _vs_NumType){%d, 3, {%ld, \"%s\"}, %d};\n", t->id, t->id, strlen(t->name), t->name, t->size);
         break;
     case STRUCT_T:
         for (int i = 0; i < t->st.nmembers; i++) {
+            indent();
             printf("_type_info%d_members[%d] = (struct _vs_StructMember){{%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d};\n",
                     t->id, i, strlen(t->st.member_names[i]), t->st.member_names[i],
                     t->st.member_types[i]->id);
-            indent();
         }
+        indent();
         printf("_type_info%d = (struct _vs_StructType){%d, 11, {%ld, \"%s\"}, {%d, _type_info%d_members}};\n", t->id, t->id, strlen(t->name), t->name, t->st.nmembers, t->id);
         break;
     case STATIC_ARRAY_T:
     case ARRAY_T: // TODO make this not have a name? switch Type to have enum in name slot for base type
+        indent();
         printf("_type_info%d = (struct _vs_ArrayType){%d, 7, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d, %ld, %d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id,
                 t->base == STATIC_ARRAY_T ? t->length : 0, t->base == STATIC_ARRAY_T);
         break;
     case FN_T: {
         int i = 0;
         for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
+            indent();
             printf("_type_info%d_args[%d] = (struct _vs_Type *)&_type_info%d;\n", t->id, i, list->item->id);
             i++;
-            indent();
         }
+        indent();
         printf("_type_info%d = (struct _vs_FnType){%d, 8, {%ld, \"%s\"}, {%d, (struct _vs_Type **)_type_info%d_args}, (struct _vs_Type *)&_type_info%d, %d};\n", t->id, t->id, strlen(t->name), t->name, t->fn.nargs, t->id, t->fn.ret->id, !t->named);
         break;
     }
     case BASEPTR_T:
     case STRING_T:
+        indent();
         printf("_type_info%d = (struct _vs_Type){%d, 6, {%ld, \"%s\"}};\n", t->id, t->id, strlen(t->name), t->name);
         break;
     case BOOL_T:
+        indent();
         printf("_type_info%d = (struct _vs_Type){%d, 2, {%ld, \"%s\"}};\n", t->id, t->id, strlen(t->name), t->name);
         break;
     default:
@@ -1557,7 +1568,6 @@ int main(int argc, char **argv) {
     _indent++;
     reg = get_used_types();
     while (reg != NULL) {
-        indent();
         emit_typeinfo_init(reg->item);
         reg = reg->next;
     }

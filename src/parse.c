@@ -1424,12 +1424,9 @@ Ast *parse_block(AstScope *scope, int bracketed) {
         } else {
             statements->next = astlist_append(NULL, stmt);
             statements = statements->next;
-            // b->block->statements->next = stmt;
         }
-        // statements = astlist_append(statements, stmt); 
     }
     b->block->endline = lineno();
-    // b->block->statements = reverse_astlist(statements);
     return b;
 }
 
@@ -1464,6 +1461,7 @@ AstBlock *parse_block_semantics(AstBlock *block, AstScope *scope, int fn_body) {
         }
         last = list->item;
     }
+
     // if it's a function that needs return and return wasn't reached, break
     if (!mainline_return_reached && fn_body &&
       current_fn_scope->fn_decl->var->type->fn.ret->base != VOID_T) {
@@ -1769,14 +1767,19 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
 
         if (parser_state == PARSE_MAIN) {
             global_vars = varlist_append(global_vars, decl->var);
+            ast->decl->global = 1;
             if (decl->init != NULL) {
                 Ast *id = ast_alloc(AST_IDENTIFIER);
                 id->line = ast->line;
+                id->file = ast->file;
                 id->ident->varname = decl->var->name;
                 id->ident->var = decl->var;
+
                 id = parse_semantics(id, scope);
+
                 ast = make_ast_assign(id, decl->init);
                 ast->line = id->line;
+                ast->file = id->file;
                 return ast;
             }
         } else {

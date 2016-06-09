@@ -13,6 +13,7 @@ Var *make_var(char *name, Type *type) {
     var->id = new_var_id();
     var->type = type;
     var->temp = 0;
+    var->ext = 0;
     var->consumed = 0;
     var->initialized = 0;
     if (type->base == STRUCT_T) {

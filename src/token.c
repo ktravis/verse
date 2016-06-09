@@ -135,6 +135,7 @@ int expect_line_break() {
         c = get_char();
     }
     if (c == '\n') {
+        source_stack->line++;
         return 1;
     }
     unget_char(c);

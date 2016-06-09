@@ -124,6 +124,7 @@ typedef struct AstIdent {
 typedef struct AstDecl {
     Var *var;
     Ast *init;
+    unsigned char global;
 } AstDecl;
 
 typedef struct AstFnDecl {
