@@ -388,8 +388,48 @@ double read_decimal(char c) {
     return d;
 }
 
+int is_hex_digit(char c) {
+    return isdigit(c) || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F');
+}
+
+int hex_val(char c) {
+    if ('a' <= c && c < 'f') {
+        return c - 'a' + 10;
+    } else if ('A' <= c && c <= 'F') {
+        return c - 'A' + 10;
+    }
+    return c - '0';
+}
+
+Tok *read_hex_number(char c) {
+    long n = hex_val(c);
+    for (;;) {
+        char c = get_char();
+        if (!is_hex_digit(c)) {
+            unget_char(c);
+            break;
+        }
+        n = n * 16 + hex_val(c);
+    }
+    Tok *t = make_token(TOK_INT);
+    t->ival = n;
+    return t;
+}
+
 Tok *read_number(char c) {
-    int n = c - '0';
+    if (c == '0') {
+        c = get_char();
+        if (c == 'x') {
+            c = get_char();
+            if (!is_hex_digit(c)) {
+                error(lineno(), current_file_name(), "Invalid hexadecimal literal '0x%c'", c);
+            }
+            return read_hex_number(c);
+        }
+        unget_char(c);
+        c = '0';
+    }
+    long n = c - '0';
     for (;;) {
         char c = get_char();
         if (!isdigit(c)) {

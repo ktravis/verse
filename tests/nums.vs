@@ -8,6 +8,8 @@ fn main():int {
         return (true || false) && true;
     }(2));
 
+    assert(0x1702 == 5890);
+
     z:uint = 200 - 200;
     return 0;
 }

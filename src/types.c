@@ -658,7 +658,7 @@ void init_types(struct AstScope *scope) {
     member_names[6] = "ARRAY";
     member_names[7] = "FN";
     member_names[8] = "ENUM";
-    member_names[9] = "PTR";
+    member_names[9] = "REF";
     member_names[10] = "STRUCT";
     long *member_values = malloc(sizeof(long)*11);
     member_values[0] = 1;

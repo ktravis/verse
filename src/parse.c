@@ -299,6 +299,17 @@ Type *find_type_by_name_no_unresolved(char *name, AstScope *scope) {
         }
         types = types->next;
     }
+    AstScope *s = scope->parent;
+    while (s != NULL) {
+        types = s->local_types;
+        while (types != NULL) {
+            if (!strcmp(types->item->name, name)) {
+                return types->item;
+            }
+            types = types->next;
+        }
+        s = s->parent;
+    }
     return NULL;
 }
 
@@ -990,22 +1001,26 @@ Ast *parse_enum_decl(AstScope *scope) {
             names = realloc(names, sizeof(char*)*alloc);
             exprs = realloc(exprs, sizeof(Ast)*alloc);
         }
-        names[nmembers] = next->sval;
+        int i = nmembers;
+        names[i] = next->sval;
+        nmembers++;
         next = next_token();
         if (next->type == TOK_OP && next->op == OP_ASSIGN) {
-            exprs[nmembers] = parse_expression(next_token(), 0, scope);
+            exprs[i] = parse_expression(next_token(), 0, scope);
             Tok *n = next_token();
             if (n->type == TOK_RBRACE) {
                 break;
             } else if (n->type != TOK_COMMA) {
                 error(lineno(), current_file_name(), "Unexpected token '%s' while parsing enum declaration (expected ',' or '}').", to_string(next));
             }
+        } else if (next->type == TOK_RBRACE) {
+            exprs[i] = NULL;
+            break;
         } else if (next->type == TOK_COMMA) {
-            exprs[nmembers] = NULL;
+            exprs[i] = NULL;
         } else {
-            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing enum declaration (expected ',' or '=').", to_string(next));
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing enum declaration (expected ',' '=', or '}').", to_string(next));
         }
-        nmembers++;
     }
     long *values = malloc(sizeof(long)*nmembers);
     for (TypeList *list = scope->local_types; list != NULL; list = list->next) {
@@ -2097,6 +2112,11 @@ void init_builtins() {
     builtin_vars = varlist_append(builtin_vars, v);
 
     v = make_var("print_str", make_fn_type(1, typelist_append(NULL, base_type(STRING_T)), base_type(VOID_T), 0));
+    v->ext = 1;
+    v->constant = 1;
+    builtin_vars = varlist_append(builtin_vars, v);
+
+    v = make_var("print_buf", make_fn_type(1, typelist_append(NULL, register_type(make_ptr_type(base_numeric_type(UINT_T, 8)))), base_type(VOID_T), 0));
     v->ext = 1;
     v->constant = 1;
     builtin_vars = varlist_append(builtin_vars, v);

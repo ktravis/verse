@@ -113,3 +113,6 @@ struct string_type itoa(int x) {
     v.length = strlen(v.bytes);
     return v;
 }
+void print_buf(uint8_t *buf) {
+    fputs(buf, stdout);
+}
