@@ -848,9 +848,14 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
     VarList *args = func->fn_decl->args;
     TypeList *arg_types = NULL;
     for (;;) {
+        char with = 0;
         t = next_token();
         if (t->type == TOK_RPAREN) {
             break;
+        }
+        if (t->type == TOK_WITH) {
+            with = 1;
+            t = next_token();
         }
         if (t->type != TOK_ID) {
             error(lineno(), current_file_name(), "Unexpected token (type '%s') in argument list of function declaration '%s'.", token_type(t->type), fname);
@@ -884,6 +889,23 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
         attach_var(args->item, fn_scope);
         args->item->initialized = 1;
         arg_types = typelist_append(arg_types, args->item->type);
+
+        if (with) {
+            if (args->item->type->base != STRUCT_T) {
+                error(lineno(), current_file_name(), "'with' is not allowed on args of non-struct type '%s'.", args->item->type->name);
+            }
+            for (int i = 0; i < args->item->type->st.nmembers; i++) {
+                char *name = args->item->type->st.member_names[i];
+                if (find_local_var(name, fn_scope) != NULL) {
+                    error(lineno(), current_file_name(), "'with' statement on struct type '%s' conflicts with existing argument named '%s'.", args->item->type->name, name);
+                } else if (varlist_find(builtin_vars, name) != NULL) {
+                    error(lineno(), current_file_name(), "'with' statement on struct type '%s' conflicts with builtin type named '%s'.", args->item->type->name, name);
+                }
+                Var *v = make_var(name, args->item->type->st.member_types[i]);
+                v->proxy = args->item->members[i];
+                attach_var(v, fn_scope);
+            }
+        }
 
         if (t->type == TOK_RPAREN) {
             break;

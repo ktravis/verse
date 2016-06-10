@@ -10,8 +10,18 @@ fn doathing(a:&vec3) {
     a.x = a.x + a.y * a.z;
 }
 
-fn otherthing(b:vec3):vec3 {
-    with b;
+fn check_with(a:vec3, with b:vec3) {
+    l:struct{
+      r:int;
+      n:float;
+    };
+    with l;
+    b.x = 12;
+    l.r = 24 / 2;
+    assert(x == r);
+}
+
+fn otherthing(with b:vec3):vec3 {
     tmp:int = x;
     x = y;
     y = tmp;
@@ -29,6 +39,7 @@ fn main():int {
         z = 3
     };
     doathing(a);
+    check_with(*a, v1);
     assert(v1.z == 2);
     print_str("test: " + itoa(a.x) + " " + itoa(a.y) + " " + itoa(a.z));
     print_str("\n-------\n");
