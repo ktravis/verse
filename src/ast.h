@@ -42,6 +42,7 @@ typedef enum {
     AST_DIRECTIVE,
     AST_TYPEINFO,
     AST_ENUM_DECL,
+    AST_WITH,
 } AstType;
 
 struct AstList;
@@ -78,6 +79,7 @@ typedef struct Ast {
         struct AstWhile         *while_loop;
         struct AstFor           *for_loop;
         struct AstDirective     *directive;
+        struct AstWith          *with;
     };
 } Ast;
 
@@ -255,6 +257,10 @@ typedef struct AstDirective {
     char *name;
     Ast *object;
 } AstDirective;
+
+typedef struct AstWith {
+    Ast *object;
+} AstWith;
 
 typedef struct AstEnumDecl {
     char *enum_name;

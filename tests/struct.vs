@@ -11,9 +11,10 @@ fn doathing(a:&vec3) {
 }
 
 fn otherthing(b:vec3):vec3 {
-    tmp:int = b.x;
-    b.x = b.y;
-    b.y = tmp;
+    with b;
+    tmp:int = x;
+    x = y;
+    y = tmp;
     return b;
 }
 

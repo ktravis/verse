@@ -9,8 +9,6 @@ typedef struct FileStack {
 } FileStack;
 
 static TokList *unwind_stack = NULL;
-/*static FILE *source_file = NULL;*/
-/*static char *source_file_name = NULL;*/
 static FileStack *source_stack = NULL;
 
 void set_file_source(char *name, FILE *f) {
@@ -27,13 +25,6 @@ void pop_file_source() {
         fclose(source_stack->handle);
     }
     source_stack = source_stack->next;
-    /*if (source_stack == NULL) {*/
-        /*source_file = source_stack->handle;*/
-        /*source_file_name = source_stack->name;*/
-    /*} else {*/
-        /*source_file = stdin;*/
-        /*source_file_name = "<stdin>";*/
-    /*}*/
 }
 
 char get_char() {
@@ -517,6 +508,8 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_CONTINUE);
     } else if (!strcmp(buf, "enum")) {
         return make_token(TOK_ENUM);
+    } else if (!strcmp(buf, "with")) {
+        return make_token(TOK_WITH);
     } else if (!strcmp(buf, "as")) {
         Tok *t = make_token(TOK_OP);
         t->op = OP_CAST;
@@ -696,6 +689,8 @@ const char *to_string(Tok *t) {
         return "...";
     case TOK_ENUM:
         return "enum";
+    case TOK_WITH:
+        return "with";
     default:
         return NULL;
     }
@@ -755,6 +750,8 @@ const char *token_type(int type) {
         return "ELLIPSIS";
     case TOK_ENUM:
         return "ENUM";
+    case TOK_WITH:
+        return "WITH";
     default:
         return "BAD TOKEN";
     }

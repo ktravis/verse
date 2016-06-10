@@ -3,6 +3,12 @@ enum hi {
  not_ok,
 };
 
+fn go() {
+    with hi;
+    assert(not_ok == (1 as hi));
+    assert(ok == hi.ok);
+}
+
 fn main():int {
     a:[5]Any;
     a[0] = "string";
@@ -18,6 +24,7 @@ fn main():int {
     }
 
     assert((hi.c as int) == 4);
+    go();
 
     enum hi:u8 {
         a = 2,

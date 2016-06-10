@@ -1129,6 +1129,10 @@ Ast *parse_statement(Tok *t, AstScope *scope) {
         ast = parse_type_decl(scope);
     } else if (t->type == TOK_ENUM) {
         ast = parse_enum_decl(scope);
+    } else if (t->type == TOK_WITH) {
+        Ast *ast_with = ast_alloc(AST_WITH);
+        ast_with->with->object = parse_expression(next_token(), 0, scope);
+        ast = ast_with;
     } else if (t->type == TOK_DIRECTIVE) {
         if (!strcmp(t->sval, "import")) {
             t = next_token();
@@ -1584,6 +1588,25 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
             error(ast->line, ast->file, "Undefined identifier '%s' encountered.", ast->ident->varname);
             // TODO better error for an enum here
         }
+        if (v->proxy != NULL) {
+            if (v->type->base == ENUM_T) {
+                for (int i = 0; i < v->type->_enum.nmembers; i++) {
+                    if (!strcmp(v->type->_enum.member_names[i], v->name)) {
+                        Ast *a = ast_alloc(AST_LITERAL);
+                        a->lit->lit_type = ENUM;
+                        a->lit->enum_val.enum_index = i;
+                        a->lit->enum_val.enum_type = v->type;
+                        a->var_type = v->type;
+                        return a;
+                    }
+                }
+                error(-1, "<internal>", "How'd this happen");
+            } else {
+                while (v->proxy) {
+                    v = v->proxy; // this better not loop!
+                }
+            }
+        }
         ast->ident->var = v;
         ast->var_type = ast->ident->var->type;
         break;
@@ -1596,6 +1619,50 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         return parse_binop_semantics(ast, scope);
     case AST_UOP:
         return parse_uop_semantics(ast, scope);
+    case AST_WITH:
+        // TODO make pointer to vector work!!
+        if (ast->with->object->type == AST_IDENTIFIER) {
+            Type *t = find_type_by_name_no_unresolved(ast->dot->object->ident->varname, scope);
+            if (t != NULL) {
+                if (t->base != ENUM_T) {
+                    error(ast->with->object->line, ast->file, "'with' is not valid on non-enum type '%s'.", t->name);
+                }
+                for (int i = 0; i < t->_enum.nmembers; i++) {
+                    char *name = t->_enum.member_names[i];
+                    if (find_local_var(name, scope) != NULL) {
+                        error(ast->with->object->line, ast->file, "'with' statement on enum '%s' conflicts with local variable named '%s'.", t->name, name);
+                    }
+                    if (varlist_find(builtin_vars, name) != NULL) {
+                        error(ast->with->object->line, ast->file, "'with' statement on enum '%s' conflicts with builtin type named '%s'.", t->name, name);
+                    }
+                    Var *v = make_var(name, t);
+                    v->constant = 1;
+                    v->proxy = v; // TODO don't do this!
+                    attach_var(v, scope);
+                }
+                return ast;
+            }
+        }
+        ast->with->object = parse_semantics(ast->with->object, scope);
+        if (ast->with->object->var_type->base != STRUCT_T) {
+            error(ast->with->object->line, ast->file, "'with' is not valid on non-struct type '%s'.", ast->with->object->var_type->name);
+        } else {
+            Type *t = ast->with->object->var_type;
+            for (int i = 0; i < t->st.nmembers; i++) {
+                char *name = t->st.member_names[i];
+                if (find_local_var(name, scope) != NULL) {
+                    error(ast->with->object->line, ast->file, "'with' statement on struct type '%s' conflicts with local variable named '%s'.", t->name, name);
+                }
+                if (varlist_find(builtin_vars, name) != NULL) {
+                    error(ast->with->object->line, ast->file, "'with' statement on struct type '%s' conflicts with builtin type named '%s'.", t->name, name);
+                }
+                Var *v = make_var(name, t);
+                // TODO want get_ast_var_noerror and make_temp_var here!
+                v->proxy = get_ast_var(ast->with->object)->members[i];
+                attach_var(v, scope);
+            }
+        }
+        break;
     case AST_SLICE: {
         AstSlice *slice = ast->slice;
         slice->object = parse_semantics(slice->object, scope);

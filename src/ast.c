@@ -95,6 +95,9 @@ Ast *ast_alloc(AstType type) {
     case AST_ENUM_DECL:
         ast->enum_decl = calloc(sizeof(AstEnumDecl), 1);
         break;
+    case AST_WITH:
+        ast->with = calloc(sizeof(AstWith), 1);
+        break;
     }
     return ast;
 }
@@ -115,142 +118,12 @@ Type *type_of_directive(Ast *ast) {
     return NULL;
 }
 
-/*Type *get_ast_type(Ast *ast) {*/
-    /*switch (ast->type) {*/
-    /*case AST_STRING:*/
-        /*return base_type(STRING_T);*/
-    /*case AST_INTEGER:*/
-        /*return base_type(INT_T);*/
-    /*case AST_FLOAT:*/
-        /*return base_type(FLOAT_T);*/
-    /*case AST_BOOL:*/
-        /*return base_type(BOOL_T);*/
-    /*case AST_STRUCT:*/
-        /*return find_type_by_name(ast->struct_lit_name); // TODO just save this*/
-    /*case AST_IDENTIFIER:*/
-        /*return ast->var->type;*/
-    /*case AST_CAST:*/
-        /*return ast->cast_type;*/
-    /*case AST_DECL:*/
-        /*return ast->decl_var->type;*/
-    /*case AST_CALL:*/
-        /*return var_type(ast->fn)->ret;*/
-    /*case AST_INDEX: {*/
-        /*Type *t = var_type(ast->left);*/
-        /*if (t->base == PTR_T) {*/
-            /*t = t->inner;*/
-        /*}*/
-        /*return t->inner;*/
-    /*}*/
-    /*case AST_SLICE:*/
-        /*return make_array_type(var_type(ast->slice_inner)->inner);*/
-    /*case AST_ANON_FUNC_DECL:*/
-        /*return ast->fn_decl_var->type;*/
-    /*case AST_BIND:*/
-        /*return var_type(ast->bind_expr);*/
-    /*case AST_UOP:*/
-        /*switch (ast->op) {*/
-        /*case OP_NOT:*/
-            /*return base_type(BOOL_T);*/
-        /*case OP_ADDR:*/
-            /*return make_ptr_type(var_type(ast->right));*/
-        /*case OP_DEREF:*/
-            /*return var_type(ast->right)->inner;*/
-        /*case OP_MINUS:*/
-        /*case OP_PLUS:*/
-            /*return var_type(ast->right);*/
-        /*default:*/
-            /*error(ast->line, "don't know how to infer vartype of operator '%s' (%d).", op_to_str(ast->op), ast->op);*/
-        /*}*/
-        /*break;*/
-    /*case AST_BINOP:*/
-        /*if (is_comparison(ast->op)) {*/
-            /*return base_type(BOOL_T);*/
-        /*} else if (ast->op != OP_ASSIGN && is_numeric(var_type(ast->left))) {*/
-            /*return promote_number_type(var_type(ast->left), var_type(ast->right));*/
-        /*}*/
-        /*return var_type(ast->left);*/
-    /*case AST_DOT: {*/
-        /*Type *t = var_type(ast->dot_left);*/
-        /*if (t->base == PTR_T) {*/
-            /*t = t->inner;*/
-        /*}*/
-        /*if (is_array(t)) {*/
-            /*if (!strcmp(ast->member_name, "length")) {*/
-                /*return base_type(INT_T);*/
-            /*} else if (!strcmp(ast->member_name, "data")) {*/
-                /*return make_ptr_type(t->inner);*/
-            /*} else {*/
-                /*error(ast->line, "Array has no member named '%s'.", ast->member_name);*/
-            /*}*/
-        /*}*/
-        /*if (t->base == STRING_T) {*/
-            /*if (!strcmp(ast->member_name, "length")) {*/
-                /*return base_type(INT_T);*/
-            /*} else if (!strcmp(ast->member_name, "bytes")) {*/
-                /*return make_ptr_type(base_numeric_type(UINT_T, 8));*/
-            /*} else {*/
-                /*error(ast->line, "String has no member named '%s'.", ast->member_name);*/
-            /*}*/
-        /*}*/
-        /*for (int i = 0; i < t->nmembers; i++) {*/
-            /*if (!strcmp(ast->member_name, t->member_names[i])) {*/
-                /*return t->member_types[i];*/
-            /*}*/
-        /*}*/
-        /*error(ast->line, "No member named '%s' in struct '%s'.", ast->member_name, t->name);*/
-    /*}*/
-    /*case AST_TEMP_VAR:*/
-        /*return ast->tempvar->var->type;*/
-    /*case AST_COPY:*/
-        /*return var_type(ast->copy_expr);*/
-    /*case AST_HOLD: {*/
-        /*return ast->tempvar->var->type;*/
-    /*}*/
-    /*case AST_TYPEINFO:*/
-        /*// TODO this should be a pointer! Make them pointers to static memory!*/
-        /*return make_ptr_type(base_type(TYPE_T));*/
-    /*case AST_DIRECTIVE:*/
-        /*return type_of_directive(ast);*/
-    /*default:*/
-        /*error(ast->line, "don't know how to infer vartype (%d)", ast->type);*/
-    /*}*/
-    /*return base_type(VOID_T);*/
-/*}*/
-
-// TODO should this register somewhere better?
-/*Type *var_type(Ast *ast) {*/
-    /*Type *t = get_ast_type(ast);*/
-    /*t = register_type(t);*/
-    /*if (t->undefined) { // TODO move this?*/
-        /*error(ast->line, "Undefined type '%s'.", t->name);*/
-    /*}*/
-    /*return t; */
-/*}*/
-
 int is_lvalue(Ast *ast) {
     return ast->type == AST_IDENTIFIER ||
         ast->type == AST_DOT ||
         ast->type == AST_INDEX ||
         (ast->type == AST_UOP && ast->unary->op == OP_DEREF);
 }
-
-/*int is_literal(Ast *ast) {*/
-    /*switch (ast->type) {*/
-    /*case AST_STRING:*/
-    /*case AST_INTEGER:*/
-    /*case AST_FLOAT:*/
-    /*case AST_BOOL:*/
-    /*case AST_STRUCT:*/
-    /*case AST_ANON_FUNC_DECL:*/
-        /*return 1;*/
-    /*case AST_TEMP_VAR:*/
-        /*return is_literal(ast->expr);*/
-    /*[>case AST_BINOP:<]*/
-        /*[>return is_literal(ast->left) && is_literal(ast->right);<]*/
-    /*}*/
-    /*return 0;*/
-/*}*/
 
 Ast *make_ast_directive(char *name, Ast *object) {
     Ast *ast = ast_alloc(AST_DIRECTIVE);

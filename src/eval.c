@@ -117,6 +117,14 @@ Ast *eval_const_binop(Ast *ast) {
             return eval_float_binop(ast);
         }
         return eval_int_binop(ast);
+    } else if (left_lit->lit_type == ENUM && right_lit->lit_type == ENUM) {
+        if (op == OP_EQUALS) {
+            return make_ast_bool(left_lit->enum_val.enum_index == right_lit->enum_val.enum_index && types_are_equal(left_lit->enum_val.enum_type, right_lit->enum_val.enum_type));
+        } else if (op == OP_NEQUALS) {
+            return make_ast_bool(left_lit->enum_val.enum_index != right_lit->enum_val.enum_index || !types_are_equal(left_lit->enum_val.enum_type, right_lit->enum_val.enum_type));
+        }
+        error (ast->line, ast->file, "Unrecognized operator for enum types: '%s'.", op_to_str(op));
+        return NULL;
     } else if (left_lit->lit_type == BOOL && right_lit->lit_type == BOOL) {
         if (op == OP_AND) {
             if (left_lit->int_val) {

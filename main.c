@@ -654,7 +654,8 @@ void compile_scope(AstScope *scope) {
 void compile_block(AstBlock *block) {
     for (AstList *st = block->statements; st != NULL; st = st->next) {
         if (st->item->type == AST_FUNC_DECL || st->item->type == AST_EXTERN_FUNC_DECL ||
-            st->item->type == AST_TYPE_DECL || (st->item->type == AST_DECL && st->item->decl->global)) {
+            st->item->type == AST_WITH || st->item->type == AST_TYPE_DECL ||
+            (st->item->type == AST_DECL && st->item->decl->global)) {
             continue;
         }
         if (st->item->type != AST_RELEASE) {
@@ -819,6 +820,7 @@ void compile(Ast *ast) {
         }
         break;
     case AST_IDENTIFIER:
+        assert(!ast->ident->var->proxy);
         if (ast->ident->var->ext) {
             printf("%s", ast->ident->var->name);
         } else if (ast->ident->var->type->base == FN_T && ast->ident->var->constant) {

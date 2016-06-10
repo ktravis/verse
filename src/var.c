@@ -14,6 +14,7 @@ Var *make_var(char *name, Type *type) {
     var->type = type;
     var->temp = 0;
     var->ext = 0;
+    var->proxy = NULL;
     var->consumed = 0;
     var->initialized = 0;
     if (type->base == STRUCT_T) {

@@ -45,7 +45,8 @@ enum {
     TOK_CONTINUE,
     TOK_DIRECTIVE,
     TOK_ELLIPSIS,
-    TOK_ENUM
+    TOK_ENUM,
+    TOK_WITH
 };
 
 enum {
@@ -94,7 +95,6 @@ TokList *reverse_toklist(TokList *list);
 #define NEXT_TOKEN_UNWINDABLE ((__consumed = toklist_append(__consumed, next_token()))->item)
 #define UNWIND_TOKENS \
   for (; __consumed != NULL; __consumed = __consumed->next) unget_token(__consumed->item)
-  //for (__consumed = reverse_toklist(__consumed); __consumed != NULL; __consumed = __consumed->next) unget_token(__consumed->item)
 
 void skip_spaces();
 int is_id_char(char c);

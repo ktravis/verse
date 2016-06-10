@@ -15,6 +15,7 @@ typedef struct Var {
     unsigned char constant;
     //int held;
     int ext;
+    struct Var *proxy;
     struct Var **members;
 } Var;
 
