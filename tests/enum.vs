@@ -4,7 +4,7 @@ enum hi {
 };
 
 fn go() {
-    with hi;
+    use hi;
     assert(not_ok == (1 as hi));
     assert(ok == hi.ok);
 }

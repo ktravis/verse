@@ -46,7 +46,7 @@ enum {
     TOK_DIRECTIVE,
     TOK_ELLIPSIS,
     TOK_ENUM,
-    TOK_WITH
+    TOK_USE
 };
 
 enum {

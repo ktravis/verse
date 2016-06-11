@@ -42,7 +42,7 @@ typedef enum {
     AST_DIRECTIVE,
     AST_TYPEINFO,
     AST_ENUM_DECL,
-    AST_WITH,
+    AST_USE,
 } AstType;
 
 struct AstList;
@@ -79,7 +79,7 @@ typedef struct Ast {
         struct AstWhile         *while_loop;
         struct AstFor           *for_loop;
         struct AstDirective     *directive;
-        struct AstWith          *with;
+        struct AstUse           *use;
     };
 } Ast;
 
@@ -258,9 +258,9 @@ typedef struct AstDirective {
     Ast *object;
 } AstDirective;
 
-typedef struct AstWith {
+typedef struct AstUse {
     Ast *object;
-} AstWith;
+} AstUse;
 
 typedef struct AstEnumDecl {
     char *enum_name;
@@ -294,6 +294,7 @@ Ast *make_ast_slice(Ast *inner, Ast *offset, Ast *length);
 
 //Type *var_type(Ast *ast);
 Var *get_ast_var(Ast *ast);
+Var *get_ast_var_noerror(Ast *ast);
 
 AstList *astlist_append(AstList *list, Ast *ast);
 AstList *reverse_astlist();

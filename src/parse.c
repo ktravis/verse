@@ -1,4 +1,5 @@
 #include "parse.h"
+#include <assert.h>
 
 #define PUSH_FN_SCOPE(x) \
     Ast *__old_fn_scope = current_fn_scope;\
@@ -848,13 +849,13 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
     VarList *args = func->fn_decl->args;
     TypeList *arg_types = NULL;
     for (;;) {
-        char with = 0;
+        char use = 0;
         t = next_token();
         if (t->type == TOK_RPAREN) {
             break;
         }
-        if (t->type == TOK_WITH) {
-            with = 1;
+        if (t->type == TOK_USE) {
+            use = 1;
             t = next_token();
         }
         if (t->type != TOK_ID) {
@@ -890,19 +891,32 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
         args->item->initialized = 1;
         arg_types = typelist_append(arg_types, args->item->type);
 
-        if (with) {
-            if (args->item->type->base != STRUCT_T) {
-                error(lineno(), current_file_name(), "'with' is not allowed on args of non-struct type '%s'.", args->item->type->name);
+        if (use) {
+            Type *orig = args->item->type;
+            Type *t = orig;
+            while (t->base == PTR_T) {
+                t = t->inner;
             }
-            for (int i = 0; i < args->item->type->st.nmembers; i++) {
-                char *name = args->item->type->st.member_names[i];
+            if (t->base != STRUCT_T) {
+                error(lineno(), current_file_name(), "'use' is not allowed on args of non-struct type '%s'.", orig->name);
+            }
+            for (int i = 0; i < t->st.nmembers; i++) {
+                char *name = t->st.member_names[i];
                 if (find_local_var(name, fn_scope) != NULL) {
-                    error(lineno(), current_file_name(), "'with' statement on struct type '%s' conflicts with existing argument named '%s'.", args->item->type->name, name);
+                    error(lineno(), current_file_name(), "'use' statement on struct type '%s' conflicts with existing argument named '%s'.", orig->name, name);
                 } else if (varlist_find(builtin_vars, name) != NULL) {
-                    error(lineno(), current_file_name(), "'with' statement on struct type '%s' conflicts with builtin type named '%s'.", args->item->type->name, name);
+                    error(lineno(), current_file_name(), "'use' statement on struct type '%s' conflicts with builtin type named '%s'.", orig->name, name);
                 }
-                Var *v = make_var(name, args->item->type->st.member_types[i]);
-                v->proxy = args->item->members[i];
+                Var *v = make_var(name, t->st.member_types[i]);
+                if (orig->base == PTR_T) {
+                    int proxy_name_len = strlen(args->item->name) + strlen(name) + 2;
+                    char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
+                    sprintf(proxy_name, "%s->%s", args->item->name, name);
+                    proxy_name[proxy_name_len] = 0;
+                    v->proxy = make_var(proxy_name, t->st.member_types[i]);
+                } else {
+                    v->proxy = args->item->members[i];
+                }
                 attach_var(v, fn_scope);
             }
         }
@@ -1151,10 +1165,10 @@ Ast *parse_statement(Tok *t, AstScope *scope) {
         ast = parse_type_decl(scope);
     } else if (t->type == TOK_ENUM) {
         ast = parse_enum_decl(scope);
-    } else if (t->type == TOK_WITH) {
-        Ast *ast_with = ast_alloc(AST_WITH);
-        ast_with->with->object = parse_expression(next_token(), 0, scope);
-        ast = ast_with;
+    } else if (t->type == TOK_USE) {
+        Ast *ast_use = ast_alloc(AST_USE);
+        ast_use->use->object = parse_expression(next_token(), 0, scope);
+        ast = ast_use;
     } else if (t->type == TOK_DIRECTIVE) {
         if (!strcmp(t->sval, "import")) {
             t = next_token();
@@ -1624,7 +1638,10 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
                 }
                 error(-1, "<internal>", "How'd this happen");
             } else {
+                int i = 0;
+                assert(v->proxy != v);
                 while (v->proxy) {
+                    assert(i < 666); // lol
                     v = v->proxy; // this better not loop!
                 }
             }
@@ -1641,21 +1658,21 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         return parse_binop_semantics(ast, scope);
     case AST_UOP:
         return parse_uop_semantics(ast, scope);
-    case AST_WITH:
+    case AST_USE: {
         // TODO make pointer to vector work!!
-        if (ast->with->object->type == AST_IDENTIFIER) {
+        if (ast->use->object->type == AST_IDENTIFIER) {
             Type *t = find_type_by_name_no_unresolved(ast->dot->object->ident->varname, scope);
             if (t != NULL) {
                 if (t->base != ENUM_T) {
-                    error(ast->with->object->line, ast->file, "'with' is not valid on non-enum type '%s'.", t->name);
+                    error(ast->use->object->line, ast->file, "'use' is not valid on non-enum type '%s'.", t->name);
                 }
                 for (int i = 0; i < t->_enum.nmembers; i++) {
                     char *name = t->_enum.member_names[i];
                     if (find_local_var(name, scope) != NULL) {
-                        error(ast->with->object->line, ast->file, "'with' statement on enum '%s' conflicts with local variable named '%s'.", t->name, name);
+                        error(ast->use->object->line, ast->file, "'use' statement on enum '%s' conflicts with local variable named '%s'.", t->name, name);
                     }
                     if (varlist_find(builtin_vars, name) != NULL) {
-                        error(ast->with->object->line, ast->file, "'with' statement on enum '%s' conflicts with builtin type named '%s'.", t->name, name);
+                        error(ast->use->object->line, ast->file, "'use' statement on enum '%s' conflicts with builtin type named '%s'.", t->name, name);
                     }
                     Var *v = make_var(name, t);
                     v->constant = 1;
@@ -1665,26 +1682,42 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
                 return ast;
             }
         }
-        ast->with->object = parse_semantics(ast->with->object, scope);
-        if (ast->with->object->var_type->base != STRUCT_T) {
-            error(ast->with->object->line, ast->file, "'with' is not valid on non-struct type '%s'.", ast->with->object->var_type->name);
+        ast->use->object = parse_semantics(ast->use->object, scope);
+        Type *orig = ast->use->object->var_type;
+        Type *t = orig;
+        if (t->base == PTR_T) {
+            t = t->inner;
+        }
+        if (t->base != STRUCT_T) {
+            error(ast->use->object->line, ast->file, "'use' is not valid on non-struct type '%s'.", ast->use->object->var_type->name);
         } else {
-            Type *t = ast->with->object->var_type;
+            Var *ast_var = get_ast_var_noerror(ast->use->object);
+            if (ast_var == NULL) {
+                error(ast->use->object->line, ast->use->object->file, "Can't 'use' a non-variable.");
+            }
             for (int i = 0; i < t->st.nmembers; i++) {
                 char *name = t->st.member_names[i];
                 if (find_local_var(name, scope) != NULL) {
-                    error(ast->with->object->line, ast->file, "'with' statement on struct type '%s' conflicts with local variable named '%s'.", t->name, name);
+                    error(ast->use->object->line, ast->file, "'use' statement on struct type '%s' conflicts with local variable named '%s'.", t->name, name);
                 }
                 if (varlist_find(builtin_vars, name) != NULL) {
-                    error(ast->with->object->line, ast->file, "'with' statement on struct type '%s' conflicts with builtin type named '%s'.", t->name, name);
+                    error(ast->use->object->line, ast->file, "'use' statement on struct type '%s' conflicts with builtin type named '%s'.", t->name, name);
                 }
-                Var *v = make_var(name, t);
-                // TODO want get_ast_var_noerror and make_temp_var here!
-                v->proxy = get_ast_var(ast->with->object)->members[i];
+                Var *v = make_var(name, t->st.member_types[i]); // should this be 't' or 't->st.member_types[i]'?
+                Var *proxy = ast_var->members[i];
+                if (orig->base == PTR_T) {
+                    int proxy_name_len = strlen(ast_var->name) + strlen(name) + 2;
+                    char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
+                    snprintf(proxy_name, proxy_name_len, "%s->%s", ast_var->name, name);
+                    proxy_name[proxy_name_len] = 0;
+                    proxy = make_var(proxy_name, t->st.member_types[i]);
+                }
+                v->proxy = proxy;
                 attach_var(v, scope);
             }
         }
         break;
+    }
     case AST_SLICE: {
         AstSlice *slice = ast->slice;
         slice->object = parse_semantics(slice->object, scope);

@@ -95,8 +95,8 @@ Ast *ast_alloc(AstType type) {
     case AST_ENUM_DECL:
         ast->enum_decl = calloc(sizeof(AstEnumDecl), 1);
         break;
-    case AST_WITH:
-        ast->with = calloc(sizeof(AstWith), 1);
+    case AST_USE:
+        ast->use = calloc(sizeof(AstUse), 1);
         break;
     }
     return ast;
@@ -292,7 +292,7 @@ Ast *try_implicit_cast_no_error(Type *t, Ast *ast) {
     return NULL;
 }
 
-Var *get_ast_var(Ast *ast) {
+Var *get_ast_var_noerror(Ast *ast) {
     switch (ast->type) {
     case AST_DOT: {
         Var *v = get_ast_var(ast->dot->object);
@@ -313,8 +313,15 @@ Var *get_ast_var(Ast *ast) {
     default:
         break;
     }
-    error(ast->line, ast->file, "Can't get_ast_var(%d)", ast->type);
     return NULL;
+}
+
+Var *get_ast_var(Ast *ast) {
+    Var *v = get_ast_var_noerror(ast);
+    if (v == NULL) {
+        error(ast->line, ast->file, "Can't get_ast_var(%d)", ast->type);
+    }
+    return v;
 }
 
 AstList *reverse_astlist(AstList *list) {

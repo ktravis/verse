@@ -654,7 +654,7 @@ void compile_scope(AstScope *scope) {
 void compile_block(AstBlock *block) {
     for (AstList *st = block->statements; st != NULL; st = st->next) {
         if (st->item->type == AST_FUNC_DECL || st->item->type == AST_EXTERN_FUNC_DECL ||
-            st->item->type == AST_WITH || st->item->type == AST_TYPE_DECL ||
+            st->item->type == AST_USE || st->item->type == AST_TYPE_DECL ||
             (st->item->type == AST_DECL && st->item->decl->global)) {
             continue;
         }
