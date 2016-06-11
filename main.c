@@ -445,12 +445,9 @@ void emit_func_decl(Ast *fn) {
     printf("/* %s */\n", fn->fn_decl->var->name);
     indent();
     emit_type(fn->fn_decl->var->type->fn.ret);
-    // TODO do this in a non-hacky way
-    if (!strcmp(fn->fn_decl->var->name, "main")) {
-        printf("_vs_%s(", fn->fn_decl->var->name);
-    } else {
-        printf("_vs_%d(", fn->fn_decl->var->id);
-    }
+
+    printf("_vs_%d(", fn->fn_decl->var->id);
+
     VarList *args = fn->fn_decl->args;
     while (args != NULL) {
         if (fn->fn_decl->var->type->fn.variadic && args->next == NULL) {
@@ -1348,12 +1345,8 @@ void emit_forward_decl(Var *v) {
     if (!v->ext) {
         printf("_vs_");
     }
-    // TODO do this in a non-hacky way
-    if (!strcmp(v->name, "main")) {
-        printf("%s(", v->name);
-    } else {
-        printf("%d(", v->id);
-    }
+    printf("%d(", v->id);
+
     TypeList *args = v->type->fn.args;
     for (int i = 0; args != NULL; i++) {
         if (v->type->fn.variadic && args->next == NULL) {
@@ -1395,7 +1388,7 @@ void emit_hold_func_decl(Type *t) {
 void emit_typeinfo_decl(Type *t) {
     switch (t->base) {
     case PTR_T:
-        printf("struct _vs_PtrType _type_info%d;\n", t->id);
+        printf("struct _vs_RefType _type_info%d;\n", t->id);
         break;
     case INT_T:
     case UINT_T:
@@ -1413,12 +1406,6 @@ void emit_typeinfo_decl(Type *t) {
             printf(" %ld,\n", t->_enum.member_values[i]);
         }
         printf("};\n");
-        /*emit_type(t->_enum.inner);*/
-        /*printf("_type_info%d_values[%d] = {\n", t->id, t->_enum.nmembers);*/
-        /*for (int i = 0; i < t->_enum.nmembers; i++) {*/
-            /*printf("  %ld,", t->_enum.member_values[i]);*/
-        /*}*/
-        /*printf("};\n");*/
         printf("struct _vs_EnumType _type_info%d;\n", t->id);
         break;
     case STRUCT_T:
@@ -1446,9 +1433,6 @@ void emit_typeinfo_decl(Type *t) {
 void emit_typeinfo_init(Type *t) {
     switch (t->base) {
     case ENUM_T:
-        /*printf("_type_info%d = (struct _vs_EnumType){%d, {%ld, \"%s\"}, _type_info%d, {%d, _type_info%d_members}, {%d, _type_info%d_values}};\n",*/
-                /*t->id, t->id, strlen(t->name), t->name, t->_enum.inner->id, t->st.nmembers,*/
-                /*t->id, t->st.nmembers, t->id);*/
         indent();
         printf("_type_info%d = (struct _vs_EnumType){%d, 9, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d, {%d, _type_info%d_members}, {%d, _type_info%d_values}};\n",
                 t->id, t->id, strlen(t->name), t->name, t->_enum.inner->id, t->st.nmembers,
@@ -1456,7 +1440,7 @@ void emit_typeinfo_init(Type *t) {
         break;
     case PTR_T:
         indent();
-        printf("_type_info%d = (struct _vs_PtrType){%d, 10, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id);
+        printf("_type_info%d = (struct _vs_RefType){%d, 10, {%ld, \"%s\"}, (struct _vs_Type *)&_type_info%d};\n", t->id, t->id, strlen(t->name), t->name, t->inner->id);
         break;
     case INT_T:
     case UINT_T:
@@ -1491,7 +1475,13 @@ void emit_typeinfo_init(Type *t) {
             i++;
         }
         indent();
-        printf("_type_info%d = (struct _vs_FnType){%d, 8, {%ld, \"%s\"}, {%d, (struct _vs_Type **)_type_info%d_args}, (struct _vs_Type *)&_type_info%d, %d};\n", t->id, t->id, strlen(t->name), t->name, t->fn.nargs, t->id, t->fn.ret->id, !t->named);
+        printf("_type_info%d = (struct _vs_FnType){%d, 8, {%ld, \"%s\"}, {%d, (struct _vs_Type **)_type_info%d_args}, ", t->id, t->id, strlen(t->name), t->name, t->fn.nargs, t->id);
+        if (t->fn.ret->base == VOID_T) {
+            printf("NULL, ");
+        } else {
+            printf("(struct _vs_Type *)&_type_info%d, ", t->fn.ret->id);
+        }
+        printf("%d};\n", !t->named);
         break;
     }
     case BASEPTR_T:
@@ -1509,10 +1499,6 @@ void emit_typeinfo_init(Type *t) {
 }
 
 int main(int argc, char **argv) {
-    /*int just_ast = 0;*/
-    /*if (argc > 1 && !strcmp(argv[1], "-a")) {*/
-        /*just_ast = 1;*/
-    /*}*/
     if (argc == 2) {
         // TODO some sort of util function for opening a file and gracefully
         // handling errors (needs to be different for here vs. from #import
@@ -1529,9 +1515,9 @@ int main(int argc, char **argv) {
     Ast *root = parse_scope(root_scope, NULL);
     init_builtins();
     root = parse_semantics(root, root->scope);
-    /*if (just_ast) {*/
-        /*print_ast(root);*/
-    /*} else {*/
+
+    Var *main_var = NULL;
+
     printf("%.*s\n", prelude_length, prelude);
     _indent = 0;
 
@@ -1584,7 +1570,11 @@ int main(int argc, char **argv) {
 
     AstList *fnlist = get_global_funcs();
     while (fnlist != NULL) {
-        emit_forward_decl(fnlist->item->fn_decl->var);
+        Var *v = fnlist->item->fn_decl->var;
+        if (!strcmp(v->name, "main")) {
+            main_var = v;
+        }
+        emit_forward_decl(v);
         fnlist = fnlist->next;
     }
 
@@ -1600,9 +1590,12 @@ int main(int argc, char **argv) {
 
     printf("int main(int argc, char** argv) {\n"
            "    _verse_init_typeinfo();\n"
-           "    _verse_init();\n"
-           "    return _vs_main();\n"
-           "}");
+           "    _verse_init();\n");
+    if (main_var != NULL) {
+        printf("    return _vs_%d();\n}", main_var->id);
+    } else {
+        printf("    return 0;\n}");
+    }
     /*}*/
     return 0;
 }

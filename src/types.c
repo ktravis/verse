@@ -713,7 +713,7 @@ void init_types(struct AstScope *scope) {
     member_types[1] = basetype_type;
     member_types[2] = string_type;
     member_types[3] = typeinfo_ptr_type;
-    ptrtype_type = define_builtin_type(make_struct_type("PtrType", 4, member_names, member_types));
+    ptrtype_type = define_builtin_type(make_struct_type("RefType", 4, member_names, member_types));
 
     member_names = malloc(sizeof(char*)*3);
     member_names[0] = "name";

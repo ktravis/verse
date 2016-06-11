@@ -21,6 +21,17 @@ fn check_use_ptr(use a:&vec3) {
     x = x + y * z;
 }
 
+type Marker : struct {
+    pos: vec3;
+    dir: vec3;
+};
+
+fn check_use_depth(use m:Marker) {
+    use dir;
+    x = 2;
+    assert(x == (m.pos.x + 2));
+}
+
 fn otherthing(use b:vec3):vec3 {
     tmp:int = x;
     x = y;
@@ -44,6 +55,8 @@ fn main():int {
     check_use(*a, v1);
 
     check_use_ptr(a);
+
+    check_use_depth(Marker{});
 
     print_str("test: " + itoa(a.x) + " " + itoa(a.y) + " " + itoa(a.z));
 
@@ -69,7 +82,6 @@ fn main():int {
 
     empty:vec3 = vec3{};
     assert(empty.x == 0);
-
 
     a1 := hold_struct();
     println("held: x = " + itoa(a1.x) + ", y = " + itoa(a1.y) + ", z = " + itoa(a1.z));

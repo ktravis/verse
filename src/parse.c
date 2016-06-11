@@ -144,22 +144,6 @@ Type *define_type(Type *type, AstScope *scope) {
 
         /*fprintf(stderr, "Checking for unresolved types\n");*/
 
-        // If the first one matches, we need to change the value of
-        // scope->unresolved_types (head)
-        /*if (!strcmp(scope->unresolved_types->type->name, type->name)) {*/
-            
-            /*// merge types here, return existing type*/
-            /**scope->unresolved_types->type = *type;*/
-            /*type = scope->unresolved_types->type;*/
-            /*fprintf(stderr, "First matched %s\n", scope->unresolved_types->type->name);*/
-
-            /*remove_resolution_parents(scope->unresolved_types);*/
-            /*scope->unresolved_types = scope->unresolved_types->next_in_scope;*/
-            /*if (scope->unresolved_types != NULL) {*/
-                /*scope->unresolved_types->prev_in_scope = NULL;    */
-            /*}   */
-        /*}*/
-
         if (scope->unresolved_types != NULL) {
             // Otherwise loop through the values and remove from the linked list
             ResolutionList *res = scope->unresolved_types;
@@ -843,6 +827,7 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
     fn_scope->parent = scope;
     fn_scope->has_return = 0;
     fn_scope->is_function = 1;
+    fn_scope->unresolved_types = NULL;
 
     int n = 0;
     int variadic = 0;
@@ -1941,22 +1926,22 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         }
         attach_var(ast->fn_decl->var, scope);
         global_fn_vars = varlist_append(global_fn_vars, ast->fn_decl->var);
+        register_type(ast->fn_decl->var->type);
         break;
     case AST_FUNC_DECL:
     case AST_ANON_FUNC_DECL: {
         Var *bindings_var = NULL;
         Type *fn_t = ast->fn_decl->var->type;
 
-        if (ast->type == AST_ANON_FUNC_DECL) {
-            bindings_var = malloc(sizeof(Var));
-            bindings_var->name = "";
-            bindings_var->type = base_type(BASEPTR_T);
-            bindings_var->id = new_var_id();
-            bindings_var->temp = 1;
-            bindings_var->consumed = 0;
-            fn_t->bindings_id = bindings_var->id;
-            ast->var_type = fn_t;
-        }
+        /*if (ast->type == AST_ANON_FUNC_DECL) {*/
+            /*bindings_var = malloc(sizeof(Var));*/
+            /*bindings_var->name = "";*/
+            /*bindings_var->type = base_type(BASEPTR_T);*/
+            /*bindings_var->id = new_var_id();*/
+            /*bindings_var->temp = 1;*/
+            /*bindings_var->consumed = 0;*/
+            /*fn_t->bindings_id = bindings_var->id;*/
+        /*}*/
 
         for (TypeList *args = fn_t->fn.args; args != NULL; args = args->next) {
             args->item = register_type(args->item);
@@ -1971,6 +1956,13 @@ Ast *parse_semantics(Ast *ast, AstScope *scope) {
         parser_state = prev;
 
         detach_var(ast->fn_decl->var, ast->fn_decl->scope);
+
+        ast->fn_decl->var->type = register_type(ast->fn_decl->var->type);
+
+        if (ast->type == AST_ANON_FUNC_DECL) {
+            ast->var_type = ast->fn_decl->var->type;
+            /*ast->fn_decl->var->type->bindings_id = bindings_var->id;*/
+        }
 
         if (fn_t->bindings != NULL) {
             global_fn_bindings = varlist_append(global_fn_bindings, bindings_var);
