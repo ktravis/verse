@@ -102,11 +102,172 @@ Ast *ast_alloc(AstType type) {
     return ast;
 }
 
+AstList *copy_astlist(AstList *list) {
+    AstList *copy = NULL;
+    for (; list != NULL; list = list->next) {
+        copy = astlist_append(copy, deep_copy(list->item));
+    }
+    return reverse_astlist(copy);
+}
+
+AstBlock *copy_block(AstBlock *block) {
+    AstBlock *copy = malloc(sizeof(AstBlock));
+    *copy = *block;
+    copy->statements = copy_astlist(block->statements);
+    return copy;
+}
+
+AstScope *copy_scope(AstScope *scope) {
+    AstScope *copy = malloc(sizeof(AstScope));
+    *copy = *scope;
+    copy->body = copy_block(scope->body);
+    copy->bindings = copy_astlist(scope->bindings);
+    // do locals need to be copied? not all of them?
+    return copy;
+}
+
+Ast *deep_copy(Ast *ast) {
+    Ast *copy = malloc(sizeof(Ast));
+    *copy = *ast;
+
+    switch (ast->type) {
+    case AST_DOT:
+        copy->dot = calloc(sizeof(AstDot), 1);
+        copy->dot->member_name = ast->dot->member_name;
+        copy->dot->object = deep_copy(ast->dot->object);
+        break;
+    case AST_ASSIGN:
+    case AST_BINOP:
+        copy->binary = calloc(sizeof(AstBinaryOp), 1);
+        copy->binary->op = ast->binary->op;
+        copy->binary->left = deep_copy(ast->binary->left);
+        copy->binary->right = deep_copy(ast->binary->right);
+        break;
+    case AST_UOP:
+        copy->unary = calloc(sizeof(AstUnaryOp), 1);
+        copy->unary->op = ast->unary->op;
+        copy->unary->object = deep_copy(ast->unary->object);
+        break;
+    case AST_COPY:
+        copy->copy = calloc(sizeof(AstCopy), 1);
+        copy->copy->expr = deep_copy(ast->copy->expr);
+        break;
+    case AST_TEMP_VAR:
+        copy->tempvar = calloc(sizeof(AstTempVar), 1);
+        copy->tempvar->var = ast->tempvar->var;
+        copy->tempvar->expr = deep_copy(ast->tempvar->expr);
+        break;
+    case AST_RELEASE:
+        copy->release = calloc(sizeof(AstRelease), 1);
+        copy->release->object = deep_copy(ast->release->object);
+        break;
+    case AST_DECL:
+        copy->decl = calloc(sizeof(AstDecl), 1);
+        copy->decl->var = ast->decl->var;
+        copy->decl->global = ast->decl->global;
+        copy->decl->init = deep_copy(ast->decl->init);
+        break;
+    case AST_ANON_FUNC_DECL:
+    case AST_FUNC_DECL:
+        copy->fn_decl = calloc(sizeof(AstFnDecl), 1);
+        *copy->fn_decl = *ast->fn_decl;
+        copy->fn_decl->scope = copy_scope(ast->fn_decl->scope);
+        // Keep the same polymorphs!
+        break;
+    case AST_CALL:
+        copy->call = calloc(sizeof(AstCall), 1);
+        *copy->call = *ast->call;
+        copy->call->fn = deep_copy(ast->call->fn);
+        copy->call->args = copy_astlist(ast->call->args);
+        break;
+    case AST_INDEX:
+        copy->index = calloc(sizeof(AstIndex), 1);
+        copy->index->object = deep_copy(ast->index->object);
+        copy->index->index = deep_copy(ast->index->index);
+        break;
+    case AST_SLICE:
+        copy->slice = calloc(sizeof(AstSlice), 1);
+        copy->slice->object = deep_copy(ast->slice->object);
+        copy->slice->offset = deep_copy(ast->slice->offset);
+        copy->slice->length = deep_copy(ast->slice->length);
+        break;
+    case AST_CONDITIONAL:
+        copy->cond = calloc(sizeof(AstConditional), 1);
+        copy->cond->condition = deep_copy(ast->cond->condition);
+        copy->cond->if_body = copy_scope(ast->cond->if_body);
+        copy->cond->else_body = copy_scope(ast->cond->else_body);
+        break;
+    case AST_SCOPE:
+        copy->scope = copy_scope(ast->scope);
+        break;
+    case AST_RETURN:
+        copy->ret = calloc(sizeof(AstReturn), 1);
+        // wut
+        copy->ret->scope = ast->ret->scope;
+        copy->ret->expr = deep_copy(ast->ret->expr);
+        break;
+    case AST_BLOCK:
+        copy->block = copy_block(ast->block);
+        break;
+    case AST_WHILE:
+        copy->while_loop = calloc(sizeof(AstWhile), 1);
+        copy->while_loop->condition = deep_copy(ast->while_loop->condition);
+        copy->while_loop->body = copy_scope(ast->while_loop->body);
+        break;
+    case AST_FOR:
+        copy->for_loop = calloc(sizeof(AstFor), 1);
+        // need to copy itervar
+        copy->for_loop->itervar = malloc(sizeof(Var));
+        *copy->for_loop->itervar = *ast->for_loop->itervar;
+        copy->for_loop->iterable = deep_copy(ast->for_loop->iterable);
+        copy->for_loop->body = copy_scope(ast->for_loop->body);
+        break;
+    case AST_HOLD:
+        copy->hold = calloc(sizeof(AstHold), 1);
+        copy->hold->object = deep_copy(ast->hold->object);
+        copy->hold->tempvar = malloc(sizeof(Var));
+        *copy->hold->tempvar = *ast->hold->tempvar;
+        break;
+    case AST_BIND:
+        copy->bind = calloc(sizeof(AstBind), 1);
+        copy->bind->expr = deep_copy(ast->bind->expr);
+        break;
+    case AST_CAST:
+        copy->cast = calloc(sizeof(AstCast), 1);
+        copy->cast->cast_type = ast->cast->cast_type;
+        copy->cast->object = deep_copy(ast->cast->object);
+        break;
+    case AST_DIRECTIVE:
+        copy->directive = calloc(sizeof(AstDirective), 1);
+        copy->directive->name = ast->directive->name;
+        copy->directive->object = deep_copy(ast->directive->object);
+        break;
+    case AST_USE:
+        copy->use = calloc(sizeof(AstUse), 1);
+        copy->use->object = deep_copy(ast->use->object);
+        break;
+    default:
+        break;
+    }
+    return copy;
+}
+
 Ast *make_ast_copy(Ast *ast) {
     Ast *cp = ast_alloc(AST_COPY);
     cp->copy->expr = ast;
     cp->var_type = ast->var_type;
     return cp;
+}
+
+AstScope *new_scope(AstScope *parent) {
+    AstScope *scope = malloc(sizeof(AstScope));
+    scope->locals = NULL;
+    scope->local_types = NULL;
+    scope->unresolved_types = NULL;
+    scope->parent = parent;
+    scope->has_return = 0;
+    scope->is_function = 0;
+    return scope;
 }
 
 Type *type_of_directive(Ast *ast) {
@@ -295,7 +456,10 @@ Ast *try_implicit_cast_no_error(Type *t, Ast *ast) {
 Var *get_ast_var_noerror(Ast *ast) {
     switch (ast->type) {
     case AST_DOT: {
-        Var *v = get_ast_var(ast->dot->object);
+        Var *v = get_ast_var_noerror(ast->dot->object); // should this just error?
+        if (v == NULL) {
+            return NULL;
+        }
         Type *t = v->type;
         for (int i = 0; i < t->st.nmembers; i++) {
             if (!strcmp(t->st.member_names[i], ast->dot->member_name)) {
@@ -310,6 +474,8 @@ Var *get_ast_var_noerror(Ast *ast) {
         return ast->tempvar->var;
     case AST_DECL:
         return ast->decl->var;
+    case AST_FUNC_DECL: // is this allowed?
+        return ast->fn_decl->var;
     default:
         break;
     }

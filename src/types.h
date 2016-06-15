@@ -31,17 +31,19 @@ enum {
 struct TypeList;
 
 typedef struct Type {
+    int id;
     char *name;
 
     int named;
-    int base; // string, int, func, void
+    int base;
     int held;
     int size;
     long length;
+
+    unsigned char polymorph; // 0 no, 1 yes, 2 authority
     unsigned char unresolved;
     unsigned char builtin;
-    // for structs / derived
-    int id;
+
     union {
         struct {
             // for functions
@@ -50,12 +52,15 @@ typedef struct Type {
             struct Type *ret;
             int variadic;
         } fn;
+
         struct Type *inner;
+
         struct {
             int nmembers;
             char **member_names;
             struct Type **member_types;
         } st;
+
         struct {
             int nmembers;
             char **member_names;
@@ -63,6 +68,7 @@ typedef struct Type {
             struct Type *inner;
         } _enum;
     };
+
     struct TypeList *bindings;
     int offset;
     int bindings_id;

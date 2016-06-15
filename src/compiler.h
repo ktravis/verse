@@ -10,6 +10,7 @@
 #include "ast.h"
 #include "var.h"
 #include "parse.h"
+#include "semantics.h"
 #include "types.h"
 
 void emit_type(Type *t);

@@ -272,6 +272,9 @@ void emit_tempvar(Ast *ast) {
 }
 
 void emit_type(Type *type) {
+    assert(type != NULL);
+    assert(!type->polymorph);
+
     switch (type->base) {
     case UINT_T:
         printf("u");
@@ -1512,8 +1515,9 @@ int main(int argc, char **argv) {
     
     AstScope *root_scope = new_scope(NULL);
     init_types(root_scope);
-    Ast *root = parse_scope(root_scope, NULL);
     init_builtins();
+
+    Ast *root = parse_scope(root_scope, NULL);
     root = parse_semantics(root, root->scope);
 
     Var *main_var = NULL;

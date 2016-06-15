@@ -129,12 +129,22 @@ typedef struct AstDecl {
     unsigned char global;
 } AstDecl;
 
+typedef struct Polymorph {
+    struct {
+        Type *type;
+        struct AstScope *scope;
+    } item;
+    struct Polymorph *next;
+} Polymorph;
+
 typedef struct AstFnDecl {
     Var *var;
     int anon;
+    int polymorphic;
     VarList *args;
     struct AstScope *scope;
     Var *bindings_var;
+    Polymorph *polymorphs;
 } AstFnDecl;
 
 typedef struct AstUnaryOp {
@@ -280,8 +290,11 @@ typedef struct AstListList {
 } AstListList;
 
 Ast *ast_alloc(AstType type);
-Ast *make_ast_copy(Ast *ast);
+Ast *deep_copy(Ast *ast);
 
+AstScope *new_scope(AstScope *parent);
+
+Ast *make_ast_copy(Ast *ast);
 Ast *make_ast_bool(long ival);
 Ast *make_ast_string(char *val);
 Ast *make_ast_dot_op(Ast *dot_left, char *member_name);
