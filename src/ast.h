@@ -129,22 +129,12 @@ typedef struct AstDecl {
     unsigned char global;
 } AstDecl;
 
-typedef struct Polymorph {
-    struct {
-        Type *type;
-        struct AstScope *scope;
-    } item;
-    struct Polymorph *next;
-} Polymorph;
-
 typedef struct AstFnDecl {
     Var *var;
     int anon;
-    int polymorphic;
     VarList *args;
     struct AstScope *scope;
     Var *bindings_var;
-    Polymorph *polymorphs;
 } AstFnDecl;
 
 typedef struct AstUnaryOp {

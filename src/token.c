@@ -158,13 +158,6 @@ Tok *next_token() {
         return read_number(c);
     } else if (isalpha(c) || c == '_') {
         return read_identifier(c);
-    } else if (c == '$') {
-        Tok *t = read_identifier(get_char());
-        if (t->type != TOK_ID) {
-            error(lineno(), current_file_name(), "Invalid polymorph type name '%s'.", t->sval);
-        }
-        t->type = TOK_POLYTYPE;
-        return t;
     } else if (c == '\'') {
         Tok *t = make_token(TOK_CHAR);
         c = get_char();
@@ -640,12 +633,6 @@ const char *to_string(Tok *t) {
         snprintf(c, n, "%d", t->ival);
         return c;
     }
-    case TOK_POLYTYPE: {
-        char *out = malloc(sizeof(char) * (strlen(t->sval) + 2));
-        sprintf(out, "$%s", t->sval);
-        out[strlen(t->sval) + 2] = 0;
-        return out;
-    }
     case TOK_SEMI:
         return ";";
     case TOK_COLON:
@@ -715,8 +702,6 @@ const char *token_type(int type) {
         return "STR";
     case TOK_ID:
         return "ID";
-    case TOK_POLYTYPE:
-        return "$TYPE";
     case TOK_INT:
         return "INT";
     case TOK_SEMI:

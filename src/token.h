@@ -18,7 +18,6 @@ enum {
     TOK_SEMI,
     TOK_REF,
     TOK_ID,
-    TOK_POLYTYPE,
     TOK_FN,
     TOK_TYPE,
     TOK_OP,

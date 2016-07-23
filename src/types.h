@@ -40,7 +40,6 @@ typedef struct Type {
     int size;
     long length;
 
-    unsigned char polymorph; // 0 no, 1 yes, 2 authority
     unsigned char unresolved;
     unsigned char builtin;
 

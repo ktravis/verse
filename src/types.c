@@ -20,7 +20,6 @@ Type *make_type(char *name, int base, int size) {
         snprintf(name, l, "%d", t->id);
         name[l] = 0;
     }
-    t->polymorph = 0;
     t->unresolved = 0;
     t->builtin = 0;
     t->name = name;
@@ -77,8 +76,6 @@ TypeList *get_used_types() {
 }
 
 Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic) {
-    unsigned char poly = ret->polymorph ? 1 : 0;
-
     char *parts[10]; // TODO duh
     size_t size = 6; // fn + ( + ) + : + \0
     TypeList *_args = args;
@@ -108,9 +105,6 @@ Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic) {
             m[0] = ',';
             m += 1;
         }
-        if (_args->item->polymorph) {
-            poly = 1;
-        }
 
         if (_args->item->base == FN_T) {
             free(parts[i]);
@@ -136,7 +130,6 @@ Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic) {
     t->fn.variadic = variadic;
     t->bindings = NULL;
     t->named = 0;
-    t->polymorph = poly;
 
     return t;
 }
@@ -147,7 +140,6 @@ Type *make_ptr_type(Type *inner) {
     Type *type = make_type(name, PTR_T, 8);
     type->inner = inner;
     type->named = 0;
-    type->polymorph = inner->polymorph ? 1 : 0;
     return type;
 }
 
@@ -158,7 +150,6 @@ Type *make_static_array_type(Type *inner, long length) {
     type->inner = inner;
     type->named = 0;
     type->length = length;
-    type->polymorph = inner->polymorph ? 1 : 0;
     return type;
 }
 
@@ -169,7 +160,6 @@ Type *make_array_type(Type *inner) {
     type->inner = inner;
     type->named = 0;
     type->length = 0;
-    type->polymorph = inner->polymorph ? 1 : 0;
     return type;
 }
 

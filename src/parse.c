@@ -217,11 +217,6 @@ Type *parse_type(Tok *t, AstScope *scope) {
             type = register_type(type);
         }
         return type;
-    } else if (t->type == TOK_POLYTYPE) {
-        Type *type = make_type(t->sval, AUTO_T, -1);
-        /*type->polymorph = 2;*/
-        /*type = define_type(type, scope);*/
-        return type;
     } else if (t->type == TOK_LSQUARE) {
         Type *type = NULL;
         t = next_token();
@@ -363,7 +358,6 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
 
     int n = 0;
     int variadic = 0;
-    int polymorphic = 0;
     VarList *args = func->fn_decl->args;
     TypeList *arg_types = NULL;
     for (;;) {
@@ -451,10 +445,6 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
     Type *ret = base_type(VOID_T);
     if (t->type == TOK_COLON) {
         ret = parse_type(next_token(), fn_scope); // fn_scope or scope?
-        /*if (ret->polymorph) {*/
-            /*polymorphic = 1;*/
-            /*ret = define_type(ret, fn_scope);*/
-        /*}*/
     } else if (t->type == TOK_LBRACE) {
         unget_token(t);
     } else {
@@ -467,7 +457,6 @@ Ast *parse_func_decl(AstScope *scope, int anonymous) {
     fn_decl_var->constant = !anonymous;
 
     func->fn_decl->anon = anonymous;
-    func->fn_decl->polymorphic = polymorphic;
     func->fn_decl->var = fn_decl_var;
 
     if (!anonymous) {
