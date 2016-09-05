@@ -1,7 +1,10 @@
 #include "ast.h"
 
+static int next_ast_id = 0;
+
 Ast *ast_alloc(AstType type) {
     Ast *ast = malloc(sizeof(Ast));
+    ast->id = last_ast_id++;
     ast->type = type;
     ast->line = lineno();
     ast->file = current_file_name();
@@ -53,9 +56,9 @@ Ast *ast_alloc(AstType type) {
     case AST_CONDITIONAL:
         ast->cond = calloc(sizeof(AstConditional), 1);
         break;
-    case AST_SCOPE:
-        ast->scope = calloc(sizeof(AstScope), 1);
-        break;
+    /*case AST_SCOPE:*/
+        /*ast->scope = calloc(sizeof(AstScope), 1);*/
+        /*break;*/
     case AST_RETURN:
         ast->ret = calloc(sizeof(AstReturn), 1);
         break;
@@ -197,9 +200,9 @@ Ast *deep_copy(Ast *ast) {
         copy->cond->if_body = copy_scope(ast->cond->if_body);
         copy->cond->else_body = copy_scope(ast->cond->else_body);
         break;
-    case AST_SCOPE:
-        copy->scope = copy_scope(ast->scope);
-        break;
+    /*case AST_SCOPE:*/
+        /*copy->scope = copy_scope(ast->scope);*/
+        /*break;*/
     case AST_RETURN:
         copy->ret = calloc(sizeof(AstReturn), 1);
         // wut
@@ -360,97 +363,52 @@ Ast *make_ast_slice(Ast *object, Ast *offset, Ast *length) {
     return s;
 }
 
-Ast *cast_to_any(Ast *ast) {
-    Ast *c = ast_alloc(AST_CAST);
-    c->cast->object = ast;
-    c->cast->cast_type = base_type(ANY_T);
-    c->var_type = c->cast->cast_type;
-    return c;
-}
-
-Ast *coerce_literal(Ast *ast, Type *t) {
-    // parse_semantics must already be completed on ast
-    if (is_numeric(t) && is_numeric(ast->var_type)) {
-        /*int loss = 0;*/
-        if (ast->lit->lit_type == INTEGER) {
-            if (t->base == UINT_T) {
-                if (ast->lit->int_val < 0) {
-                    error(ast->line, ast->file, "Cannot coerce negative literal value into integer type '%s'.", t->name);
+int can_coerce_type(Scope *scope, Type *to, Ast *from) {
+    if (is_any(to) && !is_any(from->var_type) && !is_lvalue(from)) {
+        allocate_temp_var(scope, from);
+        return 1;
+    }
+    
+    Type *t = resolve_alias(to);
+    if (from->type == AST_LITERAL) {
+        if (is_numeric(t) && is_numeric(from->var_type)) {
+            int loss = 0;
+            if (from->lit->lit_type == INTEGER) {
+                if (t->data->base == UINT_T) {
+                    if (from->lit->int_val < 0) {
+                        error(from->line, from->file, 
+                            "Cannot coerce negative literal value into integer type '%s'.",
+                            type_to_string(to));
+                    }
+                    loss = precision_loss_uint(t, from->lit->int_val);
+                } else {
+                    loss = precision_loss_int(t, from->lit->int_val);
                 }
-                /*loss = precision_loss_uint(t, ast->lit->int_val);*/
-            } else {
-                /*loss = precision_loss_int(t, ast->lit->int_val);*/
-            }
-        } else if (ast->lit->lit_type == FLOAT) {
-            if (t->base != FLOAT_T) {
-                error(ast->line, ast->file, "Cannot coerce floating point literal into integer type '%s'.", t->name);
-            }
-            /*loss = precision_loss_float(t, ast->lit->float_val);*/
-        }
-        /*if (loss) {*/
-            /*error(ast->line, "Cannot coerce literal value of type '%s' into type '%s' due to precision loss.", ast->var_type->name, t->name);*/
-        /*}*/
-        ast->var_type = t;
-    } else {
-        error(ast->line, ast->file, "Cannot coerce literal value of type '%s' into type '%s'.", ast->var_type->name, t->name);
-    }
-    return ast;
-}
-
-Ast *cast_literal(Type *t, Ast *ast) {
-    Type *ast_type = ast->var_type;
-    if (can_cast(ast_type, t)) {
-        Ast *c = ast_alloc(AST_CAST);
-        c->cast->object = ast;
-        c->cast->cast_type = t;
-        c->var_type = t;
-        return c;
-    } else if (is_numeric(t) && is_numeric(ast_type)) {
-        int loss = 0;
-        if (ast->lit->lit_type == INTEGER) {
-            if (t->base == UINT_T) {
-                if (ast->lit->int_val < 0) {
-                    error(ast->line, ast->file, "Cannot use negative literal value as integer type '%s'.", t->name);
+            } else if (from->lit->lit_type == FLOAT) {
+                if (t->base != FLOAT_T) {
+                    error(from->line, from->file,
+                        "Cannot coerce floating point literal into integer type '%s'.",
+                        type_to_string(to));
                 }
-                loss = precision_loss_uint(t, ast->lit->int_val);
-            } else {
-                loss = precision_loss_int(t, ast->lit->int_val);
+                loss = precision_loss_float(t, from->lit->float_val);
             }
-        } else if (ast->lit->lit_type == FLOAT) {
-            if (t->base != FLOAT_T) {
-                error(ast->line, ast->file, "Cannot use floating point literal as integer type '%s'.", t->name);
+            if (loss) {
+                error(from->line, from->file,
+                    "Cannot coerce literal value of type '%s' into type '%s' due to precision loss.",
+                    type_to_string(from->var_type), type_to_string(to));
             }
-            loss = precision_loss_float(t, ast->lit->float_val);
-        }
-        if (loss) {
-            error(ast->line, ast->file, "Cannot use literal value of type '%s' as type '%s' due to precision loss.", ast_type->name, t->name);
-        }
-        Ast *c = ast_alloc(AST_CAST);
-        c->cast->object = ast;
-        c->cast->cast_type = t;
-        c->var_type = t;
-        return c;
-    }
-    error(ast->line, ast->file, "Cannot use value of type '%s' as type '%s'", ast_type->name, t->name);
-    return NULL;
-}
+            return 1;
+        } else {
+            if (can_cast(from->var_type, t)) {
+                return 1;
+            }
 
-Ast *try_implicit_cast(Type *t, Ast *ast) {
-    Ast *c = try_implicit_cast_no_error(t, ast);
-    if (c == NULL) {
-        error(ast->line, ast->file, "Cannot implicitly cast value of type '%s' to type '%s'", ast->var_type->name, t->name);
+            error(from->line, from->file,
+                "Cannot coerce literal value of type '%s' into type '%s'.",
+                type_to_string(from->var_type), type_to_string(to));
+        }
     }
-    return c;
-}
-
-Ast *try_implicit_cast_no_error(Type *t, Ast *ast) {
-    if (is_any(t)) {
-        return cast_to_any(ast); 
-    }
-    if (ast->type == AST_LITERAL || (ast->type == AST_TEMP_VAR && ast->tempvar->expr->type == AST_LITERAL)) {
-        return cast_literal(t, ast);
-    }
-    return NULL;
+    return 0;
 }
 
 Var *get_ast_var_noerror(Ast *ast) {
@@ -470,8 +428,6 @@ Var *get_ast_var_noerror(Ast *ast) {
     }
     case AST_IDENTIFIER:
         return ast->ident->var;
-    case AST_TEMP_VAR:
-        return ast->tempvar->var;
     case AST_DECL:
         return ast->decl->var;
     case AST_FUNC_DECL: // is this allowed?

@@ -7,16 +7,14 @@ int new_var_id() {
 }
 
 Var *make_var(char *name, Type *type) {
-    Var *var = malloc(sizeof(Var));
+    Var *var = calloc(sizeof(Var), 1);
+
     var->name = malloc(strlen(name)+1);
     strcpy(var->name, name);
+
     var->id = new_var_id();
     var->type = type;
-    var->temp = 0;
-    var->ext = 0;
-    var->proxy = NULL;
-    var->consumed = 0;
-    var->initialized = 0;
+
     if (type->base == STRUCT_T) {
         var->initialized = 1;
         var->members = malloc(sizeof(Var*)*type->st.nmembers);
@@ -35,8 +33,6 @@ Var *make_var(char *name, Type *type) {
             var->members[i] = make_var(member_name, type->st.member_types[i]); // TODO
             var->members[i]->initialized = 1; // maybe wrong?
         }
-    } else {
-        var->members = NULL;
     }
     return var;
 }

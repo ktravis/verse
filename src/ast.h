@@ -8,6 +8,7 @@
 #include "var.h"
 #include "token.h"
 #include "util.h"
+#include "scope.h"
 #include "types.h"
 
 typedef enum {
@@ -18,7 +19,6 @@ typedef enum {
     AST_UOP,
     AST_IDENTIFIER,
     AST_COPY,
-    AST_TEMP_VAR,
     AST_RELEASE,
     AST_DECL,
     AST_FUNC_DECL,
@@ -28,7 +28,6 @@ typedef enum {
     AST_INDEX,
     AST_SLICE,
     AST_CONDITIONAL,
-    AST_SCOPE,
     AST_RETURN,
     AST_TYPE_DECL,
     AST_BLOCK,
@@ -67,7 +66,6 @@ typedef struct Ast {
         struct AstIndex         *index;
         struct AstBind          *bind;
         struct AstBlock         *block;
-        struct AstScope         *scope;
         struct AstConditional   *cond;
         struct AstTypeDecl      *type_decl;
         struct AstEnumDecl      *enum_decl;
@@ -89,8 +87,8 @@ typedef enum {
     STRING,
     FLOAT,
     BOOL,
-    STRUCT,
-    ENUM,
+    STRUCT_LIT,
+    ENUM_LIT,
 } LiteralType;
 
 typedef struct AstLiteral {
@@ -128,14 +126,6 @@ typedef struct AstDecl {
     Ast *init;
     unsigned char global;
 } AstDecl;
-
-typedef struct AstFnDecl {
-    Var *var;
-    int anon;
-    VarList *args;
-    struct AstScope *scope;
-    Var *bindings_var;
-} AstFnDecl;
 
 typedef struct AstUnaryOp {
     int op;
@@ -176,11 +166,11 @@ typedef struct AstIndex {
     Ast *index;
 } AstIndex;
 
-typedef struct AstBind {
-    Ast *expr;
-    int offset;
-    int bind_id;
-} AstBind;
+//typedef struct AstBind {
+    //Ast *expr;
+    //int offset;
+    //int bind_id;
+//} AstBind;
 
 typedef struct AstBlock {
     struct AstList *statements;
@@ -189,29 +179,19 @@ typedef struct AstBlock {
     int endline;
 } AstBlock;
 
-typedef struct ResolutionList {
-    Type *type;
-    Type **swappable;
-    struct ResolutionList *to_parent;
-    struct ResolutionList *prev_in_scope;
-    struct ResolutionList *next_in_scope;
-} ResolutionList;
-
-typedef struct AstScope {
-    struct AstScope *parent;
+typedef struct AstFnDecl {
+    Var      *var;
+    int       anon;
+    VarList  *args;
+    Scope    *scope;
     AstBlock *body;
-    VarList *locals;
-    TypeList *local_types;
-    ResolutionList *unresolved_types;
-    struct AstList *bindings;
-    unsigned char has_return;
-    unsigned char is_function; // TODO change the way this works
-} AstScope;
+} AstFnDecl;
 
 typedef struct AstConditional {
     Ast *condition;
-    AstScope *if_body;
-    AstScope *else_body;
+    Scope *scope;
+    AstBlock *if_body;
+    AstBlock *else_body;
 } AstConditional;
 
 typedef struct AstTypeDecl {
@@ -229,7 +209,7 @@ typedef struct AstCopy {
 } AstCopy;
 
 typedef struct AstReturn {
-    AstScope *scope; // Needed ?
+    //Scope *scope; // Needed ?
     Ast *expr;
 } AstReturn;
 
@@ -244,13 +224,15 @@ typedef struct AstRelease {
 
 typedef struct AstWhile {
     Ast *condition;
-    AstScope *body;
+    Scope *scope;
+    AstBlock *body;
 } AstWhile;
 
 typedef struct AstFor {
     Var *itervar;
+    Scope *scope;
     Ast *iterable;
-    AstScope *body;
+    AstBlock *body;
 } AstFor;
 
 typedef struct AstDirective {
@@ -281,8 +263,6 @@ typedef struct AstListList {
 
 Ast *ast_alloc(AstType type);
 Ast *deep_copy(Ast *ast);
-
-AstScope *new_scope(AstScope *parent);
 
 Ast *make_ast_copy(Ast *ast);
 Ast *make_ast_bool(long ival);

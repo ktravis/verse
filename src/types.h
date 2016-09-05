@@ -6,8 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct AstScope; // forward declare this
-
 enum {
     INT_T = 1,
     UINT_T,
@@ -15,111 +13,129 @@ enum {
     BOOL_T,
     STRING_T,
     VOID_T,
-    FN_T,
-    AUTO_T,
-    STRUCT_T,
-    BASEPTR_T,
-    PTR_T,
-    ARRAY_T,
-    STATIC_ARRAY_T,
-    DYN_ARRAY_T,
-    ENUM_T,
-    TYPE_T,
-    ANY_T
+    BASEPTR_T
+    //ANY_T
 };
 
-struct TypeList;
-
-typedef struct Type {
-    int id;
-    char *name;
-
-    int named;
+typedef struct TypeData {
     int base;
-    int held;
     int size;
     long length;
+} TypeData;
 
-    unsigned char unresolved;
-    unsigned char builtin;
-
-    union {
-        struct {
-            // for functions
-            int nargs;
-            struct TypeList *args;
-            struct Type *ret;
-            int variadic;
-        } fn;
-
-        struct Type *inner;
-
-        struct {
-            int nmembers;
-            char **member_names;
-            struct Type **member_types;
-        } st;
-
-        struct {
-            int nmembers;
-            char **member_names;
-            long *member_values;
-            struct Type *inner;
-        } _enum;
-    };
-
-    struct TypeList *bindings;
-    int offset;
-    int bindings_id;
-} Type;
+// Structs, enums, and other base types are "primitives"
+// (Any is a 'special' struct)
+// all others (functions, refs, arrays, aliases) are not primitives, they use
+// Type and not TypeData directly
+// Structs can have parameters, the bare type is primitive, but the parametrized
+// type is not -- it is expressed as
+// a Type<PARAMS>(Type<BASIC>(TypeData<STRUCT_T>), ...)
+// i.e. Box is a primitive type -- Box<u16> is parametrized, and so is not
+// primitive
+// Maybe a better definition -> If ANY resolution can potentially happen to make
+// a type concrete, it is not considered primitive
+// TODO: does this mean structs are not primitive though? what about a struct
 
 typedef struct TypeList {
-    Type *item;
+    struct Type *item;
     struct TypeList *next;
     struct TypeList *prev;
 } TypeList;
 
+typedef enum TypeComp {
+    BASIC,
+    ALIAS,
+    POLY,
+    POLYDEF,
+    PARAMS,
+    STATIC_ARRAY,
+    ARRAY,
+    REF,
+    FUNC,
+    STRUCT,
+    ENUM
+} TypeComp;
 
-Type *define_builtin_type(Type *type);
+struct Scope;
 
+typedef struct FnType {
+    int nargs;
+    struct TypeList *args;
+    struct Type *ret;
+    int variadic;
+} FnType;
 
-Type *base_type(int t);
-Type *base_numeric_type(int t, int size);
+typedef struct StructType {
+    int nmembers;
+    char **member_names;
+    struct Type **member_types;
+} StructType;
 
-Type *make_type(char *name, int base, int size);
-Type *make_ptr_type(Type *inner);
+typedef struct EnumType {
+    int nmembers;
+    char **member_names;
+    long *member_values;
+    struct Type *inner;
+} EnumType;
+
+typedef struct Type {
+    int id;
+    TypeComp comp;
+    struct Scope *scope;
+    union {
+        TypeData *data; // basic
+        char *name; // alias
+        TypeList *params;
+        struct {
+            int size;
+            struct Type *inner;
+        } array;
+        struct Type *inner; // slice / ref
+        FnType fn;
+        StructType st;
+        EnumType en;
+    };
+} Type;
+
+typedef struct TypeDef {
+    char *name;
+    Type *type;
+} TypeDef;
+
+typedef struct TypeDefList {
+    TypeDef *item;
+    struct TypeDefList *next;
+    struct TypeDefList *prev;
+} TypeDefList;
+
+void init_types();
+
+TypeData *make_primitive(int base, int size);
+
+Type *make_type(struct Scope *scope, char *name);
+Type *make_poly(struct Scope *scope, char *name, int id);
+Type *make_ref_type(Type *inner);
+Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic);
 Type *make_static_array_type(Type *inner, long length);
 Type *make_array_type(Type *inner);
-Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic);
-Type *make_enum_type(char *name, Type *inner, int nmembers, char **member_names, long *member_values);
-Type *make_struct_type(char *name, int nmembers, char **member_names, Type **member_types);
 
-Type *register_type(Type *t);
-TypeList *get_used_types();
-int get_num_used_types();
+Type *make_enum_type(Type *inner, int nmembers, char **member_names, long *member_values);
+Type *make_struct_type(int nmembers, char **member_names, Type **member_types);
 
-int add_binding(Type *t, Type *b);
+Type *resolve_alias(Type *type);
+TypeData *resolve_type_data(Type *t);
 
-int can_cast(Type *from, Type *to);
-int is_numeric(Type *t);
-int is_dynamic(Type *t);
-int is_array(Type *t);
-int is_any(Type *t);
-int types_are_equal(Type *a, Type *b);
-int check_type(Type *a, Type *b);
-int type_can_coerce(Type *from, Type *to);
-int type_equality_comparable(Type *a, Type *b);
-long array_size(Type *t);
-Type *typeinfo_ptr();
+int get_type_base(struct Scope *scope, Type *t);
 
-int precision_loss_uint(Type *t, unsigned long ival);
-int precision_loss_int(Type *t, long ival);
-int precision_loss_float(Type *t, double ival);
+int precision_loss_uint(TypeData *t, unsigned long ival);
+int precision_loss_int(TypeData *t, long ival);
+int precision_loss_float(TypeData *t, double ival);
 
-Type *promote_number_type(Type *a, int left_lit, Type *b, int right_lit);
+TypeData *promote_number_type(TypeData *a, int left_lit, TypeData *b, int right_lit);
 
 TypeList *reverse_typelist(TypeList *list);
 TypeList *typelist_append(TypeList *list, Type *t);
-void remove_type(int id);
+TypeDefList *reverse_typedeflist(TypeDefList *list);
+TypeDefList *typedeflist_append(TypeDefList *list, TypeDef *t);
 
 #endif

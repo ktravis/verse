@@ -22,26 +22,28 @@ enum {
 AstList *get_global_funcs();
 TypeList *get_global_structs();
 
-Type *parse_type(Tok *t, AstScope *scope);
-Ast *parse_directive(Tok *t, AstScope *scope);
-Ast *parse_expression(Tok *t, int priority, AstScope *scope);
-Ast *parse_arg_list(Ast *left, AstScope *scope);
-Ast *parse_primary(Tok *t, AstScope *scope);
-Ast *parse_binop(char op, Ast *left, Ast *right, AstScope *scope);
-Ast *parse_declaration(Tok *t, AstScope *scope);
-Ast *parse_statement(Tok *t, AstScope *scope);
-Ast *parse_block(AstScope *scope, int bracketed);
-Ast *parse_scope(AstScope *scope, AstScope *parent);
-Ast *parse_conditional(AstScope *scope);
-Type *parse_struct_type(AstScope *scope);
+Type *parse_type(Tok *t, Scope *scope);
+Ast *parse_directive(Tok *t, Scope *scope);
+Ast *parse_expression(Tok *t, int priority, Scope *scope);
+Ast *parse_arg_list(Ast *left, Scope *scope);
+Ast *parse_primary(Tok *t, Scope *scope);
+Ast *parse_binop(char op, Ast *left, Ast *right, Scope *scope);
+Ast *parse_declaration(Tok *t, Scope *scope);
 
-Ast *parse_semantics(Ast *ast, AstScope *scope);
-Ast *parse_source_file(char *filename, AstScope *scope);
+Ast *parse_statement(Tok *t, Scope *scope);
 
-TypeList *get_builtin_types();
-AstList *get_init_list();
+Ast *parse_source_file(char *filename, Scope *scope);
+Ast *parse_statement_list(Scope *scope);
+
+Ast *parse_block_ast(Scope *scope, int bracketed);
+Ast *parse_block(Scope *scope, int bracketed);
+
+Ast *parse_conditional(Scope *scope);
+
+Type *parse_struct_type(Scope *scope);
+
+Ast *parse_semantics(Ast *ast, Scope *scope);
 
 void init_builtins();
-void init_types();
 
 #endif

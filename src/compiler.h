@@ -15,14 +15,14 @@
 
 void emit_type(Type *t);
 void emit_free(Var *var);
-void emit_free_locals(AstScope *scope);
-void emit_scope_start(AstScope *ast);
-void emit_scope_end(AstScope *ast);
-void compile_scope(AstScope *scope);
+void emit_free_locals(Scope *scope);
+void emit_scope_start(Scope *scope);
+void emit_scope_end(Scope *scope);
+void compile_scope(Scope *scope);
 void compile_block(AstBlock *block);
-void compile(Ast *ast);
-void compile_unspecified_array(Ast *ast);
-void compile_static_array(Ast *ast);
+void compile(Scope *scope, Ast *ast);
+void compile_unspecified_array(Scope *scope, Ast *ast);
+void compile_static_array(Scope *scope, Ast *ast);
 void emit_structmember(char *name, Type *st);
 void emit_binop(Ast *ast);
 void emit_free_bindings(int id, TypeList *bindings);

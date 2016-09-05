@@ -10,9 +10,9 @@ typedef struct Var {
     int id;
     int length;
     int temp;
-    int consumed;
     int initialized;
     unsigned char constant;
+    unsigned char use;
     //int held;
     int ext;
     struct Var *proxy;
