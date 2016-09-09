@@ -15,26 +15,33 @@ Var *make_var(char *name, Type *type) {
     var->id = new_var_id();
     var->type = type;
 
-    if (type->base == STRUCT_T) {
-        var->initialized = 1;
-        var->members = malloc(sizeof(Var*)*type->st.nmembers);
-        for (int i = 0; i < type->st.nmembers; i++) {
-            int l = strlen(name)+strlen(type->st.member_names[i])+1;
-            char *member_name;
-            if (type->held) {
-                member_name = malloc((l+2)*sizeof(char));
-                sprintf(member_name, "%s->%s", name, type->st.member_names[i]);
-                member_name[l+1] = 0;
-            } else {
-                member_name = malloc((l+1)*sizeof(char));
-                sprintf(member_name, "%s.%s", name, type->st.member_names[i]);
-                member_name[l] = 0;
-            }
-            var->members[i] = make_var(member_name, type->st.member_types[i]); // TODO
-            var->members[i]->initialized = 1; // maybe wrong?
-        }
+    if (type == NULL) {
+        return var;
+    }
+
+    if (resolve_alias(type)->comp == STRUCT) {
+        init_struct_var(var);
     }
     return var;
+}
+
+void init_struct_var(Var *var) {
+    Type *type = resolve_alias(var->type);
+    assert(type->comp == STRUCT);
+
+    var->initialized = 1;
+    var->members = malloc(sizeof(Var*)*type->st.nmembers);
+
+    for (int i = 0; i < type->st.nmembers; i++) {
+        int l = strlen(var->name)+strlen(type->st.member_names[i])+1;
+        char *member_name;
+        member_name = malloc((l+1)*sizeof(char));
+        sprintf(member_name, "%s.%s", var->name, type->st.member_names[i]);
+        member_name[l] = 0;
+
+        var->members[i] = make_var(member_name, type->st.member_types[i]); // TODO
+        var->members[i]->initialized = 1; // maybe wrong?
+    }
 }
 
 VarList *varlist_append(VarList *list, Var *v) {

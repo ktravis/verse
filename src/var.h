@@ -2,30 +2,13 @@
 #define VAR_H
 
 #include <stdio.h>
+
+#include "common.h"
 #include "types.h"
-
-typedef struct Var {
-    char *name;
-    Type *type;
-    int id;
-    int length;
-    int temp;
-    int initialized;
-    unsigned char constant;
-    unsigned char use;
-    //int held;
-    int ext;
-    struct Var *proxy;
-    struct Var **members;
-} Var;
-
-typedef struct VarList {
-    Var *item;
-    struct VarList *next;
-} VarList;
 
 int new_var_id();
 Var *make_var(char *name, Type *type);
+void init_struct_var(Var *var);
 
 VarList *varlist_append(VarList *list, Var *v);
 VarList *varlist_remove(VarList *list, char *name);

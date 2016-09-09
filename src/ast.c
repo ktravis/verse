@@ -4,7 +4,7 @@ static int next_ast_id = 0;
 
 Ast *ast_alloc(AstType type) {
     Ast *ast = malloc(sizeof(Ast));
-    ast->id = last_ast_id++;
+    ast->id = next_ast_id++;
     ast->type = type;
     ast->line = lineno();
     ast->file = current_file_name();
@@ -29,12 +29,6 @@ Ast *ast_alloc(AstType type) {
         break;
     case AST_COPY:
         ast->copy = calloc(sizeof(AstCopy), 1);
-        break;
-    case AST_TEMP_VAR:
-        ast->tempvar = calloc(sizeof(AstTempVar), 1);
-        break;
-    case AST_RELEASE:
-        ast->release = calloc(sizeof(AstRelease), 1);
         break;
     case AST_DECL:
         ast->decl = calloc(sizeof(AstDecl), 1);
@@ -80,12 +74,6 @@ Ast *ast_alloc(AstType type) {
     case AST_CONTINUE:
         // Don't need any extra stuff
         break;
-    case AST_HOLD:
-        ast->hold = calloc(sizeof(AstHold), 1);
-        break;
-    case AST_BIND:
-        ast->bind = calloc(sizeof(AstBind), 1);
-        break;
     case AST_CAST:
         ast->cast = calloc(sizeof(AstCast), 1);
         break;
@@ -105,172 +93,11 @@ Ast *ast_alloc(AstType type) {
     return ast;
 }
 
-AstList *copy_astlist(AstList *list) {
-    AstList *copy = NULL;
-    for (; list != NULL; list = list->next) {
-        copy = astlist_append(copy, deep_copy(list->item));
-    }
-    return reverse_astlist(copy);
-}
-
-AstBlock *copy_block(AstBlock *block) {
-    AstBlock *copy = malloc(sizeof(AstBlock));
-    *copy = *block;
-    copy->statements = copy_astlist(block->statements);
-    return copy;
-}
-
-AstScope *copy_scope(AstScope *scope) {
-    AstScope *copy = malloc(sizeof(AstScope));
-    *copy = *scope;
-    copy->body = copy_block(scope->body);
-    copy->bindings = copy_astlist(scope->bindings);
-    // do locals need to be copied? not all of them?
-    return copy;
-}
-
-Ast *deep_copy(Ast *ast) {
-    Ast *copy = malloc(sizeof(Ast));
-    *copy = *ast;
-
-    switch (ast->type) {
-    case AST_DOT:
-        copy->dot = calloc(sizeof(AstDot), 1);
-        copy->dot->member_name = ast->dot->member_name;
-        copy->dot->object = deep_copy(ast->dot->object);
-        break;
-    case AST_ASSIGN:
-    case AST_BINOP:
-        copy->binary = calloc(sizeof(AstBinaryOp), 1);
-        copy->binary->op = ast->binary->op;
-        copy->binary->left = deep_copy(ast->binary->left);
-        copy->binary->right = deep_copy(ast->binary->right);
-        break;
-    case AST_UOP:
-        copy->unary = calloc(sizeof(AstUnaryOp), 1);
-        copy->unary->op = ast->unary->op;
-        copy->unary->object = deep_copy(ast->unary->object);
-        break;
-    case AST_COPY:
-        copy->copy = calloc(sizeof(AstCopy), 1);
-        copy->copy->expr = deep_copy(ast->copy->expr);
-        break;
-    case AST_TEMP_VAR:
-        copy->tempvar = calloc(sizeof(AstTempVar), 1);
-        copy->tempvar->var = ast->tempvar->var;
-        copy->tempvar->expr = deep_copy(ast->tempvar->expr);
-        break;
-    case AST_RELEASE:
-        copy->release = calloc(sizeof(AstRelease), 1);
-        copy->release->object = deep_copy(ast->release->object);
-        break;
-    case AST_DECL:
-        copy->decl = calloc(sizeof(AstDecl), 1);
-        copy->decl->var = ast->decl->var;
-        copy->decl->global = ast->decl->global;
-        copy->decl->init = deep_copy(ast->decl->init);
-        break;
-    case AST_ANON_FUNC_DECL:
-    case AST_FUNC_DECL:
-        copy->fn_decl = calloc(sizeof(AstFnDecl), 1);
-        *copy->fn_decl = *ast->fn_decl;
-        copy->fn_decl->scope = copy_scope(ast->fn_decl->scope);
-        // Keep the same polymorphs!
-        break;
-    case AST_CALL:
-        copy->call = calloc(sizeof(AstCall), 1);
-        *copy->call = *ast->call;
-        copy->call->fn = deep_copy(ast->call->fn);
-        copy->call->args = copy_astlist(ast->call->args);
-        break;
-    case AST_INDEX:
-        copy->index = calloc(sizeof(AstIndex), 1);
-        copy->index->object = deep_copy(ast->index->object);
-        copy->index->index = deep_copy(ast->index->index);
-        break;
-    case AST_SLICE:
-        copy->slice = calloc(sizeof(AstSlice), 1);
-        copy->slice->object = deep_copy(ast->slice->object);
-        copy->slice->offset = deep_copy(ast->slice->offset);
-        copy->slice->length = deep_copy(ast->slice->length);
-        break;
-    case AST_CONDITIONAL:
-        copy->cond = calloc(sizeof(AstConditional), 1);
-        copy->cond->condition = deep_copy(ast->cond->condition);
-        copy->cond->if_body = copy_scope(ast->cond->if_body);
-        copy->cond->else_body = copy_scope(ast->cond->else_body);
-        break;
-    /*case AST_SCOPE:*/
-        /*copy->scope = copy_scope(ast->scope);*/
-        /*break;*/
-    case AST_RETURN:
-        copy->ret = calloc(sizeof(AstReturn), 1);
-        // wut
-        copy->ret->scope = ast->ret->scope;
-        copy->ret->expr = deep_copy(ast->ret->expr);
-        break;
-    case AST_BLOCK:
-        copy->block = copy_block(ast->block);
-        break;
-    case AST_WHILE:
-        copy->while_loop = calloc(sizeof(AstWhile), 1);
-        copy->while_loop->condition = deep_copy(ast->while_loop->condition);
-        copy->while_loop->body = copy_scope(ast->while_loop->body);
-        break;
-    case AST_FOR:
-        copy->for_loop = calloc(sizeof(AstFor), 1);
-        // need to copy itervar
-        copy->for_loop->itervar = malloc(sizeof(Var));
-        *copy->for_loop->itervar = *ast->for_loop->itervar;
-        copy->for_loop->iterable = deep_copy(ast->for_loop->iterable);
-        copy->for_loop->body = copy_scope(ast->for_loop->body);
-        break;
-    case AST_HOLD:
-        copy->hold = calloc(sizeof(AstHold), 1);
-        copy->hold->object = deep_copy(ast->hold->object);
-        copy->hold->tempvar = malloc(sizeof(Var));
-        *copy->hold->tempvar = *ast->hold->tempvar;
-        break;
-    case AST_BIND:
-        copy->bind = calloc(sizeof(AstBind), 1);
-        copy->bind->expr = deep_copy(ast->bind->expr);
-        break;
-    case AST_CAST:
-        copy->cast = calloc(sizeof(AstCast), 1);
-        copy->cast->cast_type = ast->cast->cast_type;
-        copy->cast->object = deep_copy(ast->cast->object);
-        break;
-    case AST_DIRECTIVE:
-        copy->directive = calloc(sizeof(AstDirective), 1);
-        copy->directive->name = ast->directive->name;
-        copy->directive->object = deep_copy(ast->directive->object);
-        break;
-    case AST_USE:
-        copy->use = calloc(sizeof(AstUse), 1);
-        copy->use->object = deep_copy(ast->use->object);
-        break;
-    default:
-        break;
-    }
-    return copy;
-}
-
 Ast *make_ast_copy(Ast *ast) {
     Ast *cp = ast_alloc(AST_COPY);
     cp->copy->expr = ast;
     cp->var_type = ast->var_type;
     return cp;
-}
-
-AstScope *new_scope(AstScope *parent) {
-    AstScope *scope = malloc(sizeof(AstScope));
-    scope->locals = NULL;
-    scope->local_types = NULL;
-    scope->unresolved_types = NULL;
-    scope->parent = parent;
-    scope->has_return = 0;
-    scope->is_function = 0;
-    return scope;
 }
 
 Type *type_of_directive(Ast *ast) {
@@ -308,14 +135,6 @@ Ast *make_ast_string(char *str) {
     ast->lit->lit_type = STRING;
     ast->lit->string_val = str;
     return ast;
-}
-
-Ast *make_ast_tempvar(Ast *ast, Var *tempvar) {
-    Ast *tmp = ast_alloc(AST_TEMP_VAR);
-    tmp->tempvar->var = tempvar;
-    tmp->tempvar->expr = ast;
-    tmp->var_type = tempvar->type;
-    return tmp;
 }
 
 Ast *make_ast_id(Var *var, char *name) {
@@ -385,7 +204,7 @@ int can_coerce_type(Scope *scope, Type *to, Ast *from) {
                     loss = precision_loss_int(t, from->lit->int_val);
                 }
             } else if (from->lit->lit_type == FLOAT) {
-                if (t->base != FLOAT_T) {
+                if (t->data->base != FLOAT_T) {
                     error(from->line, from->file,
                         "Cannot coerce floating point literal into integer type '%s'.",
                         type_to_string(to));

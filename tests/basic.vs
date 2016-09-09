@@ -35,7 +35,7 @@ fn main():int {
     }
     println(x);
 
-    blah := fn(x:int, y:int):auto {
+    blah := fn(x:int, y:int):int {
         return x * x + y * y;
     };
     assert(blah(3, 4) == 25);

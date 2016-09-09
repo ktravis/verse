@@ -1,5 +1,16 @@
-#include "src/compiler.h"
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <strings.h>
+#include <assert.h>
+
+#include "src/ast.h"
+#include "src/codegen.h"
+#include "src/parse.h"
+#include "src/semantics.h"
+#include "src/types.h"
 #include "src/util.h"
+#include "src/var.h"
 
 #include "prelude.h"
 
@@ -19,47 +30,47 @@ int main(int argc, char **argv) {
     init_types(root_scope);
     init_builtins();
 
-    Ast *root = parse_block_ast(root_scope, 0);
+    Ast *root = parse_block(root_scope, 0);
     root = parse_semantics(root_scope, root);
 
     Var *main_var = NULL;
 
     printf("%.*s\n", prelude_length, prelude);
-    _indent = 0;
 
     VarList *varlist = get_global_vars();
     while (varlist != NULL) {
-        emit_var_decl(varlist->item);
+        emit_var_decl(root_scope, varlist->item);
         varlist = varlist->next;
     }
 
-    TypeList *reg = root_scope->types->used_types;
+    TypeList *reg = root_scope->used_types;
     TypeList *tmp = reg;
     while (tmp != NULL) {
-        if (tmp->item->base == STRUCT_T) {
-            emit_struct_decl(tmp->item);
+        Type *t = resolve_alias(tmp->item);
+        if (t->comp == STRUCT) {
+            emit_struct_decl(root_scope, t);
         }
         tmp = tmp->next;
     }
     if (reg != NULL) {
         /*fprintf(stderr, "Types in use:\n");*/
         while (reg != NULL) {
-            if (reg->item->unresolved) {
-                error(-1, "internal", "Undefined type '%s'.", reg->item->name);
-            }
-            emit_typeinfo_decl(reg->item);
+            /*if (reg->item->unresolved) {*/
+                /*error(-1, "internal", "Undefined type '%s'.", reg->item->name);*/
+            /*}*/
+            emit_typeinfo_decl(root_scope, reg->item);
             reg = reg->next;
         }
     }
 
     printf("void _verse_init_typeinfo() {\n");
-    _indent++;
-    reg = get_used_types();
+    change_indent(1);
+    reg = root_scope->used_types;
     while (reg != NULL) {
-        emit_typeinfo_init(reg->item);
+        emit_typeinfo_init(root_scope, reg->item);
         reg = reg->next;
     }
-    _indent--;
+    change_indent(-1);
     printf("}\n");
 
     // TODO: factor these into global vars
@@ -69,19 +80,21 @@ int main(int argc, char **argv) {
         if (!strcmp(v->name, "main")) {
             main_var = v;
         }
-        emit_forward_decl(v);
+        emit_forward_decl(root_scope, v);
         fnlist = fnlist->next;
     }
 
     fnlist = get_global_funcs();
     while (fnlist != NULL) {
-        emit_func_decl(fnlist->item);
+        emit_func_decl(root_scope, fnlist->item);
         fnlist = fnlist->next;
     }
 
     printf("void _verse_init() ");
 
-    compile(root);
+    emit_scope_start(root_scope);
+    compile(root_scope, root);
+    emit_scope_end(root_scope);
 
     printf("int main(int argc, char** argv) {\n"
            "    _verse_init_typeinfo();\n"

@@ -5,91 +5,12 @@
 #include <stdlib.h>
 #include <strings.h>
 
+#include "common.h"
 #include "var.h"
 #include "token.h"
 #include "util.h"
 #include "scope.h"
 #include "types.h"
-
-typedef enum {
-    AST_LITERAL,
-    AST_DOT,
-    AST_ASSIGN,
-    AST_BINOP,
-    AST_UOP,
-    AST_IDENTIFIER,
-    AST_COPY,
-    AST_RELEASE,
-    AST_DECL,
-    AST_FUNC_DECL,
-    AST_ANON_FUNC_DECL,
-    AST_EXTERN_FUNC_DECL,
-    AST_CALL,
-    AST_INDEX,
-    AST_SLICE,
-    AST_CONDITIONAL,
-    AST_RETURN,
-    AST_TYPE_DECL,
-    AST_BLOCK,
-    AST_WHILE,
-    AST_FOR,
-    AST_BREAK,
-    AST_CONTINUE,
-    AST_HOLD,
-    AST_BIND,
-    AST_CAST,
-    AST_DIRECTIVE,
-    AST_TYPEINFO,
-    AST_ENUM_DECL,
-    AST_USE,
-} AstType;
-
-struct AstList;
-
-typedef struct Ast {
-    AstType type;
-    int     line;
-    char    *file;
-    Type    *var_type;
-    union {
-        struct AstLiteral       *lit;
-        struct AstTypeInfo      *typeinfo;
-        struct AstIdent         *ident;
-        struct AstDecl          *decl;
-        struct AstFnDecl        *fn_decl;
-        struct AstUnaryOp       *unary;
-        struct AstBinaryOp      *binary;
-        struct AstCast          *cast;
-        struct AstDot           *dot;
-        struct AstCall          *call;
-        struct AstSlice         *slice;
-        struct AstIndex         *index;
-        struct AstBind          *bind;
-        struct AstBlock         *block;
-        struct AstConditional   *cond;
-        struct AstTypeDecl      *type_decl;
-        struct AstEnumDecl      *enum_decl;
-        struct AstTempVar       *tempvar;
-        struct AstCopy          *copy;
-        struct AstReturn        *ret;
-        struct AstHold          *hold;
-        struct AstRelease       *release;
-        struct AstWhile         *while_loop;
-        struct AstFor           *for_loop;
-        struct AstDirective     *directive;
-        struct AstUse           *use;
-    };
-} Ast;
-
-typedef enum {
-    INTEGER,
-    CHAR,
-    STRING,
-    FLOAT,
-    BOOL,
-    STRUCT_LIT,
-    ENUM_LIT,
-} LiteralType;
 
 typedef struct AstLiteral {
     LiteralType lit_type;
@@ -165,12 +86,6 @@ typedef struct AstIndex {
     Ast *object;
     Ast *index;
 } AstIndex;
-
-//typedef struct AstBind {
-    //Ast *expr;
-    //int offset;
-    //int bind_id;
-//} AstBind;
 
 typedef struct AstBlock {
     struct AstList *statements;
@@ -250,16 +165,11 @@ typedef struct AstEnumDecl {
     Ast **exprs;
 } AstEnumDecl;
 
-typedef struct AstList {
-    Ast *item;
-    struct AstList *next;
-} AstList;
-
-typedef struct AstListList {
-    int id;
-    AstList *item;
-    struct AstListList *next;
-} AstListList;
+//typedef struct AstListList {
+    //int id;
+    //AstList *item;
+    //struct AstListList *next;
+//} AstListList;
 
 Ast *ast_alloc(AstType type);
 Ast *deep_copy(Ast *ast);
@@ -278,6 +188,8 @@ Ast *make_ast_slice(Ast *inner, Ast *offset, Ast *length);
 //Type *var_type(Ast *ast);
 Var *get_ast_var(Ast *ast);
 Var *get_ast_var_noerror(Ast *ast);
+
+int can_coerce_type(Scope *scope, Type *to, Ast *from);
 
 AstList *astlist_append(AstList *list, Ast *ast);
 AstList *reverse_astlist();

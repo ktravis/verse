@@ -3,15 +3,19 @@
 
 static int last_type_id = 0;
 
-TypeData *make_primitive(int base, int size) {
-    TypeData *t = malloc(sizeof(TypeData));
-    t->base = base;
-    t->size = size;
-    t->id = last_type_id++;
-    return t;
+Type *make_primitive(int base, int size) {
+    TypeData *data = malloc(sizeof(TypeData));
+    data->base = base;
+    data->size = size;
+
+    Type *type = malloc(sizeof(Type));
+    type->comp = BASIC;
+    type->data = data;
+    type->id = last_type_id++;
+    return type;
 }
 
-Type *make_type(struct Scope *scope, char *name) {
+Type *make_type(Scope *scope, char *name) {
     Type *type = malloc(sizeof(Type));
     type->comp = ALIAS;
     type->name = name;
@@ -19,7 +23,7 @@ Type *make_type(struct Scope *scope, char *name) {
     type->id = last_type_id++;
     return type;
 }
-Type *make_poly(struct Scope *scope, char *name, int id) {
+Type *make_poly(Scope *scope, char *name, int id) {
     Type *type = malloc(sizeof(Type));
     type->comp = POLY;
     type->name = name;
@@ -35,17 +39,17 @@ Type *make_ref_type(Type *inner) {
     return type;
 }
 Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic) {
-    Type *t = malloc(sizeof(Type));
+    Type *type = malloc(sizeof(Type));
     type->comp = FUNC;
-    t->fn.nargs = nargs;
-    t->fn.args = args;
-    t->fn.ret = ret;
-    t->fn.variadic = variadic;
-    t->id = last_type_id++;
-    return t;
+    type->fn.nargs = nargs;
+    type->fn.args = args;
+    type->fn.ret = ret;
+    type->fn.variadic = variadic;
+    type->id = last_type_id++;
+    return type;
 }
 Type *make_static_array_type(Type *inner, long length) {
-    Type *t = malloc(sizeof(Type));
+    Type *type = malloc(sizeof(Type));
     type->comp = STATIC_ARRAY;
     type->array.inner = inner;
     type->array.length = length;
@@ -53,7 +57,7 @@ Type *make_static_array_type(Type *inner, long length) {
     return type;
 }
 Type *make_array_type(Type *inner) {
-    Type *t = malloc(sizeof(Type));
+    Type *type = malloc(sizeof(Type));
     type->comp = ARRAY;
     type->inner = inner;
     type->id = last_type_id++;
@@ -102,60 +106,6 @@ TypeList *reverse_typelist(TypeList *list) {
     return list;
 }
 
-int can_cast(Type *from, Type *to) {
-    if (from->comp == ENUM) {
-        return can_cast(from->en.inner, to);
-    } else if (to->comp == ENUM) {
-        return can_cast(from, to->en.inner);
-    }
-
-    switch (from->comp) {
-    case REF:
-        to = resolve_alias(to); 
-        return to->comp == REF ||
-            (to->comp == BASIC &&
-                 (to->data->base == BASEPTR_T ||
-                 (to->base == INT_T && to->size == 8)));
-    case FN_T:
-        to = resolve_alias(to);
-        return check_type(from, to);
-    case STRUCT_T:
-        to = resolve_alias(to);
-        return check_type(from, to);
-    case BASIC:
-        to = resolve_alias(to);
-        switch (from->data->base) {
-        case BASEPTR_T:
-            return (to->comp == BASIC && to->data->base == BASEPTR_T) || to->comp == REF;
-        case UINT_T:
-            if (to->comp != BASIC) {
-                return 0;
-            }
-            if (to->data->base == INT_T && to->data->size > from->data->size) { // TODO should we allow this? i.e. uint8 -> int
-                return 1;
-            }
-            return from->data->base == to->data->base;
-        case INT_T:
-            if (to->comp == REF && from->data->size == 8) {
-                return 1;
-            }
-            if (to->comp == BASIC) {
-                if (from->data->size == 8 && to->data->base == BASEPTR_T) {
-                    return 1;
-                }
-                if (to->data->base == FLOAT_T && to->data->size >= from->data->size) {
-                    return 1;
-                }
-            }
-        }
-        return 0;
-    default:
-        to = resolve_alias(to);
-        return check_type(from, to);
-    }
-    return 0;
-}
-
 int precision_loss_uint(Type *t, unsigned long ival) {
     assert(t->comp == BASIC);
     if (t->data->size >= 8) {
@@ -194,26 +144,35 @@ int precision_loss_float(Type *t, double fval) {
     return 1;
 }
 
+Type *lookup_type(Scope *s, char *name);
+Type *lookup_local_type(Scope *s, char *name);
+
 Type *resolve_polymorph(Type *type) {
+    Scope *s = type->scope;
     if (type->comp == POLY) {
         type = lookup_type(s, type->name);
     }
     return type;
 }
+
+// TODO: this could be better
 Type *resolve_alias(Type *type) {
     if (type == NULL) {
         return NULL;
     }
-    struct Scope *s = type->scope;
+    Scope *s = type->scope;
+    if (s == NULL) {
+        return type;
+    }
     Type *t = lookup_local_type(s, type->name);
-    if (t == NULL) {
-        if (s->parent != NULL) {
-            return resolve_alias(t);
-        }
-    } else if (t->comp == ALIAS) {
+    while (t == NULL && s->parent != NULL) {
+        s = s->parent;
+        t = lookup_local_type(s, type->name);
+    }
+    if (t != NULL && t->comp == ALIAS) {
         return resolve_alias(t);
     }
-    return type;
+    return t;
 }
 
 TypeData *resolve_type_data(Type *t) {
@@ -233,6 +192,20 @@ int is_numeric(Type *t) {
     return b == INT_T || b == UINT_T || b == FLOAT_T;
 }
 
+// TODO: inline all this jazz?
+int is_base_type(Type *t, int base) {
+    t = resolve_alias(t);
+    return t->comp == BASIC && t->data->base == base;
+}
+
+int is_string(Type *t) {
+    return is_base_type(t, STRING_T);
+}
+
+int is_bool(Type *t) {
+    return is_base_type(t, BOOL_T);
+}
+
 int is_dynamic(Type *t) {
     t = resolve_alias(t);
 
@@ -245,11 +218,13 @@ int is_dynamic(Type *t) {
             }
         }
         return 0;
-    } else if (t->comp == STATIC_ARRAY_T) {
+    } else if (t->comp == STATIC_ARRAY) {
         return is_dynamic(t->inner);
     }
     return 0;
 }
+
+TypeDef *find_type_definition(Type *t);
 
 int check_type(Type *a, Type *b) {
     a = resolve_polymorph(a);
@@ -260,7 +235,7 @@ int check_type(Type *a, Type *b) {
     }
     switch (a->comp) {
     case ALIAS:
-        return find_type_definition(a->name) == find_type_definition(b->name);
+        return find_type_definition(a) == find_type_definition(b);
     case REF:
         return check_type(a->inner, b->inner);
     case ARRAY:
@@ -286,63 +261,120 @@ int check_type(Type *a, Type *b) {
         }
         TypeList *aargs = a->fn.args;
         TypeList *bargs = b->fn.args;
-        while (;;) {
+        for (;;) {
             if (aargs == NULL && bargs == NULL) {
                 break;
             } else if (aargs == NULL || bargs == NULL) {
                 return 0;
             }
-            if (!check_type(aargs, bargs)) {
+            if (!check_type(aargs->item, bargs->item)) {
                 return 0;
             }
             aargs = aargs->next;
             bargs = bargs->next;
         }
         return check_type(a->fn.ret, b->fn.ret);
-    case POLYDEF:
-    case BASIC:
-    case ENUM:
+    default:
         error(-1, "internal", "Cmon mang");
     }
     return 0;
 }
 
-int match_polymorph(struct Scope *scope, Type *expected, Type *got) {
+int can_cast(Type *from, Type *to) {
+    if (from->comp == ENUM) {
+        return can_cast(from->en.inner, to);
+    } else if (to->comp == ENUM) {
+        return can_cast(from, to->en.inner);
+    }
+
+    switch (from->comp) {
+    case REF:
+        to = resolve_alias(to); 
+        return to->comp == REF ||
+            (to->comp == BASIC &&
+                 (to->data->base == BASEPTR_T ||
+                 (to->data->base == INT_T && to->data->size == 8)));
+    case FUNC:
+        to = resolve_alias(to);
+        return check_type(from, to);
+    case STRUCT:
+        to = resolve_alias(to);
+        return check_type(from, to);
+    case BASIC:
+        to = resolve_alias(to);
+        switch (from->data->base) {
+        case BASEPTR_T:
+            return (to->comp == BASIC && to->data->base == BASEPTR_T) || to->comp == REF;
+        case UINT_T:
+            if (to->comp != BASIC) {
+                return 0;
+            }
+            if (to->data->base == INT_T && to->data->size > from->data->size) { // TODO should we allow this? i.e. uint8 -> int
+                return 1;
+            }
+            return from->data->base == to->data->base;
+        case INT_T:
+            if (to->comp == REF && from->data->size == 8) {
+                return 1;
+            }
+            if (to->comp == BASIC) {
+                if (from->data->size == 8 && to->data->base == BASEPTR_T) {
+                    return 1;
+                }
+                if (to->data->base == FLOAT_T && to->data->size >= from->data->size) {
+                    return 1;
+                }
+            }
+        }
+        return 0;
+    default:
+        to = resolve_alias(to);
+        return check_type(from, to);
+    }
+    return 0;
+}
+
+Type *define_polymorph(Scope *s, Type *poly, Type *type);
+
+int match_polymorph(Scope *scope, Type *expected, Type *got) {
     if (expected->comp == POLYDEF) {
         define_polymorph(scope, expected, got);
         return 1;
     }
-    Type *res = resolve_alias(res);
+    Type *res = resolve_alias(got);
     if (res->comp != expected->comp) {
         return 0;
     }
     switch (expected->comp) {
     case REF:
-        return match_polymorph(expected->inner, res->inner);
+        return match_polymorph(scope, expected->inner, res->inner);
     case ARRAY:
-        return match_polymorph(expected->inner, res->inner);
+        return match_polymorph(scope, expected->inner, res->inner);
     case FUNC:
         if (expected->fn.variadic != res->fn.variadic) {
             return 0;
         }
         TypeList *exp_args = expected->fn.args;
         TypeList *got_args = res->fn.args;
-        while (;;) {
-            if (exp_args == NULL && bargs == NULL) {
+        for (;;) {
+            if (exp_args == NULL && got_args == NULL) {
                 break;
             } else if (exp_args == NULL || got_args == NULL) {
                 return 0;
             }
-            if (!match_args(exp_args, got_args)) {
+            // TODO: not sure this was right
+            if (!match_polymorph(scope, exp_args->item, got_args->item)) {
                 return 0;
             }
             exp_args = exp_args->next;
             got_args = got_args->next;
         }
-        return match_polymorph(expected->fn.ret, res->fn.ret);
+        return match_polymorph(scope, expected->fn.ret, res->fn.ret);
     case STRUCT: // naw dog
     case STATIC_ARRAY: // can't use static array as arg can we?
+    case PARAMS:
     case POLYDEF:
+    case POLY:
     case BASIC:
     case ENUM:
     case ALIAS:
@@ -394,31 +426,78 @@ int type_equality_comparable(Type *a, Type *b) {
     return check_type(a, b); // TODO: something different here
 }
 
+static int types_initialized = 0;
+static Type *void_type = NULL;
+static Type *int_type = NULL;
+static Type *int8_type = NULL;
+static Type *int16_type = NULL;
+static Type *int32_type = NULL;
+static Type *int64_type = NULL;
+static Type *uint_type = NULL;
+static Type *uint8_type = NULL;
+static Type *uint16_type = NULL;
+static Type *uint32_type = NULL;
+static Type *uint64_type = NULL;
+static Type *float_type = NULL;
+static Type *float32_type = NULL;
+static Type *float64_type = NULL;
+static Type *bool_type = NULL;
+static Type *string_type = NULL;
+static Type *baseptr_type = NULL;
+static Type *basetype_type = NULL;
+static Type *typeinfo_type = NULL;
+static Type *typeinfo_ref_type = NULL;
+static Type *numtype_type = NULL;
+static Type *ptrtype_type = NULL;
+static Type *structmember_type = NULL;
+static Type *structtype_type = NULL;
+static Type *enumtype_type = NULL;
+static Type *arraytype_type = NULL;
+static Type *fntype_type = NULL;
+static Type *any_type = NULL;
+
+int is_any(Type *t) {
+    return resolve_alias(t)->id == any_type->id;
+}
+
+Type *get_any_type() {
+    return any_type;
+}
+
 char *type_to_string(Type *t) {
     switch (t->comp) {
     /*case BASIC:*/
         // this should error, right?
-    case ALIAS:
-        return t->name;
+    case ALIAS: {
+        char *name = malloc(sizeof(char) * (strlen(t->name) + 1));
+        strcpy(name, t->name);
+        return name;
+    }
     /*PARAMS*/
     case STATIC_ARRAY: {
         char *inner = type_to_string(t->array.inner);
         int len = strlen(inner) + 3 + sprintf(NULL, "%ld", t->array.length);
         char *dest = malloc(sizeof(char) * len);
         dest[len - 1] = '\0';
-        return sprintf(dest, "[%ld]%s", t->array.length, inner);
+        sprintf(dest, "[%ld]%s", t->array.length, inner);
+        free(inner);
+        return dest;
     }
     case ARRAY: {
-        char *inner = type_to_string(t->array.inner);
+        char *inner = type_to_string(t->inner);
         char *dest = malloc(sizeof(char) * (strlen(inner) + 3));
         dest[strlen(inner) + 2] = '\0';
-        return sprintf(dest, "[]%s", inner);
+        sprintf(dest, "[]%s", inner);
+        free(inner);
+        return dest;
     }
     case REF: {
         char *inner = type_to_string(t->inner);
         char *dest = malloc(sizeof(char) * (strlen(inner) + 2));
         dest[strlen(inner) + 1] = '\0';
-        return sprintf(dest, "&%s", inner);
+        sprintf(dest, "&%s", inner);
+        free(inner);
+        return dest;
     }
     case FUNC: {
         int len = 5; // fn() + \0
@@ -473,8 +552,8 @@ char *type_to_string(Type *t) {
         int n = t->st.nmembers;
         char **member_types = malloc(sizeof(char*) * n);
         for (int i = 0; i < n; i++) {
-            len += strlen(strlen(t->st.member_names[i]));
-            char *name = type_to_string(list->item);
+            len += strlen(t->st.member_names[i]);
+            char *name = type_to_string(t->st.member_types[i]);
             len += strlen(name);
             member_types[i] = name;
         }
@@ -493,7 +572,7 @@ char *type_to_string(Type *t) {
             }
             free(member_types[i]);
         }
-        free(member_types);
+        /*free(member_types);*/ // TODO: why?
         strcat(dest, "}");
         return dest;
     }
@@ -502,45 +581,7 @@ char *type_to_string(Type *t) {
         error(-1, "internal", "but why bro");
         break;
     }
-}
-
-static int types_initialized = 0;
-static Type *auto_type = NULL;
-static Type *void_type = NULL;
-static Type *int_type = NULL;
-static Type *int8_type = NULL;
-static Type *int16_type = NULL;
-static Type *int32_type = NULL;
-static Type *int64_type = NULL;
-static Type *uint_type = NULL;
-static Type *uint8_type = NULL;
-static Type *uint16_type = NULL;
-static Type *uint32_type = NULL;
-static Type *uint64_type = NULL;
-static Type *float_type = NULL;
-static Type *float32_type = NULL;
-static Type *float64_type = NULL;
-static Type *bool_type = NULL;
-static Type *string_type = NULL;
-static Type *baseptr_type = NULL;
-static Type *basetype_type = NULL;
-static Type *typeinfo_type = NULL;
-static Type *typeinfo_ref_type = NULL;
-static Type *numtype_type = NULL;
-static Type *ptrtype_type = NULL;
-static Type *structmember_type = NULL;
-static Type *structtype_type = NULL;
-static Type *enumtype_type = NULL;
-static Type *arraytype_type = NULL;
-static Type *fntype_type = NULL;
-static Type *any_type = NULL;
-
-int is_any(Type *t) {
-    return resolve_alias(t)->id == any_type->id;
-}
-
-Type *get_any_type() {
-    return any_type;
+    return NULL;
 }
 
 // TODO inline?
@@ -607,7 +648,9 @@ Type *typeinfo_ref() {
     return typeinfo_ref_type;
 }
 
-void init_types(struct Scope *scope) {
+Type *define_type(Scope *s, char *name, Type *type);
+
+void init_types(Scope *scope) {
     void_type = define_type(scope, "void", make_primitive(VOID_T, 0));
 
     int_type = define_type(scope, "int", make_primitive(INT_T, 4));
@@ -662,40 +705,34 @@ void init_types(struct Scope *scope) {
     member_names = malloc(sizeof(char*)*3);
     member_names[0] = "id";
     member_names[1] = "base";
-    member_names[2] = "name";
     Type **member_types = malloc(sizeof(Type*)*3);
     member_types[0] = int_type;
     member_types[1] = basetype_type;
-    member_types[2] = string_type;
-    typeinfo_type = define_type(scope, "Type", make_struct_type(3, member_names, member_types));
+    typeinfo_type = define_type(scope, "Type", make_struct_type(2, member_names, member_types));
 
     typeinfo_ref_type = make_ref_type(typeinfo_type);
 
     member_names = malloc(sizeof(char*)*5);
     member_names[0] = "id";
     member_names[1] = "base";
-    member_names[2] = "name";
-    member_names[3] = "size";
-    member_names[4] = "is_signed";
+    member_names[2] = "size";
+    member_names[3] = "is_signed";
     member_types = malloc(sizeof(Type*)*5);
     member_types[0] = int_type;
     member_types[1] = basetype_type;
-    member_types[2] = string_type;
-    member_types[3] = int_type;
-    member_types[4] = bool_type;
-    numtype_type = define_type(scope, "NumType", make_struct_type(5, member_names, member_types));
+    member_types[2] = int_type;
+    member_types[3] = bool_type;
+    numtype_type = define_type(scope, "NumType", make_struct_type(4, member_names, member_types));
 
     member_names = malloc(sizeof(char*)*4);
     member_names[0] = "id";
     member_names[1] = "base";
-    member_names[2] = "name";
-    member_names[3] = "inner";
+    member_names[2] = "inner";
     member_types = malloc(sizeof(Type*)*4);
     member_types[0] = int_type;
     member_types[1] = basetype_type;
-    member_types[2] = string_type;
-    member_types[3] = typeinfo_ref_type;
-    ptrtype_type = define_type(scope, "RefType", make_struct_type(4, member_names, member_types));
+    member_types[2] = typeinfo_ref_type;
+    ptrtype_type = define_type(scope, "RefType", make_struct_type(3, member_names, member_types));
 
     member_names = malloc(sizeof(char*)*3);
     member_names[0] = "name";
@@ -710,14 +747,12 @@ void init_types(struct Scope *scope) {
     member_names = malloc(sizeof(char*)*4);
     member_names[0] = "id";
     member_names[1] = "base";
-    member_names[2] = "name";
-    member_names[3] = "members";
+    member_names[2] = "members";
     member_types = malloc(sizeof(Type*)*4);
     member_types[0] = int_type;
     member_types[1] = basetype_type;
-    member_types[2] = string_type;
-    member_types[3] = structmember_array_type;
-    structtype_type = define_type(scope, "StructType", make_struct_type(4, member_names, member_types));
+    member_types[2] = structmember_array_type;
+    structtype_type = define_type(scope, "StructType", make_struct_type(3, member_names, member_types));
 
     Type *string_array_type = make_array_type(string_type);
     Type *int64_array_type = make_array_type(int64_type);
@@ -741,18 +776,16 @@ void init_types(struct Scope *scope) {
     member_names = malloc(sizeof(char*)*6);
     member_names[0] = "id";
     member_names[1] = "base";
-    member_names[2] = "name";
-    member_names[3] = "inner";
-    member_names[4] = "size";
-    member_names[5] = "is_static";
+    member_names[2] = "inner";
+    member_names[3] = "size";
+    member_names[4] = "is_static";
     member_types = malloc(sizeof(Type*)*6);
     member_types[0] = int_type;
     member_types[1] = basetype_type;
-    member_types[2] = string_type;
-    member_types[3] = typeinfo_ref_type;
-    member_types[4] = int_type;
-    member_types[5] = bool_type;
-    arraytype_type = define_type(scope, "ArrayType", make_struct_type(6, member_names, member_types));
+    member_types[2] = typeinfo_ref_type;
+    member_types[3] = int_type;
+    member_types[4] = bool_type;
+    arraytype_type = define_type(scope, "ArrayType", make_struct_type(5, member_names, member_types));
 
     Type *typeinfo_array_type = make_array_type(typeinfo_type);
 
@@ -780,7 +813,156 @@ void init_types(struct Scope *scope) {
     member_types = malloc(sizeof(Type*)*2);
     member_types[0] = baseptr_type;
     member_types[1] = typeinfo_ref_type;
-    any_type = define_builtin_type(scope, "Any", make_struct_type(2, member_names, member_types));
+    any_type = define_type(scope, "Any", make_struct_type(2, member_names, member_types));
 
     types_initialized = 1;
+}
+
+void emit_typeinfo_decl(Scope *scope, Type *t) {
+    int id = t->id;
+    t = resolve_alias(t);
+
+    switch (t->comp) {
+    case REF:
+        printf("struct _vs_%d _type_info%d;\n", typeinfo_ref_type->id, id);
+        break;
+    case STRUCT:
+        printf("struct _vs_%d _type_info%d_members[%d];\n", structmember_type->id, id, t->st.nmembers);
+        printf("struct _vs_%d _type_info%d;\n", structtype_type->id, id);
+        break;
+    case STATIC_ARRAY:
+    case ARRAY:
+        printf("struct _vs_%d _type_info%d;\n", arraytype_type->id, id);
+        break;
+    case FUNC:
+        printf("struct _vs_%d *_type_info%d_args[%d];\n", typeinfo_type->id, id, t->fn.nargs);
+        printf("struct _vs_%d _type_info%d;\n", fntype_type->id, id);
+        break;
+    case ENUM:
+        printf("struct string_type _type_info%d_members[%d] = {\n", id, t->en.nmembers);
+        for (int i = 0; i < t->en.nmembers; i++) {
+            printf("  {%ld, \"%s\"},\n", strlen(t->en.member_names[i]), t->en.member_names[i]);
+        }
+        printf("};\n");
+        printf("int64_t _type_info%d_values[%d] = {\n", id, t->en.nmembers);
+        for (int i = 0; i < t->en.nmembers; i++) {
+            printf(" %ld,\n", t->en.member_values[i]);
+        }
+        printf("};\n");
+        printf("struct _vs_%d _type_info%d;\n", enumtype_type->id, id);
+        break;
+    case BASIC:
+        switch (t->data->base) {
+        case INT_T:
+        case UINT_T:
+        case FLOAT_T:
+            printf("struct _vs_%d _type_info%d;\n", numtype_type->id, id);
+            break;
+        case BASEPTR_T:
+        case STRING_T:
+        case BOOL_T:
+            printf("struct _vs_%d _type_info%d;\n", typeinfo_type->id, id);
+            break;
+        }
+    default:
+        break;
+    }
+}
+
+void indent();
+
+void emit_typeinfo_init(Scope *scope, Type *t) {
+    int id = t->id;
+    t = resolve_alias(t);
+
+    switch (t->comp) {
+    case ENUM:
+        indent();
+        printf("_type_info%d = (struct _vs_%d){%d, 9, "\
+               "(struct _vs_%d *)&_type_info%d, {%d, _type_info%d_members}, {%d, _type_info%d_values}};\n",
+                id, enumtype_type->id, id, typeinfo_type->id,
+                t->en.inner->id, t->st.nmembers, id, t->st.nmembers, id);
+        break;
+    case REF:
+        indent();
+        printf("_type_info%d = (struct _vs_%d){%d, 10, "\
+               "(struct _vs_%d *)&_type_info%d};\n", id,
+               typeinfo_ref_type->id, id, typeinfo_type->id, t->inner->id);
+        break;
+    case STRUCT:
+        for (int i = 0; i < t->st.nmembers; i++) {
+            indent();
+            printf("_type_info%d_members[%d] = (struct _vs_%d){{%ld, \"%s\"}, "\
+                   "(struct _vs_%d *)&_type_info%d};\n", id, i, structmember_type->id,
+                   strlen(t->st.member_names[i]), t->st.member_names[i], typeinfo_type->id, 
+                   t->st.member_types[i]->id);
+        }
+        indent();
+        printf("_type_info%d = (struct _vs_%d){%d, 11, "\
+               "{%d, _type_info%d_members}};\n", id, structtype_type->id, 
+               id, t->st.nmembers, id);
+        break;
+    case STATIC_ARRAY:
+        indent();
+        printf("_type_info%d = (struct _vs_%d){%d, 7, "\
+               "(struct _vs_%d *)&_type_info%d, %ld, %d};\n", id,
+               arraytype_type->id, id, typeinfo_type->id, resolve_alias(t->array.inner)->id,
+               t->array.length, 1);
+        break;
+    case ARRAY: // TODO make this not have a name? switch Type to have enum in name slot for base type
+        indent();
+        printf("_type_info%d = (struct _vs_%d){%d, 7, "\
+               "(struct _vs_%d *)&_type_info%d, %ld, %d};\n", id, arraytype_type->id,
+               id, typeinfo_type->id, resolve_alias(t->inner)->id, (long)0, 0);
+        break;
+    case FUNC: {
+        int i = 0;
+        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
+            indent();
+            printf("_type_info%d_args[%d] = (struct _vs_%d *)&_type_info%d;\n",
+                id, i, typeinfo_type->id, resolve_alias(list->item)->id);
+            i++;
+        }
+        indent();
+        printf("_type_info%d = (struct _vs_%d){%d, 8, {%ld, \"%s\"}, "\
+               "{%d, (struct _vs_%d **)_type_info%d_args}, ", id,
+               fntype_type->id, id, 0L, "", t->fn.nargs, typeinfo_type->id, id); // TODO: named
+
+        Type *ret = resolve_alias(t->fn.ret);
+        if (ret->comp == BASIC && ret->data->base == VOID_T) {
+            printf("NULL, ");
+        } else {
+            printf("(struct _vs_%d *)&_type_info%d, ", typeinfo_type->id, id);
+        }
+        // TODO: named?
+        printf("0};\n");
+        break;
+    }
+    case BASIC: {
+        switch (t->data->base) {
+        case INT_T:
+        case UINT_T:
+            indent();
+            printf("_type_info%d = (struct _vs_%d){%d, 1, %d, %d};\n",
+                    id, numtype_type->id, id, t->data->size, t->data->base == INT_T);
+            break;
+        case FLOAT_T:
+            indent();
+            printf("_type_info%d = (struct _vs_%d){%d, 3, %d, 1};\n",
+                    id, numtype_type->id, id, t->data->size);
+            break;
+        case BASEPTR_T:
+        case STRING_T:
+            indent();
+            printf("_type_info%d = (struct _vs_%d){%d, 6};\n", id, typeinfo_type->id, id);
+            break;
+        case BOOL_T:
+            indent();
+            printf("_type_info%d = (struct _vs_%d){%d, 2};\n", id, typeinfo_type->id, id);
+            break;
+        }
+    }
+    default:
+        break;
+    }
 }

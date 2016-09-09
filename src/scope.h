@@ -1,32 +1,10 @@
 #ifndef SCOPE_H
 #define SCOPE_H
 
+#include "common.h"
 #include "types.h"
+#include "util.h"
 #include "var.h"
-
-typedef enum {
-    Root,
-    Simple,
-    Function,
-    Loop
-} ScopeType;
-
-typedef struct TempVarList {
-    int id;
-    Var *var;
-    struct TempVarList *next;
-} TempVarList;
-
-typedef struct Scope {
-    struct Scope *parent;
-    ScopeType type;
-    VarList *vars;
-    struct TempVarList *temp_vars;
-    TypeDefList *types;
-    TypeList *used_types;
-    unsigned char has_return;
-    Var *fn_var;
-} Scope;
 
 Scope *new_scope(Scope *parent);
 Scope *new_fn_scope(Scope *parent);
@@ -37,6 +15,7 @@ Type *fn_scope_return_type(Scope *scope);
 
 Type *lookup_type(Scope *s, char *name);
 Type *lookup_local_type(Scope *s, char *name);
+Type *define_polymorph(Scope *s, Type *poly, Type *type);
 Type *define_type(Scope *s, char *name, Type *type);
 int local_type_name_conflict(Scope *scope, char *name);
 
@@ -48,8 +27,7 @@ Var *lookup_var(Scope *scope, char *name);
 Var *lookup_local_var(Scope *scope, char *name);
 Var *find_var(Scope *scope, char *name);
 
-struct Ast;
-Var *allocate_temp_var(Scope *scope, struct Ast *ast);
-Var *find_temp_var(Scope *scope, struct Ast *ast);
+Var *allocate_temp_var(Scope *scope, Ast *ast);
+Var *find_temp_var(Scope *scope, Ast *ast);
 
 #endif

@@ -1,5 +1,13 @@
 #include "eval.h"
 
+Ast *wrap_bool(Ast *ast, int b) {
+    Ast *ret = make_ast_bool(b);
+    ret->file = ast->file;
+    ret->line = ast->line;
+    ret->var_type = base_type(BOOL_T);
+    return ret;
+}
+
 Ast *eval_float_binop(Ast *ast) {
     AstLiteral *left = ast->binary->left->lit;
     AstLiteral *right = ast->binary->right->lit;
@@ -10,16 +18,18 @@ Ast *eval_float_binop(Ast *ast) {
         case OP_MINUS: fval -= r; break;
         case OP_MUL: fval *= r; break;
         case OP_DIV: fval /= r; break;
-        case OP_EQUALS: return make_ast_bool(fval == r);
-        case OP_NEQUALS: return make_ast_bool(fval != r);
-        case OP_GT: return make_ast_bool(fval > r);
-        case OP_GTE: return make_ast_bool(fval >= r);
-        case OP_LT: return make_ast_bool(fval < r);
-        case OP_LTE: return make_ast_bool(fval <= r);
+        case OP_EQUALS: return wrap_bool(ast, fval == r);
+        case OP_NEQUALS: return wrap_bool(ast, fval != r);
+        case OP_GT: return wrap_bool(ast, fval > r);
+        case OP_GTE: return wrap_bool(ast, fval >= r);
+        case OP_LT: return wrap_bool(ast, fval < r);
+        case OP_LTE: return wrap_bool(ast, fval <= r);
         default: error(ast->line, ast->file, "Unknown binary operator '%s'.", op_to_str(ast->binary->op));
     }
     Ast *ret = left->lit_type == FLOAT ? ast->binary->left : ast->binary->right;
     ret->lit->float_val = fval;
+    ret->file = ast->file;
+    ret->line = ast->line;
     return ret;
 }
 
@@ -34,12 +44,12 @@ Ast *eval_int_binop(Ast *ast) {
         case OP_XOR: ival ^= r; break;
         case OP_BINAND: ival &= r; break;
         case OP_BINOR: ival |= r; break;
-        case OP_EQUALS: return make_ast_bool(ival == r);
-        case OP_NEQUALS: return make_ast_bool(ival != r);
-        case OP_GT: return make_ast_bool(ival > r);
-        case OP_GTE: return make_ast_bool(ival >= r);
-        case OP_LT: return make_ast_bool(ival < r);
-        case OP_LTE: return make_ast_bool(ival <= r);
+        case OP_EQUALS: return wrap_bool(ast, ival == r);
+        case OP_NEQUALS: return wrap_bool(ast, ival != r);
+        case OP_GT: return wrap_bool(ast, ival > r);
+        case OP_GTE: return wrap_bool(ast, ival >= r);
+        case OP_LT: return wrap_bool(ast, ival < r);
+        case OP_LTE: return wrap_bool(ast, ival <= r);
         default: error(ast->line, ast->file, "Unknown binary operator '%s'.", op_to_str(ast->binary->op));
     }
     ast->binary->left->lit->int_val = ival;
@@ -47,16 +57,14 @@ Ast *eval_int_binop(Ast *ast) {
 }
 
 int is_string_literal(Ast *ast) {
-    return (ast->type == AST_LITERAL && ast->lit->lit_type == STRING) ||
-        (ast->type == AST_TEMP_VAR && ast->tempvar->expr->type == AST_LITERAL &&
-         ast->tempvar->expr->lit->lit_type == STRING);
+    return (ast->type == AST_LITERAL && ast->lit->lit_type == STRING);
 }
 
 Ast *eval_string_binop(Ast *ast) {
     Ast *left = ast->binary->left;
     Ast *right = ast->binary->right;
-    AstLiteral *l = left->type == AST_TEMP_VAR ? left->tempvar->expr->lit : left->lit;
-    AstLiteral *r = right->type == AST_TEMP_VAR ? right->tempvar->expr->lit : right->lit;
+    AstLiteral *l = left->lit;
+    AstLiteral *r = right->lit;
     switch (ast->binary->op) {
         case OP_PLUS: {
             char *s = malloc((strlen(l->string_val) + strlen(r->string_val) + 1) * (sizeof(char)));
@@ -67,8 +75,8 @@ Ast *eval_string_binop(Ast *ast) {
             l->string_val = s;
             return left;
         }
-        case OP_EQUALS: return make_ast_bool(!strcmp(l->string_val, r->string_val));
-        case OP_NEQUALS: return make_ast_bool(strcmp(l->string_val, r->string_val));
+        case OP_EQUALS: return wrap_bool(ast, !strcmp(l->string_val, r->string_val));
+        case OP_NEQUALS: return wrap_bool(ast, strcmp(l->string_val, r->string_val));
         default: error(ast->line, ast->file, "Unknown binary operator '%s' for type string.", op_to_str(ast->binary->op));
     }
     return NULL;
@@ -119,9 +127,9 @@ Ast *eval_const_binop(Ast *ast) {
         return eval_int_binop(ast);
     } else if (left_lit->lit_type == ENUM_LIT && right_lit->lit_type == ENUM_LIT) {
         if (op == OP_EQUALS) {
-            return make_ast_bool(left_lit->enum_val.enum_index == right_lit->enum_val.enum_index && types_are_equal(left_lit->enum_val.enum_type, right_lit->enum_val.enum_type));
+            return wrap_bool(ast, left_lit->enum_val.enum_index == right_lit->enum_val.enum_index && check_type(left_lit->enum_val.enum_type, right_lit->enum_val.enum_type));
         } else if (op == OP_NEQUALS) {
-            return make_ast_bool(left_lit->enum_val.enum_index != right_lit->enum_val.enum_index || !types_are_equal(left_lit->enum_val.enum_type, right_lit->enum_val.enum_type));
+            return wrap_bool(ast, left_lit->enum_val.enum_index != right_lit->enum_val.enum_index || !check_type(left_lit->enum_val.enum_type, right_lit->enum_val.enum_type));
         }
         error (ast->line, ast->file, "Unrecognized operator for enum types: '%s'.", op_to_str(op));
         return NULL;

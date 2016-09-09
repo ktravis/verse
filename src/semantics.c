@@ -3,6 +3,20 @@
 static VarList *global_vars = NULL;
 static VarList *builtin_vars = NULL;
 
+Var *find_var(Scope *scope, char *name) {
+    Var *v = lookup_var(scope, name);
+    if (v != NULL) {
+        return v;
+    }
+    // TODO: needed?
+    v = varlist_find(global_vars, name);
+    if (v != NULL) {
+        return v;
+    }
+    v = varlist_find(builtin_vars, name);
+    return v;
+}
+
 VarList *get_global_vars() {
     return global_vars;
 }
@@ -18,7 +32,8 @@ int needs_temp_var(Ast *ast) {
     case AST_CALL:
     case AST_LITERAL:
         return is_dynamic(ast->var_type);
-    // case AST_DIRECTIVE: // maybe later
+    default:
+        break;
     }
     return 0;
 }
@@ -28,8 +43,9 @@ Ast *parse_uop_semantics(Scope *scope, Ast *ast) {
     Ast *o = ast->unary->object;
     switch (ast->unary->op) {
     case OP_NOT:
-        if (o->var_type->id != base_type(BOOL_T)->id) {
-            error(ast->line, ast->file, "Cannot perform logical negation on type '%s'.", o->var_type->name);
+        // TODO: make recognition of these types better
+        if (!is_bool(o->var_type)) {
+            error(ast->line, ast->file, "Cannot perform logical negation on type '%s'.", type_to_string(o->var_type));
         }
         ast->var_type = base_type(BOOL_T);
         break;
@@ -69,8 +85,8 @@ Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
         t = resolve_alias(t);
         if (t != NULL) {
             if (t->comp == ENUM) {
-                for (int i = 0; i < t->_enum.nmembers; i++) {
-                    if (!strcmp(t->_enum.member_names[i], ast->dot->member_name)) {
+                for (int i = 0; i < t->en.nmembers; i++) {
+                    if (!strcmp(t->en.member_names[i], ast->dot->member_name)) {
                         Ast *a = ast_alloc(AST_LITERAL);
                         a->lit->lit_type = ENUM;
                         a->lit->enum_val.enum_index = i;
@@ -91,26 +107,29 @@ Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
             }
         }
     } 
-    ast->dot->object = parse_semantics(ast->dot->object, scope);
+    ast->dot->object = parse_semantics(scope, ast->dot->object);
 
     Type *orig = ast->dot->object->var_type;
     Type *t = orig;
 
-    Type *inner = ref_inner_type(scope, t);
-    if (inner != NULL) {
-        t = inner;
+    if (t->comp == REF) {
+        t = t->inner;
     }
 
-    if (is_array(t)) {
+    // TODO: how much resolving should happen here? does this allow for more
+    // indirection than we wanted?
+    t = resolve_alias(t);
+
+    if (t->comp == ARRAY || t->comp == STATIC_ARRAY) {
         if (!strcmp(ast->dot->member_name, "length")) {
             ast->var_type = base_type(INT_T);
         } else if (!strcmp(ast->dot->member_name, "data")) {
-            ast->var_type = make_ref_type(array_inner_type(scope, t));
+            ast->var_type = make_ref_type(t->comp == ARRAY ? t->inner : t->array.inner);
         } else {
             error(ast->line, ast->file,
                     "Cannot dot access member '%s' on array (only length or data).", ast->dot->member_name);
         }
-    } else if (is_type_base(scope, t, STRING_T)) {
+    } else if (t->comp == BASIC && t->data->base == STRING_T) {
         if (!strcmp(ast->dot->member_name, "length")) {
             ast->var_type = base_type(INT_T);
         } else if (!strcmp(ast->dot->member_name, "bytes")) {
@@ -119,33 +138,33 @@ Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file,
                     "Cannot dot access member '%s' on string (only length or bytes).", ast->dot->member_name);
         }
-    } else if (is_struct(scope, t)) {
-        StructType *st = get_struct_type(scope, t);
-
-        for (int i = 0; i < st.nmembers; i++) {
-            if (!strcmp(ast->dot->member_name, st.member_names[i])) {
-                ast->var_type = st.member_types[i];
+    } else if (t->comp == STRUCT) {
+        for (int i = 0; i < t->st.nmembers; i++) {
+            if (!strcmp(ast->dot->member_name, t->st.member_names[i])) {
+                ast->var_type = t->st.member_types[i];
                 return ast;
             }
         }
         error(ast->line, ast->file, "No member named '%s' in struct '%s'.",
-                ast->dot->member_name, orig->name);
+                ast->dot->member_name, type_to_string(orig));
     } else {
         error(ast->line, ast->file,
-                "Cannot use dot operator on non-struct type '%s'.", orig->name);
+                "Cannot use dot operator on non-struct type '%s'.", type_to_string(orig));
     }
     return ast;
 }
 
 Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
-    ast->binary->left = parse_semantics(ast->binary->left, scope);
-    ast->binary->right = parse_semantics(ast->binary->right, scope);
+    ast->binary->left = parse_semantics(scope, ast->binary->left);
+    ast->binary->right = parse_semantics(scope, ast->binary->right);
 
     if (!is_lvalue(ast->binary->left)) {
         error(ast->line, ast->file, "LHS of assignment is not an lvalue.");
-    } else if (ast->binary->left->type == AST_INDEX &&
-                is_type_base(scope, ast->binary->left->index->object->var_type, STRING_T)) {
-        error(ast->line, ast->file, "Strings are immutable and cannot be subscripted for assignment.");
+    } else if (ast->binary->left->type == AST_INDEX) {
+        Type *lt = resolve_alias(ast->binary->left->index->object->var_type);
+        if (lt->comp == BASIC && lt->data->base == STRING_T) {
+            error(ast->line, ast->file, "Strings are immutable and cannot be subscripted for assignment.");
+        }
     }
 
     // TODO refactor to "is_constant"
@@ -157,18 +176,22 @@ Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
     Type *lt = ast->binary->left->var_type;
     Type *rt = ast->binary->right->var_type;
 
-    if (!(check_type(lt, rt) || can_coerce_type(scope, ast->binary->left, ast->binary->right))) {
+    if (!(check_type(lt, rt) || can_coerce_type(scope, lt, ast->binary->right))) {
         error(ast->binary->left->line, ast->binary->left->file,
             "LHS of assignment has type '%s', while RHS has type '%s'.",
             type_to_string(lt), type_to_string(rt));
+    }
+
+    if (is_dynamic(ast->binary->left->var_type)) {
+        allocate_temp_var(scope, ast->binary->right);
     }
     ast->var_type = base_type(VOID_T);
     return ast;
 }
 
 Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
-    ast->binary->left = parse_semantics(ast->binary->left, scope);
-    ast->binary->right = parse_semantics(ast->binary->right, scope);
+    ast->binary->left = parse_semantics(scope, ast->binary->left);
+    ast->binary->right = parse_semantics(scope, ast->binary->right);
 
     Ast *l = ast->binary->left;
     Ast *r = ast->binary->right;
@@ -177,14 +200,15 @@ Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
     Type *rt = r->var_type;
 
     switch (ast->binary->op) {
-    case OP_PLUS:
-        int numeric = is_numeric(scope, lt) && is_numeric(scope, rt);
-        int strings = is_type_base(scope, lt, STRING_T) && is_type_base(scope, rt, STRING_T);
-        if (!numeric && !strings) {{
+    case OP_PLUS: {
+        int numeric = is_numeric(lt) && is_numeric(rt);
+        int strings = is_string(lt) && is_string(rt);
+        if (!numeric && !strings) {
             error(ast->line, ast->file, "Operator '%s' is valid only for numeric or string arguments, not for type '%s'.",
                     op_to_str(ast->binary->op), type_to_string(lt));
         }
         break;
+    }
     case OP_MINUS:
     case OP_MUL:
     case OP_DIV:
@@ -195,10 +219,10 @@ Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
     case OP_GTE:
     case OP_LT:
     case OP_LTE:
-        if (!is_numeric(scope, lt)) {
+        if (!is_numeric(lt)) {
             error(ast->line, ast->file, "LHS of operator '%s' has invalid non-numeric type '%s'.",
                     op_to_str(ast->binary->op), type_to_string(lt));
-        } else if (!is_numeric(scope, rt)) {
+        } else if (!is_numeric(rt)) {
             error(ast->line, ast->file, "RHS of operator '%s' has invalid non-numeric type '%s'.",
                     op_to_str(ast->binary->op), type_to_string(rt));
         }
@@ -212,7 +236,7 @@ Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
         break;
     case OP_EQUALS:
     case OP_NEQUALS:
-        if (!type_equality_comparable(lt, rt)) {
+        if (!(check_type(lt, rt) || can_coerce_type(scope, lt, ast->binary->right))) {
             error(ast->line, ast->file, "Cannot compare equality of non-comparable types '%s' and '%s'.",
                     type_to_string(lt), type_to_string(rt));
         }
@@ -225,7 +249,7 @@ Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
 
     if (is_comparison(ast->binary->op)) {
         ast->var_type = base_type(BOOL_T);
-    } else if (ast->binary->op != OP_ASSIGN && is_numeric(scope, lt)) {
+    } else if (ast->binary->op != OP_ASSIGN && is_numeric(lt)) {
         ast->var_type = promote_number_type(lt, l->type == AST_LITERAL, rt, r->type == AST_LITERAL);
     } else {
         ast->var_type = lt;
@@ -240,14 +264,18 @@ Ast *parse_enum_decl_semantics(Scope *scope, Ast *ast) {
     long val = 0;
     for (int i = 0; i < et->en.nmembers; i++) {
         if (exprs[i] != NULL) {
-            exprs[i] = parse_semantics(exprs[i], scope);
+            exprs[i] = parse_semantics(scope, exprs[i]);
+            Type *t = resolve_alias(exprs[i]->var_type);
             // TODO allow const other stuff in here
             if (exprs[i]->type != AST_LITERAL) {
                 error(exprs[i]->line, exprs[i]->file, "Cannot initialize enum '%s' member '%s' with non-constant expression.", et->name, et->en.member_names[i]);
-            } else if (exprs[i]->var_type->base != INT_T) {
+            } else if (t->data->base != INT_T) {
                 error(exprs[i]->line, exprs[i]->file, "Cannot initialize enum '%s' member '%s' with non-integer expression.", et->name, et->en.member_names[i]);
             }
-            exprs[i] = coerce_literal(exprs[i], et->en.inner);
+            Type *e = exprs[i]->var_type;
+            if (!(check_type(et->en.inner, e) || can_coerce_type(scope, et->en.inner, exprs[i]))) {
+                error(exprs[i]->line, exprs[i]->file, "Cannot initialize enum '%s' member '%s' with expression of type '%s' (base is '%s').", et->name, et->en.member_names[i], type_to_string(e), type_to_string(et->en.inner));
+            }
             val = exprs[i]->lit->int_val;
         }
         et->en.member_values[i] = val;
@@ -275,7 +303,7 @@ AstBlock *parse_block_semantics(Scope *scope, AstBlock *block, int fn_body) {
         if (last != NULL && last->type == AST_RETURN) {
             error(list->item->line, list->item->file, "Unreachable statements following return.");
         }
-        list->item = parse_semantics(list->item, scope);
+        list->item = parse_semantics(scope, list->item);
         if (needs_temp_var(list->item)) {
             allocate_temp_var(scope, list->item);
         }
@@ -291,7 +319,7 @@ AstBlock *parse_block_semantics(Scope *scope, AstBlock *block, int fn_body) {
         if (rt->data->base != VOID_T) {
             error(block->endline, block->file,
                 "Control reaches end of function '%s' without a return statement.",
-                closest_fn_scope(scope);->fn_var->var->name);
+                closest_fn_scope(scope)->fn_var->name);
             // TODO: anonymous function ok here?
         }
     }
@@ -303,7 +331,7 @@ Ast *parse_directive_semantics(Scope *scope, Ast *ast) {
     // reason to do this later!
     char *n = ast->directive->name;
     if (!strcmp(n, "typeof")) {
-        ast->directive->object = parse_semantics(ast->directive->object, scope);
+        ast->directive->object = parse_semantics(scope, ast->directive->object);
         // TODO should this only be acceptible on identifiers? That would be
         // more consistent (don't have to explain that #type does NOT evaluate
         // arguments -- but is that too restricted / unnecessary?
@@ -349,7 +377,7 @@ Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
                     type_to_string(type), lit->struct_val.member_names[i]);
         }
 
-        Ast *expr = parse_semantics(lit->struct_val.member_exprs[i], scope);
+        Ast *expr = parse_semantics(scope, lit->struct_val.member_exprs[i]);
         lit->struct_val.member_exprs[i] = expr;
         Type *t = type->st.member_types[i];
         if (!check_type(t, expr->var_type) && !can_coerce_type(scope, t, expr)) {
@@ -375,7 +403,7 @@ Ast *parse_use_semantics(Scope *scope, Ast *ast) {
             for (int i = 0; i < resolved->en.nmembers; i++) {
                 char *name = resolved->en.member_names[i];
 
-                if (find_local_var(scope, name) != NULL) {
+                if (lookup_local_var(scope, name) != NULL) {
                     error(ast->use->object->line, ast->file, "'use' statement on enum '%s' conflicts with local variable named '%s'.", type_to_string(t), name);
                 }
 
@@ -386,20 +414,19 @@ Ast *parse_use_semantics(Scope *scope, Ast *ast) {
                 Var *v = make_var(name, t);
                 v->constant = 1;
                 v->proxy = v; // TODO don't do this!
-                attach_var(v, scope);
+                attach_var(scope, v);
             }
             return ast;
         }
     }
 
-    ast->use->object = parse_semantics(ast->use->object, scope);
+    ast->use->object = parse_semantics(scope, ast->use->object);
 
     Type *orig = ast->use->object->var_type;
     Type *t = orig;
 
-    Type *inner = ref_inner_type(scope, t);
-    if (inner != NULL) {
-        t = inner;
+    if (t->comp == REF) {
+        t = t->inner;
     }
 
     Type *resolved = resolve_alias(t);
@@ -414,7 +441,7 @@ Ast *parse_use_semantics(Scope *scope, Ast *ast) {
 
         for (int i = 0; i < resolved->st.nmembers; i++) {
             char *name = t->st.member_names[i];
-            if (find_local_var(name, scope) != NULL) {
+            if (lookup_local_var(scope, name) != NULL) {
                 error(ast->use->object->line, ast->file,
                     "'use' statement on struct type '%s' conflicts with local variable named '%s'.",
                     type_to_string(t), name);
@@ -429,7 +456,7 @@ Ast *parse_use_semantics(Scope *scope, Ast *ast) {
             Var *proxy = ast_var->members[i];
 
             // TODO: names shouldn't do this, this should be done in codegen
-            if (inner != NULL) {
+            if (orig->comp == REF) {
                 int proxy_name_len = strlen(ast_var->name) + strlen(name) + 2;
                 char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
                 snprintf(proxy_name, proxy_name_len, "%s->%s", ast_var->name, name);
@@ -437,7 +464,7 @@ Ast *parse_use_semantics(Scope *scope, Ast *ast) {
                 proxy = make_var(proxy_name, t->st.member_types[i]);
             }
             v->proxy = proxy;
-            attach_var(v, scope);
+            attach_var(scope, v);
         }
     }
     return ast;
@@ -446,7 +473,7 @@ Ast *parse_use_semantics(Scope *scope, Ast *ast) {
 Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
     AstSlice *slice = ast->slice;
 
-    slice->object = parse_semantics(slice->object, scope);
+    slice->object = parse_semantics(scope, slice->object);
     if (needs_temp_var(slice->object)) {
         allocate_temp_var(scope, slice->object);
     }
@@ -456,16 +483,16 @@ Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
 
     if (resolved->comp == ARRAY) {
         ast->var_type = make_array_type(resolved->inner);
-    } else if (resolved->comp == STATIC_ARRAY_T) {
+    } else if (resolved->comp == STATIC_ARRAY) {
         ast->var_type = make_array_type(resolved->array.inner);
     } else {
         error(ast->line, ast->file, "Cannot slice non-array type '%s'.", type_to_string(a));
     }
 
     if (slice->offset != NULL) {
-        slice->offset = parse_semantics(slice->offset, scope);
+        slice->offset = parse_semantics(scope, slice->offset);
 
-        if (slice->offset->type == AST_LITERAL && resolved->comp == STATIC_ARRAY_T) {
+        if (slice->offset->type == AST_LITERAL && resolved->comp == STATIC_ARRAY) {
             // TODO check that it's an int?
             long o = slice->offset->lit->int_val;
             if (o < 0) {
@@ -479,9 +506,9 @@ Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
     }
 
     if (slice->length != NULL) {
-        slice->length = parse_semantics(slice->length, scope);
+        slice->length = parse_semantics(scope, slice->length);
 
-        if (slice->length->type == AST_LITERAL && resolved->comp == STATIC_ARRAY_T) {
+        if (slice->length->type == AST_LITERAL && resolved->comp == STATIC_ARRAY) {
             // TODO check that it's an int?
             long l = slice->length->lit->int_val;
             if (l > resolved->array.length) {
@@ -501,13 +528,17 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     if (init == NULL) {
         if (decl->var->type == NULL) {
             error(ast->line, ast->file, "Cannot use type 'auto' for variable '%s' without initialization.", decl->var->name);
-        } else if (decl->var->type->comp == STATIC_ARRAY_T && decl->var->type->array.length == -1) {
+        } else if (decl->var->type->comp == STATIC_ARRAY && decl->var->type->array.length == -1) {
             error(ast->line, ast->file, "Cannot use unspecified array type for variable '%s' without initialization.", decl->var->name);
+        }
     } else {
         init = parse_semantics(scope, init);
 
         if (decl->var->type == NULL) {
             decl->var->type = init->var_type;
+            if (resolve_alias(decl->var->type)->comp == STRUCT) {
+                init_struct_var(decl->var); // need to do this anywhere else?
+            }
         } else {
             Type *lt = decl->var->type;
             Type *resolved = resolve_alias(lt);
@@ -518,7 +549,8 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
                 resolved->array.length = resolve_alias(init->var_type)->array.length;
             }
 
-            if (init->type == AST_LITERAL && is_numeric(scope, resolved)) {
+            // TODO: should do this for assign also?
+            if (init->type == AST_LITERAL && is_numeric(resolved)) {
                 int b = resolved->data->base;
                 if (init->lit->lit_type == FLOAT && (b == UINT_T || b == INT_T)) {
                     error(ast->line, ast->file, "Cannot implicitly cast float literal '%f' to integer type '%s'.", init->lit->float_val, type_to_string(lt));
@@ -544,7 +576,7 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
             }
 
             // TODO: type-checking
-            if (!(check_type(lt, init->var_type) || can_coerce_type(scope, lt, init->var_type))) {
+            if (!(check_type(lt, init->var_type) || can_coerce_type(scope, lt, init))) {
                 error(ast->line, ast->file, "Cannot assign value '%ld' to type '%s'.",
                         type_to_string(lt), type_to_string(lt));
             }
@@ -553,7 +585,7 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
 
     }
 
-    if (find_local_var(scope, decl->var->name) != NULL) {
+    if (lookup_local_var(scope, decl->var->name) != NULL) {
         error(ast->line, ast->file, "Declared variable '%s' already exists.", decl->var->name);
     }
 
@@ -574,7 +606,7 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
             id->ident->varname = decl->var->name;
             id->ident->var = decl->var;
 
-            id = parse_semantics(id, scope);
+            id = parse_semantics(scope, id);
 
             ast = make_ast_assign(id, decl->init);
             ast->line = id->line;
@@ -590,7 +622,7 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
 
 Ast *parse_call_semantics(Scope *scope, Ast *ast) {
     // TODO don't allow auto explicitly?
-    ast->call->fn = parse_semantics(ast->call->fn, scope);
+    ast->call->fn = parse_semantics(scope, ast->call->fn);
 
     Type *orig = ast->call->fn->var_type;
     Type *resolved = resolve_alias(orig);
@@ -608,8 +640,18 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
                 a = list->item;
                 list = list->next;
             }
-            a = make_static_array_type(a, ast->call->nargs - (resolved->fn.nargs - 1));;
-            ast->call->variadic_tempvar = allocate_temp_var(scope, a);
+            a = make_static_array_type(a, ast->call->nargs - (resolved->fn.nargs - 1));
+
+            // TODO: this should do something else
+            Var *v = make_var("", a);
+            v->temp = 1;
+            TempVarList *tvlist = malloc(sizeof(TempVarList));
+            tvlist->id = ast->id;
+            tvlist->var = v;
+            tvlist->next = scope->temp_vars;
+            scope->temp_vars = tvlist;
+            attach_var(scope, v);
+            ast->call->variadic_tempvar = v;
         }
     } else if (ast->call->nargs != resolved->fn.nargs) {
         error(ast->line, ast->file, "Incorrect argument count to function (expected %d, got %d)", resolved->fn.nargs, ast->call->nargs);
@@ -668,7 +710,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         case STRUCT_LIT:
             ast = parse_struct_literal_semantics(scope, ast);
             break;
-        case ENUM_LIT:
+        case ENUM_LIT: // eh?
             break;
         }
         break;
@@ -743,6 +785,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         if (lookup_local_var(scope, ast->type_decl->type_name) != NULL) {
             error(ast->line, ast->file, "Type name '%s' already exists as variable.", ast->type_decl->type_name);
         }
+        // TODO: error about unspecified length
         break;
     }
     case AST_EXTERN_FUNC_DECL:
@@ -753,38 +796,46 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
 
         attach_var(scope, ast->fn_decl->var);
         break;
-    case AST_ANON_FUNC_DECL: {
-    case AST_FUNC_DECL:
-        Type *fn_t = ast->fn_decl->var->type;
-
+    case AST_ANON_FUNC_DECL:
+    case AST_FUNC_DECL: {
         // TODO: loop over args, check each for use
-        if (use) {
-            Type *orig = args->item->type;
-            Type *t = orig;
-            while (t->base == REF_T) {
-                t = t->inner;
-            }
-            if (t->base != STRUCT_T) {
-                error(lineno(), current_file_name(), "'use' is not allowed on args of non-struct type '%s'.", orig->name);
-            }
-            for (int i = 0; i < t->st.nmembers; i++) {
-                char *name = t->st.member_names[i];
-                if (lookup_local_var(fn_scope, name) != NULL) {
-                    error(lineno(), current_file_name(), "'use' statement on struct type '%s' conflicts with existing argument named '%s'.", orig->name, name);
-                } else if (local_type_name_conflict(name)) {
-                    error(lineno(), current_file_name(), "'use' statement on struct type '%s' conflicts with builtin type named '%s'.", orig->name, name);
+        for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
+            if (args->item->use) {
+                int ref = 0;
+                Type *orig = args->item->type;
+                Type *t = resolve_alias(orig);
+                while (t->comp == REF) {
+                    t = resolve_alias(t->inner);
+                    ref = 1;
                 }
-                Var *v = make_var(name, t->st.member_types[i]);
-                if (orig->base == PTR_T) {
-                    int proxy_name_len = strlen(args->item->name) + strlen(name) + 2;
-                    char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
-                    sprintf(proxy_name, "%s->%s", args->item->name, name);
-                    proxy_name[proxy_name_len] = 0;
-                    v->proxy = make_var(proxy_name, t->st.member_types[i]);
-                } else {
-                    v->proxy = args->item->members[i];
+                if (t->comp != STRUCT) {
+                    error(lineno(), current_file_name(),
+                        "'use' is not allowed on args of non-struct type '%s'.",
+                        type_to_string(orig));
                 }
-                attach_var(v, fn_scope);
+                for (int i = 0; i < t->st.nmembers; i++) {
+                    char *name = t->st.member_names[i];
+                    if (lookup_local_var(ast->fn_decl->scope, name) != NULL) {
+                        error(lineno(), current_file_name(),
+                            "'use' statement on struct type '%s' conflicts with existing argument named '%s'.",
+                            type_to_string(orig), name);
+                    } else if (local_type_name_conflict(scope, name)) {
+                        error(lineno(), current_file_name(),
+                            "'use' statement on struct type '%s' conflicts with builtin type named '%s'.",
+                            type_to_string(orig), name);
+                    }
+                    Var *v = make_var(name, t->st.member_types[i]);
+                    if (ref) {
+                        int proxy_name_len = strlen(args->item->name) + strlen(name) + 2;
+                        char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
+                        sprintf(proxy_name, "%s->%s", args->item->name, name);
+                        proxy_name[proxy_name_len] = 0;
+                        v->proxy = make_var(proxy_name, t->st.member_types[i]);
+                    } else {
+                        v->proxy = args->item->members[i];
+                    }
+                    attach_var(ast->fn_decl->scope, v);
+                }
             }
         }
 
@@ -819,10 +870,10 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             if (ast->index->object->type == AST_LITERAL) {
                 size = strlen(ast->index->object->lit->string_val);
             }
-        } else if (obj_type->comp == ARRAY) {
-            size = obj_type->array.size;
+        } else if (obj_type->comp == STATIC_ARRAY) {
+            size = obj_type->array.length;
             ast->var_type = obj_type->array.inner; // need to call something different?
-        } else if (obj_type->comp == SLICE) {
+        } else if (obj_type->comp == ARRAY) {
             ast->var_type = obj_type->inner; // need to call something different?
         } else {
             error(ast->index->object->line, ast->index->object->file,
@@ -888,11 +939,11 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         Type *it_type = lp->iterable->var_type;
         Type *resolved = resolve_alias(it_type);
 
-        if (resolved->comp == STATIC_ARRAY)
+        if (resolved->comp == STATIC_ARRAY) {
             lp->itervar->type = it_type->array.inner;
         } else if (resolved->comp == ARRAY) {
             lp->itervar->type = it_type->inner;
-        } else if (resolved->comp == BASIC && resolved->type->data->base == STRING_T) {
+        } else if (resolved->comp == BASIC && resolved->data->base == STRING_T) {
             lp->itervar->type = base_numeric_type(UINT_T, 8);
         } else {
             error(ast->line, ast->file,
@@ -926,7 +977,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file, "Cannot return a static array from a function.");
         }
 
-        if (!check_type(fn_ret_t, ret_t) && !can_coerce_type(scope, fn_ret_t, ast->ret->expr)) {
+        if (!(check_type(fn_ret_t, ret_t) || can_coerce_type(scope, fn_ret_t, ast->ret->expr))) {
             error(ast->line, ast->file,
                 "Return statement type '%s' does not match enclosing function's return type '%s'.",
                 type_to_string(ret_t), type_to_string(fn_ret_t));

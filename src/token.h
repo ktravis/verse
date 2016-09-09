@@ -8,7 +8,7 @@
 
 #include "types.h"
 
-enum {
+typedef enum {
     TOK_STR,
     TOK_CHAR,
     TOK_INT,
@@ -47,7 +47,7 @@ enum {
     TOK_ELLIPSIS,
     TOK_ENUM,
     TOK_USE
-};
+} TokType;
 
 enum {
     OP_PLUS,
@@ -113,7 +113,7 @@ Tok *read_identifier(char c);
 Tok *check_reserved(char *buf);
 
 int priority_of(Tok *t);
-const char *to_string(Tok *t);
+const char *tok_to_string(Tok *t);
 const char *token_type(int type);
 const char *op_to_str(int op);
 int is_comparison(int op);

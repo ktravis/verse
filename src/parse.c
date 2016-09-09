@@ -427,7 +427,8 @@ Ast *parse_func_decl(Scope *scope, int anonymous) {
         attach_var(fn_scope, fn_decl_var);
     }
 
-    fn_scope->body = parse_block_ast(fn_scope, 1);
+    fn_scope->fn_var = fn_decl_var;
+    func->fn_decl->body = parse_astblock(fn_scope, 1);
     func->fn_decl->scope = fn_scope;
 
     global_fn_decls = astlist_append(global_fn_decls, func);
@@ -438,7 +439,6 @@ Ast *parse_func_decl(Scope *scope, int anonymous) {
 Ast *parse_return_statement(Scope *scope, Tok *t) {
     Ast *ast = ast_alloc(AST_RETURN);
     ast->ret->expr = NULL;
-    ast->ret->scope = scope;
 
     t = next_token();
     if (t == NULL) {
@@ -459,7 +459,7 @@ Ast *parse_type_decl(Scope *scope) {
     ast->type_decl->type_name = t->sval;
 
     Type *type = parse_type(scope, next_token());
-    ast->type_decl->target_type = define_type(scope, name, type);
+    ast->type_decl->target_type = define_type(scope, t->sval, type);
     return ast;
 }
 
@@ -521,7 +521,7 @@ Ast *parse_enum_decl(Scope *scope) {
 
     long *values = malloc(sizeof(long)*nmembers);
     ast->enum_decl->enum_name = name;
-    ast->enum_decl->enum_type = define_type(scope, name, make_enum_type(name, inner, nmembers, names, values));
+    ast->enum_decl->enum_type = define_type(scope, name, make_enum_type(inner, nmembers, names, values));
     ast->enum_decl->exprs = exprs;
     return ast;
 }
@@ -607,7 +607,7 @@ Ast *parse_statement(Scope *scope, Tok *t) {
             return ast;
         }
         // If not #import, default to normal behavior
-        ast = parse_expression(t, 0, scope);
+        ast = parse_expression(scope, t, 0);
         break;
     case TOK_FN:
         if (peek_token()->type == TOK_ID) {
@@ -619,7 +619,7 @@ Ast *parse_statement(Scope *scope, Tok *t) {
         ast = parse_extern_func_decl(scope);
         break;
     case TOK_LBRACE:
-        unget_token();
+        unget_token(t);
         return parse_block(new_scope(scope), 1);
     case TOK_WHILE:
         ast = ast_alloc(AST_WHILE);
@@ -629,7 +629,8 @@ Ast *parse_statement(Scope *scope, Tok *t) {
                 "Unexpected token '%s' while parsing while loop.",
                 tok_to_string(peek_token()));
         }
-        ast->while_loop->body = parse_block_ast(new_loop_scope(scope), 1);
+        ast->while_loop->scope = new_loop_scope(scope);
+        ast->while_loop->body = parse_astblock(ast->while_loop->scope, 1);
         return ast;
     case TOK_FOR:
         ast = ast_alloc(AST_FOR);
@@ -643,15 +644,16 @@ Ast *parse_statement(Scope *scope, Tok *t) {
         }
 
         t = next_token();
-        ast->for_loop->iterable = parse_expression(scope, t, 0, scope);
+        ast->for_loop->iterable = parse_expression(scope, t, 0);
 
         // TODO handle empty for body case by trying rollback here
-        t = peek_token()
+        t = peek_token();
         if (t == NULL || t->type != TOK_LBRACE) {
             error(lineno(), current_file_name(),
                 "Unexpected token '%s' while parsing for loop.", tok_to_string(t));
         }
-        ast->for_loop->body = parse_block_ast(new_loop_scope(scope), 1);
+        ast->for_loop->scope = new_loop_scope(scope);
+        ast->for_loop->body = parse_astblock(ast->for_loop->scope, 1);
         return ast;
     case TOK_IF:
         return parse_conditional(scope);
@@ -804,11 +806,9 @@ Ast *parse_primary(Scope *scope, Tok *t) {
         return id;
     }
     case TOK_DIRECTIVE: 
-        return parse_directive(t, scope);
+        return parse_directive(scope, t);
     case TOK_FN:
         return parse_func_decl(scope, 1);
-    case TOK_HOLD:
-        return parse_hold(scope);
     case TOK_OP: {
         if (!valid_unary_op(t->op)) {
             error(lineno(), current_file_name(), "'%s' is not a valid unary operator.",
@@ -853,12 +853,6 @@ Ast *parse_primary(Scope *scope, Tok *t) {
         }
         return ast;
     }
-    case TOK_STARTBIND: {
-        Ast *b = ast_alloc(AST_BIND);
-        b->bind->expr = parse_expression(scope, next_token(), 0);
-        expect(TOK_RBRACE);
-        return b;
-    }
     }
     error(lineno(), current_file_name(),
         "Unexpected token '%s' while parsing primary expression.", tok_to_string(t));
@@ -875,8 +869,8 @@ Ast *parse_conditional(Scope *scope) {
         error(lineno(), current_file_name(), "Unexpected token '%s' while parsing conditional.", tok_to_string(next));
     }
 
-    Scope *cond_scope = new_scope(scope);
-    c->cond->if_body = parse_block_ast(cond_scope, 1);
+    c->cond->scope = new_scope(scope);
+    c->cond->if_body = parse_astblock(c->cond->scope, 1);
 
     next = next_token();
     if (next != NULL && next->type == TOK_ELSE) {
@@ -884,7 +878,8 @@ Ast *parse_conditional(Scope *scope) {
         if (next == NULL) {
             error(lineno(), current_file_name(), "Unexpected EOF while parsing conditional.");
         } else if (next->type == TOK_IF) {
-            AstBlock *block = ast_alloc(AST_BLOCK);
+            AstBlock *block = calloc(sizeof(AstBlock), 1);
+
             block->file = current_file_name();
             block->startline = lineno();
             Ast *tmp = parse_conditional(scope);
@@ -896,7 +891,7 @@ Ast *parse_conditional(Scope *scope) {
             error(lineno(), current_file_name(),
                 "Unexpected token '%s' while parsing conditional.", tok_to_string(next));
         }
-        c->cond->else_body = parse_block_ast(cond_scope, 1);
+        c->cond->else_body = parse_astblock(c->cond->scope, 1);
     } else {
         c->cond->else_body = NULL;
         unget_token(next);
@@ -906,6 +901,7 @@ Ast *parse_conditional(Scope *scope) {
 
 AstList *parse_statement_list(Scope *scope) {
     AstList *list = NULL;
+    AstList *head = NULL;
     Tok *t;
 
     for (;;) {
@@ -914,34 +910,32 @@ AstList *parse_statement_list(Scope *scope) {
             break;
         }
         Ast *stmt = parse_statement(scope, t);
-        if (list == NULL) {
+        if (head == NULL) {
             list = astlist_append(NULL, stmt);
+            head = list;
         } else {
             list->next = astlist_append(NULL, stmt);
             list = list->next;
         }
     }
-    return list;
+    unget_token(t);
+    return head;
 }
 
-AstBlock *parse_block_ast(Scope *scope, int bracketed) {
+AstBlock *parse_astblock(Scope *scope, int bracketed) {
     AstBlock *block = calloc(sizeof(AstBlock), 1);
 
     block->startline = lineno();
     block->file = current_file_name();
     block->statements = parse_statement_list(scope);
 
-    Tok *t = peek_token();
+    Tok *t = next_token();
     if (t == NULL) {
-        if (!bracketed) {
-            break;
-        } else {
+        if (bracketed) {
             error(lineno(), current_file_name(), "Unexpected token '%s' while parsing statement block.", tok_to_string(t));
         }
     } else if (t->type == TOK_RBRACE) {
-        if (bracketed) {
-            break;
-        } else {
+        if (!bracketed) {
             error(lineno(), current_file_name(), "Unexpected token '%s' while parsing statement block.", tok_to_string(t));
         }
     }
@@ -952,7 +946,7 @@ AstBlock *parse_block_ast(Scope *scope, int bracketed) {
 
 Ast *parse_block(Scope *scope, int bracketed) {
     Ast *b = ast_alloc(AST_BLOCK);
-    b->block = parse_block_ast(scope, bracketed);
+    b->block = parse_astblock(scope, bracketed);
     return b;
 }
 
@@ -979,7 +973,7 @@ void init_builtins() {
     v->constant = 1;
     define_builtin(v);
 
-    v = make_var("print_buf", make_fn_type(1, typelist_append(NULL, register_type(make_ptr_type(base_numeric_type(UINT_T, 8)))), base_type(VOID_T), 0));
+    v = make_var("print_buf", make_fn_type(1, typelist_append(NULL, make_ref_type(base_numeric_type(UINT_T, 8))), base_type(VOID_T), 0));
     v->ext = 1;
     v->constant = 1;
     define_builtin(v);

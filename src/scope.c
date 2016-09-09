@@ -18,11 +18,17 @@ Scope *new_loop_scope(Scope *parent) {
     s->type = Loop;
     return s;
 }
-Scope *closest_fn_scope(Scope *scope) {
-    while (scope->parent != NULL && scope->type != FUNCTION) {
+Scope *closest_loop_scope(Scope *scope) {
+    while (scope->parent != NULL && scope->type != Loop) {
         scope = scope->parent;
     }
-    return scope
+    return scope;
+}
+Scope *closest_fn_scope(Scope *scope) {
+    while (scope->parent != NULL && scope->type != Function) {
+        scope = scope->parent;
+    }
+    return scope;
 }
 Type *fn_scope_return_type(Scope *scope) {
     scope = closest_fn_scope(scope);
@@ -30,19 +36,19 @@ Type *fn_scope_return_type(Scope *scope) {
         return NULL;
     }
     // TODO: don't resolve this?
-    return resolve_alias(scope->fn_var->type.fn.ret);
+    return resolve_alias(scope->fn_var->type->fn.ret);
 }
 
 Type *lookup_local_type(Scope *s, char *name) {
-    for (TypeDefList *list = s->types; list != NULL; list = list->next) {
-        if (!strcmp(list->item->name, name)) {
-            return list->item;
+    for (TypeDef *td = s->types; td != NULL; td = td->next) {
+        if (!strcmp(td->name, name)) {
+            return td->type;
         }
     }
     return NULL;
 }
 Type *lookup_type(Scope *s, char *name) {
-    for (s; s != NULL; s = s->parent) {
+    for (; s != NULL; s = s->parent) {
         Type *t = lookup_local_type(s, name);
         if (t != NULL) {
             return t;
@@ -52,15 +58,16 @@ Type *lookup_type(Scope *s, char *name) {
 }
 Type *define_polymorph(Scope *s, Type *poly, Type *type) {
     assert(poly->comp == POLYDEF);
-    if (_lookup_local_type(s->types, poly->name) != NULL) {
+    if (lookup_local_type(s, poly->name) != NULL) {
         error(-1, "internal", "Type '%s' already declared within this scope.", poly->name);
     }
 
     TypeDef *td = malloc(sizeof(TypeDef));
     td->name = poly->name;
     td->type = type;
+    td->next = s->types;
 
-    types->list = typedeflist_append(s->types->list, td);
+    s->types = td;
 
     Type *t = make_poly(s, poly->name, type->id);
 
@@ -71,15 +78,16 @@ Type *define_polymorph(Scope *s, Type *poly, Type *type) {
     return t;
 }
 Type *define_type(Scope *s, char *name, Type *type) {
-    if (_lookup_local_type(s->types, name) != NULL) {
+    if (lookup_local_type(s, name) != NULL) {
         error(-1, "internal", "Type '%s' already declared within this scope.", name);
     }
 
     TypeDef *td = malloc(sizeof(TypeDef));
     td->name = name;
     td->type = type;
+    td->next = s->types;
 
-    types->list = typedeflist_append(s->types->list, td);
+    s->types = td;
 
     type = make_type(s, name);
 
@@ -92,18 +100,20 @@ Type *define_type(Scope *s, char *name, Type *type) {
     return type;
 }
 int local_type_name_conflict(Scope *scope, char *name) {
-    for (TypeDefList *list = scope->types; list != NULL; list = list->next) {
-        if (!strcmp(list->item->name, name)) {
+    for (TypeDef *td = scope->types; td != NULL; td = td->next) {
+        if (!strcmp(td->name, name)) {
             return 1;
         }
     }
     return 0;
 }
-TypeDef *find_type_definition(Scope *scope, char *name) {
+TypeDef *find_type_definition(Type *t) {
+    assert(t->comp == ALIAS);
+    Scope *scope = t->scope;
     while (scope != NULL) {
-        for (TypeDefList *list = scope->types; list != NULL; list = list->next) {
-            if (!strcmp(list->item->name, name)) {
-                return list->item;
+        for (TypeDef *td = scope->types; td != NULL; td = td->next) {
+            if (!strcmp(td->name, t->name)) {
+                return td;
             }
         }
         scope = scope->parent;
@@ -120,7 +130,7 @@ void detach_var(Scope *scope, Var *var) {
 }
 
 Var *lookup_var(Scope *scope, char *name) {
-    Var *v = lookup_local_var(name, scope);
+    Var *v = lookup_local_var(scope, name);
     int in_function = scope->type == Function;
     while (v == NULL && scope->parent != NULL) {
         v = lookup_var(scope->parent, name);
@@ -137,21 +147,7 @@ Var *lookup_var(Scope *scope, char *name) {
 }
 
 Var *lookup_local_var(Scope *scope, char *name) {
-    return varlist_find(scope->locals, name);
-}
-
-Var *find_var(Scope *scope, char *name) {
-    Var *v = lookup_var(scope);
-    if (v != NULL) {
-        return v;
-    }
-    // TODO: needed?
-    v = varlist_find(global_vars, name);
-    if (v != NULL) {
-        return v;
-    }
-    v = varlist_find(builtin_vars, name);
-    return v;
+    return varlist_find(scope->vars, name);
 }
 
 Var *allocate_temp_var(Scope *scope, struct Ast *ast) {

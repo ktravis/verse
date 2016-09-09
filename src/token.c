@@ -553,8 +553,6 @@ int type_id(char *buf) {
         return STRING_T;
     } else if (!strcmp(buf, "void")) {
         return VOID_T;
-    } else if (!strcmp(buf, "auto")) {
-        return AUTO_T;
     } else if (!strcmp(buf, "ptr")) {
         return BASEPTR_T;
     }
@@ -616,7 +614,7 @@ int priority_of(Tok *t) {
     return -1;
 }
 
-const char *to_string(Tok *t) {
+const char *tok_to_string(Tok *t) {
     if (t == NULL) {
         return "NULL";
     }
@@ -788,7 +786,7 @@ const char *op_to_str(int op) {
 Tok *expect(int type) {
     Tok *t = next_token();
     if (t == NULL || t->type != type) {
-        error(lineno(), current_file_name(), "Expected token of type '%s', got '%s'.", token_type(type), to_string(t));
+        error(lineno(), current_file_name(), "Expected token of type '%s', got '%s'.", token_type(type), tok_to_string(t));
     }
     return t;
 }
