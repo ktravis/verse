@@ -58,7 +58,7 @@ void emit_string_comparison(Scope *scope, Ast *ast) {
 
 void emit_comparison(Scope *scope, Ast *ast) {
     Type *t = resolve_alias(ast->binary->left->var_type);
-    if (t->comp == BASIC && t->data->base == STRING) {
+    if (is_string(t)) {
         emit_string_comparison(scope, ast);
         return;
     }
@@ -226,7 +226,7 @@ void emit_binop(Scope *scope, Ast *ast) {
     if (is_comparison(ast->binary->op)) {
         emit_comparison(scope, ast);
         return;
-    } else if (lt->comp == BASIC && lt->data->base == STRING_T) {
+    } else if (is_string(lt)) {
         emit_string_binop(scope, ast);
         return;
     } else if (ast->binary->op == OP_OR) {
@@ -1016,12 +1016,14 @@ void compile(Scope *scope, Ast *ast) {
         printf(") ");
         emit_scope_start(ast->cond->scope);
         compile_block(ast->cond->scope, ast->cond->if_body);
+        emit_scope_end(ast->cond->scope);
         if (ast->cond->else_body != NULL) {
             indent();
-            printf(" else ");
+            printf("else ");
+            emit_scope_start(ast->cond->scope);
             compile_block(ast->cond->scope, ast->cond->else_body);
+            emit_scope_end(ast->cond->scope);
         }
-        emit_scope_end(ast->cond->scope);
         break;
     case AST_WHILE:
         printf("while (");

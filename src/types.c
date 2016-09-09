@@ -428,33 +428,61 @@ int type_equality_comparable(Type *a, Type *b) {
 
 static int types_initialized = 0;
 static Type *void_type = NULL;
+static int void_type_id;
 static Type *int_type = NULL;
+static int int_type_id;
 static Type *int8_type = NULL;
+static int int8_type_id;
 static Type *int16_type = NULL;
+static int int16_type_id;
 static Type *int32_type = NULL;
+static int int32_type_id;
 static Type *int64_type = NULL;
+static int int64_type_id;
 static Type *uint_type = NULL;
+static int uint_type_id;
 static Type *uint8_type = NULL;
+static int uint8_type_id;
 static Type *uint16_type = NULL;
+static int uint16_type_id;
 static Type *uint32_type = NULL;
+static int uint32_type_id;
 static Type *uint64_type = NULL;
+static int uint64_type_id;
 static Type *float_type = NULL;
+static int float_type_id;
 static Type *float32_type = NULL;
+static int float32_type_id;
 static Type *float64_type = NULL;
+static int float64_type_id;
 static Type *bool_type = NULL;
+static int bool_type_id;
 static Type *string_type = NULL;
+static int string_type_id;
 static Type *baseptr_type = NULL;
+static int baseptr_type_id;
 static Type *basetype_type = NULL;
+static int basetype_type_id;
 static Type *typeinfo_type = NULL;
+static int typeinfo_type_id;
 static Type *typeinfo_ref_type = NULL;
+static int typeinfo_ref_type_id;
 static Type *numtype_type = NULL;
-static Type *ptrtype_type = NULL;
+static int numtype_type_id;
+static Type *reftype_type = NULL;
+static int reftype_type_id;
 static Type *structmember_type = NULL;
+static int structmember_type_id;
 static Type *structtype_type = NULL;
+static int structtype_type_id;
 static Type *enumtype_type = NULL;
+static int enumtype_type_id;
 static Type *arraytype_type = NULL;
+static int arraytype_type_id;
 static Type *fntype_type = NULL;
+static int fntype_type_id;
 static Type *any_type = NULL;
+static int any_type_id;
 
 int is_any(Type *t) {
     return resolve_alias(t)->id == any_type->id;
@@ -652,26 +680,42 @@ Type *define_type(Scope *s, char *name, Type *type);
 
 void init_types(Scope *scope) {
     void_type = define_type(scope, "void", make_primitive(VOID_T, 0));
+    void_type_id = resolve_alias(void_type)->id;
 
     int_type = define_type(scope, "int", make_primitive(INT_T, 4));
+    int_type_id = resolve_alias(int_type)->id;
     int8_type = define_type(scope, "s8", make_primitive(INT_T, 1));
+    int8_type_id = resolve_alias(int8_type)->id;
     int16_type = define_type(scope, "s16", make_primitive(INT_T, 2));
+    int16_type_id = resolve_alias(int16_type)->id;
     int32_type = define_type(scope, "s32", make_primitive(INT_T, 4));
+    int32_type_id = resolve_alias(int32_type)->id;
     int64_type = define_type(scope, "s64", make_primitive(INT_T, 8));
+    int64_type_id = resolve_alias(int64_type)->id;
 
     uint_type = define_type(scope, "uint", make_primitive(UINT_T, 4));
+    uint_type_id = resolve_alias(uint_type)->id;
     uint8_type = define_type(scope, "u8", make_primitive(UINT_T, 1));
+    uint8_type_id = resolve_alias(uint8_type)->id;
     uint16_type = define_type(scope, "u16", make_primitive(UINT_T, 2));
+    uint16_type_id = resolve_alias(uint16_type)->id;
     uint32_type = define_type(scope, "u32", make_primitive(UINT_T, 4));
+    uint32_type_id = resolve_alias(uint32_type)->id;
     uint64_type = define_type(scope, "u64", make_primitive(UINT_T, 8));
+    uint64_type_id = resolve_alias(uint64_type)->id;
 
     float_type = define_type(scope, "float", make_primitive(FLOAT_T, 4));
+    float_type_id = resolve_alias(float_type)->id;
     float32_type = define_type(scope, "float32", make_primitive(FLOAT_T, 4));
+    float32_type_id = resolve_alias(float32_type)->id;
     float64_type = define_type(scope, "float64", make_primitive(FLOAT_T, 8));
+    float64_type_id = resolve_alias(float64_type)->id;
 
     bool_type = define_type(scope, "bool", make_primitive(BOOL_T, 1));
+    bool_type_id = resolve_alias(bool_type)->id;
 
     string_type = define_type(scope, "string", make_primitive(STRING_T, 16));
+    string_type_id = resolve_alias(string_type)->id;
 
     char **member_names = malloc(sizeof(char*)*11);
     member_names[0] = "INT";
@@ -698,8 +742,10 @@ void init_types(Scope *scope) {
     member_values[9] = 10;
     member_values[10] = 11;
     basetype_type = define_type(scope, "BaseType", make_enum_type(int32_type, 11, member_names, member_values));
+    basetype_type_id = resolve_alias(basetype_type)->id;
 
     baseptr_type = define_type(scope, "ptr", make_primitive(BASEPTR_T, 8));
+    baseptr_type_id = resolve_alias(baseptr_type)->id;
 
     // TODO can these be defined in a "basic.vs" ?
     member_names = malloc(sizeof(char*)*3);
@@ -709,8 +755,10 @@ void init_types(Scope *scope) {
     member_types[0] = int_type;
     member_types[1] = basetype_type;
     typeinfo_type = define_type(scope, "Type", make_struct_type(2, member_names, member_types));
+    typeinfo_type_id = resolve_alias(typeinfo_type)->id;
 
     typeinfo_ref_type = make_ref_type(typeinfo_type);
+    typeinfo_ref_type_id = resolve_alias(typeinfo_ref_type)->id;
 
     member_names = malloc(sizeof(char*)*5);
     member_names[0] = "id";
@@ -723,6 +771,7 @@ void init_types(Scope *scope) {
     member_types[2] = int_type;
     member_types[3] = bool_type;
     numtype_type = define_type(scope, "NumType", make_struct_type(4, member_names, member_types));
+    numtype_type_id = resolve_alias(numtype_type)->id;
 
     member_names = malloc(sizeof(char*)*4);
     member_names[0] = "id";
@@ -732,7 +781,8 @@ void init_types(Scope *scope) {
     member_types[0] = int_type;
     member_types[1] = basetype_type;
     member_types[2] = typeinfo_ref_type;
-    ptrtype_type = define_type(scope, "RefType", make_struct_type(3, member_names, member_types));
+    reftype_type = define_type(scope, "RefType", make_struct_type(3, member_names, member_types));
+    reftype_type_id = resolve_alias(reftype_type)->id;
 
     member_names = malloc(sizeof(char*)*3);
     member_names[0] = "name";
@@ -741,8 +791,10 @@ void init_types(Scope *scope) {
     member_types[0] = string_type;
     member_types[1] = typeinfo_ref_type;
     structmember_type = define_type(scope, "StructMember", make_struct_type(2, member_names, member_types));
+    structmember_type_id = resolve_alias(structmember_type)->id;
 
     Type *structmember_array_type = make_array_type(structmember_type);
+    scope->used_types = typelist_append(scope->used_types, structmember_array_type);
 
     member_names = malloc(sizeof(char*)*4);
     member_names[0] = "id";
@@ -753,25 +805,27 @@ void init_types(Scope *scope) {
     member_types[1] = basetype_type;
     member_types[2] = structmember_array_type;
     structtype_type = define_type(scope, "StructType", make_struct_type(3, member_names, member_types));
+    structtype_type_id = resolve_alias(structtype_type)->id;
 
     Type *string_array_type = make_array_type(string_type);
+    scope->used_types = typelist_append(scope->used_types, string_array_type);
     Type *int64_array_type = make_array_type(int64_type);
+    scope->used_types = typelist_append(scope->used_types, int64_array_type);
 
     member_names = malloc(sizeof(char*)*6);
     member_names[0] = "id";
     member_names[1] = "base";
-    member_names[2] = "name";
-    member_names[3] = "inner";
-    member_names[4] = "members";
-    member_names[5] = "values";
+    member_names[2] = "inner";
+    member_names[3] = "members";
+    member_names[4] = "values";
     member_types = malloc(sizeof(Type*)*6);
     member_types[0] = int_type;
     member_types[1] = basetype_type;
-    member_types[2] = string_type;
-    member_types[3] = typeinfo_ref_type;
-    member_types[4] = string_array_type;
-    member_types[5] = int64_array_type;
-    enumtype_type = define_type(scope, "EnumType", make_struct_type(6, member_names, member_types));
+    member_types[2] = typeinfo_ref_type;
+    member_types[3] = string_array_type;
+    member_types[4] = int64_array_type;
+    enumtype_type = define_type(scope, "EnumType", make_struct_type(5, member_names, member_types));
+    enumtype_type_id = resolve_alias(enumtype_type)->id;
 
     member_names = malloc(sizeof(char*)*6);
     member_names[0] = "id";
@@ -786,26 +840,26 @@ void init_types(Scope *scope) {
     member_types[3] = int_type;
     member_types[4] = bool_type;
     arraytype_type = define_type(scope, "ArrayType", make_struct_type(5, member_names, member_types));
+    arraytype_type_id = resolve_alias(arraytype_type)->id;
 
     Type *typeinfo_array_type = make_array_type(typeinfo_type);
 
     member_names = malloc(sizeof(char*)*6);
     member_names[0] = "id";
     member_names[1] = "base";
-    member_names[2] = "name";
-    member_names[3] = "args";
-    member_names[4] = "return_type";
-    member_names[5] = "anonymous";
+    member_names[2] = "args";
+    member_names[3] = "return_type";
+    member_names[4] = "anonymous";
     /*member_names[4] = "is_static";*/
     member_types = malloc(sizeof(Type*)*6);
     member_types[0] = int_type;
     member_types[1] = basetype_type;
-    member_types[2] = string_type;
-    member_types[3] = typeinfo_array_type;
-    member_types[4] = typeinfo_ref_type;
-    member_types[5] = bool_type;
+    member_types[2] = typeinfo_array_type;
+    member_types[3] = typeinfo_ref_type;
+    member_types[4] = bool_type;
     /*member_types[4] = bool_type;*/
-    fntype_type = define_type(scope, "FnType", make_struct_type(6, member_names, member_types));
+    fntype_type = define_type(scope, "FnType", make_struct_type(5, member_names, member_types));
+    fntype_type_id = resolve_alias(fntype_type)->id;
 
     member_names = malloc(sizeof(char*)*2);
     member_names[0] = "value_pointer";
@@ -814,6 +868,11 @@ void init_types(Scope *scope) {
     member_types[0] = baseptr_type;
     member_types[1] = typeinfo_ref_type;
     any_type = define_type(scope, "Any", make_struct_type(2, member_names, member_types));
+    any_type_id = resolve_alias(any_type)->id;
+
+    // TODO: do this better I suppose
+    scope->used_types = typelist_append(scope->used_types, typeinfo_ref_type);
+    scope->used_types = typelist_append(scope->used_types, typeinfo_array_type);
 
     types_initialized = 1;
 }
@@ -824,19 +883,19 @@ void emit_typeinfo_decl(Scope *scope, Type *t) {
 
     switch (t->comp) {
     case REF:
-        printf("struct _vs_%d _type_info%d;\n", typeinfo_ref_type->id, id);
+        printf("struct _vs_%d _type_info%d;\n", reftype_type_id, id);
         break;
     case STRUCT:
-        printf("struct _vs_%d _type_info%d_members[%d];\n", structmember_type->id, id, t->st.nmembers);
-        printf("struct _vs_%d _type_info%d;\n", structtype_type->id, id);
+        printf("struct _vs_%d _type_info%d_members[%d];\n", structmember_type_id, id, t->st.nmembers);
+        printf("struct _vs_%d _type_info%d;\n", structtype_type_id, id);
         break;
     case STATIC_ARRAY:
     case ARRAY:
-        printf("struct _vs_%d _type_info%d;\n", arraytype_type->id, id);
+        printf("struct _vs_%d _type_info%d;\n", arraytype_type_id, id);
         break;
     case FUNC:
-        printf("struct _vs_%d *_type_info%d_args[%d];\n", typeinfo_type->id, id, t->fn.nargs);
-        printf("struct _vs_%d _type_info%d;\n", fntype_type->id, id);
+        printf("struct _vs_%d *_type_info%d_args[%d];\n", typeinfo_type_id, id, t->fn.nargs);
+        printf("struct _vs_%d _type_info%d;\n", fntype_type_id, id);
         break;
     case ENUM:
         printf("struct string_type _type_info%d_members[%d] = {\n", id, t->en.nmembers);
@@ -849,19 +908,19 @@ void emit_typeinfo_decl(Scope *scope, Type *t) {
             printf(" %ld,\n", t->en.member_values[i]);
         }
         printf("};\n");
-        printf("struct _vs_%d _type_info%d;\n", enumtype_type->id, id);
+        printf("struct _vs_%d _type_info%d;\n", enumtype_type_id, id);
         break;
     case BASIC:
         switch (t->data->base) {
         case INT_T:
         case UINT_T:
         case FLOAT_T:
-            printf("struct _vs_%d _type_info%d;\n", numtype_type->id, id);
+            printf("struct _vs_%d _type_info%d;\n", numtype_type_id, id);
             break;
         case BASEPTR_T:
         case STRING_T:
         case BOOL_T:
-            printf("struct _vs_%d _type_info%d;\n", typeinfo_type->id, id);
+            printf("struct _vs_%d _type_info%d;\n", typeinfo_type_id, id);
             break;
         }
     default:
@@ -880,59 +939,59 @@ void emit_typeinfo_init(Scope *scope, Type *t) {
         indent();
         printf("_type_info%d = (struct _vs_%d){%d, 9, "\
                "(struct _vs_%d *)&_type_info%d, {%d, _type_info%d_members}, {%d, _type_info%d_values}};\n",
-                id, enumtype_type->id, id, typeinfo_type->id,
+                id, enumtype_type_id, id, typeinfo_type_id,
                 t->en.inner->id, t->st.nmembers, id, t->st.nmembers, id);
         break;
     case REF:
         indent();
         printf("_type_info%d = (struct _vs_%d){%d, 10, "\
                "(struct _vs_%d *)&_type_info%d};\n", id,
-               typeinfo_ref_type->id, id, typeinfo_type->id, t->inner->id);
+               reftype_type_id, id, typeinfo_type_id, t->inner->id);
         break;
     case STRUCT:
         for (int i = 0; i < t->st.nmembers; i++) {
             indent();
             printf("_type_info%d_members[%d] = (struct _vs_%d){{%ld, \"%s\"}, "\
-                   "(struct _vs_%d *)&_type_info%d};\n", id, i, structmember_type->id,
-                   strlen(t->st.member_names[i]), t->st.member_names[i], typeinfo_type->id, 
+                   "(struct _vs_%d *)&_type_info%d};\n", id, i, structmember_type_id,
+                   strlen(t->st.member_names[i]), t->st.member_names[i], typeinfo_type_id, 
                    t->st.member_types[i]->id);
         }
         indent();
         printf("_type_info%d = (struct _vs_%d){%d, 11, "\
-               "{%d, _type_info%d_members}};\n", id, structtype_type->id, 
+               "{%d, _type_info%d_members}};\n", id, structtype_type_id, 
                id, t->st.nmembers, id);
         break;
     case STATIC_ARRAY:
         indent();
         printf("_type_info%d = (struct _vs_%d){%d, 7, "\
                "(struct _vs_%d *)&_type_info%d, %ld, %d};\n", id,
-               arraytype_type->id, id, typeinfo_type->id, resolve_alias(t->array.inner)->id,
+               arraytype_type_id, id, typeinfo_type_id, t->array.inner->id,
                t->array.length, 1);
         break;
     case ARRAY: // TODO make this not have a name? switch Type to have enum in name slot for base type
         indent();
         printf("_type_info%d = (struct _vs_%d){%d, 7, "\
-               "(struct _vs_%d *)&_type_info%d, %ld, %d};\n", id, arraytype_type->id,
-               id, typeinfo_type->id, resolve_alias(t->inner)->id, (long)0, 0);
+               "(struct _vs_%d *)&_type_info%d, %ld, %d};\n", id, arraytype_type_id,
+               id, typeinfo_type_id, t->inner->id, (long)0, 0);
         break;
     case FUNC: {
         int i = 0;
         for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
             indent();
             printf("_type_info%d_args[%d] = (struct _vs_%d *)&_type_info%d;\n",
-                id, i, typeinfo_type->id, resolve_alias(list->item)->id);
+                id, i, typeinfo_type_id, resolve_alias(list->item)->id);
             i++;
         }
         indent();
-        printf("_type_info%d = (struct _vs_%d){%d, 8, {%ld, \"%s\"}, "\
+        printf("_type_info%d = (struct _vs_%d){%d, 8, "\
                "{%d, (struct _vs_%d **)_type_info%d_args}, ", id,
-               fntype_type->id, id, 0L, "", t->fn.nargs, typeinfo_type->id, id); // TODO: named
+               fntype_type_id, id, t->fn.nargs, typeinfo_type_id, id); // TODO: named
 
         Type *ret = resolve_alias(t->fn.ret);
         if (ret->comp == BASIC && ret->data->base == VOID_T) {
             printf("NULL, ");
         } else {
-            printf("(struct _vs_%d *)&_type_info%d, ", typeinfo_type->id, id);
+            printf("(struct _vs_%d *)&_type_info%d, ", typeinfo_type_id, id);
         }
         // TODO: named?
         printf("0};\n");
@@ -944,21 +1003,21 @@ void emit_typeinfo_init(Scope *scope, Type *t) {
         case UINT_T:
             indent();
             printf("_type_info%d = (struct _vs_%d){%d, 1, %d, %d};\n",
-                    id, numtype_type->id, id, t->data->size, t->data->base == INT_T);
+                    id, numtype_type_id, id, t->data->size, t->data->base == INT_T);
             break;
         case FLOAT_T:
             indent();
             printf("_type_info%d = (struct _vs_%d){%d, 3, %d, 1};\n",
-                    id, numtype_type->id, id, t->data->size);
+                    id, numtype_type_id, id, t->data->size);
             break;
         case BASEPTR_T:
         case STRING_T:
             indent();
-            printf("_type_info%d = (struct _vs_%d){%d, 6};\n", id, typeinfo_type->id, id);
+            printf("_type_info%d = (struct _vs_%d){%d, 6};\n", id, typeinfo_type_id, id);
             break;
         case BOOL_T:
             indent();
-            printf("_type_info%d = (struct _vs_%d){%d, 2};\n", id, typeinfo_type->id, id);
+            printf("_type_info%d = (struct _vs_%d){%d, 2};\n", id, typeinfo_type_id, id);
             break;
         }
     }
