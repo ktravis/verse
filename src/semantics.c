@@ -81,16 +81,16 @@ Ast *parse_uop_semantics(Scope *scope, Ast *ast) {
 
 Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
     if (ast->dot->object->type == AST_IDENTIFIER) {
-        Type *t = lookup_type(scope, ast->dot->object->ident->varname);
-        t = resolve_alias(t);
-        if (t != NULL) {
-            if (t->comp == ENUM) {
-                for (int i = 0; i < t->en.nmembers; i++) {
-                    if (!strcmp(t->en.member_names[i], ast->dot->member_name)) {
+        Type *t = make_type(scope, ast->dot->object->ident->varname);
+        Type *resolved = resolve_alias(t);
+        if (resolved != NULL) {
+            if (resolved->comp == ENUM) {
+                for (int i = 0; i < resolved->en.nmembers; i++) {
+                    if (!strcmp(resolved->en.member_names[i], ast->dot->member_name)) {
                         Ast *a = ast_alloc(AST_LITERAL);
-                        a->lit->lit_type = ENUM;
+                        a->lit->lit_type = ENUM_LIT;
                         a->lit->enum_val.enum_index = i;
-                        a->lit->enum_val.enum_type = t;
+                        a->lit->enum_val.enum_type = resolved;
                         a->var_type = t;
                         return a;
                     }
@@ -259,6 +259,8 @@ Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
 
 Ast *parse_enum_decl_semantics(Scope *scope, Ast *ast) {
     Type *et = ast->enum_decl->enum_type; 
+    et = resolve_alias(et);
+    assert(et->comp == ENUM);
     Ast **exprs = ast->enum_decl->exprs;
 
     long val = 0;
@@ -390,9 +392,9 @@ Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
 
 Ast *parse_use_semantics(Scope *scope, Ast *ast) {
     if (ast->use->object->type == AST_IDENTIFIER) {
-        Type *t = lookup_type(scope, ast->dot->object->ident->varname);
-        if (t != NULL) {
-            Type *resolved = resolve_alias(t);
+        Type *t = make_type(scope, ast->dot->object->ident->varname);
+        Type *resolved = resolve_alias(t);
+        if (resolved != NULL) {
 
             if (resolved->comp != ENUM) {
                 // TODO: show alias
@@ -408,7 +410,7 @@ Ast *parse_use_semantics(Scope *scope, Ast *ast) {
                 }
 
                 if (varlist_find(builtin_vars, name) != NULL) {
-                    error(ast->use->object->line, ast->file, "'use' statement on enum '%s' conflicts with builtin type named '%s'.", type_to_string(t), name);
+                    error(ast->use->object->line, ast->file, "'use' statement on enum '%s' conflicts with builtin variable named '%s'.", type_to_string(t), name);
                 }
 
                 Var *v = make_var(name, t);
@@ -731,7 +733,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
                         a->lit->lit_type = ENUM_LIT;
                         a->lit->enum_val.enum_index = i;
                         // TODO: should this be the resolved type instead?
-                        a->lit->enum_val.enum_type = v->type;
+                        a->lit->enum_val.enum_type = resolved;
                         a->var_type = v->type;
                         return a;
                     }
@@ -766,7 +768,8 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         AstCast *cast = ast->cast;
         cast->object = parse_semantics(scope, cast->object);
 
-        if (!can_cast(cast->object->var_type, cast->cast_type)) {
+        // TODO: might need to check for needing tempvar in codegen
+        if (!(can_coerce_type(scope, cast->cast_type, cast->object) || can_cast(cast->object->var_type, cast->cast_type))) {
             error(ast->line, ast->file, "Cannot cast type '%s' to type '%s'.", type_to_string(cast->object->var_type), type_to_string(cast->cast_type));
         }
 
@@ -865,7 +868,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
 
         int size = -1;
 
-        if (obj_type->comp == BASIC && obj_type->data->base == STRING_T) {
+        if (is_string(obj_type)) {
             ast->var_type = base_numeric_type(UINT_T, 8);
             if (ast->index->object->type == AST_LITERAL) {
                 size = strlen(ast->index->object->lit->string_val);
@@ -881,9 +884,10 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
                 type_to_string(obj_type));
         }
 
-        if (ind_type->comp != BASIC ||
-           (ind_type->data->base != INT_T &&
-            ind_type->data->base != UINT_T)) {
+        Type *resolved = resolve_alias(ind_type);
+        if (resolved->comp != BASIC ||
+           (resolved->data->base != INT_T &&
+            resolved->data->base != UINT_T)) {
             error(ast->line, ast->file, "Cannot index array with non-integer type '%s'.",
                     type_to_string(ind_type));
         }

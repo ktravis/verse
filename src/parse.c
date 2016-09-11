@@ -624,7 +624,8 @@ Ast *parse_statement(Scope *scope, Tok *t) {
     case TOK_WHILE:
         ast = ast_alloc(AST_WHILE);
         ast->while_loop->condition = parse_expression(scope, next_token(), 0);
-        if (peek_token() == NULL || peek_token()->type != TOK_LBRACE) {
+        t = next_token();
+        if (t == NULL || t->type != TOK_LBRACE) {
             error(lineno(), current_file_name(),
                 "Unexpected token '%s' while parsing while loop.",
                 tok_to_string(peek_token()));
@@ -647,7 +648,7 @@ Ast *parse_statement(Scope *scope, Tok *t) {
         ast->for_loop->iterable = parse_expression(scope, t, 0);
 
         // TODO handle empty for body case by trying rollback here
-        t = peek_token();
+        t = next_token();
         if (t == NULL || t->type != TOK_LBRACE) {
             error(lineno(), current_file_name(),
                 "Unexpected token '%s' while parsing for loop.", tok_to_string(t));

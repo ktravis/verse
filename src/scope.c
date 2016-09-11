@@ -56,6 +56,46 @@ Type *lookup_type(Scope *s, char *name) {
     }
     return NULL;
 }
+void _register_type(Scope *s, Type *t) {
+    t = resolve_alias(t); // eh?
+    for (TypeList *list = s->used_types; list != NULL; list = list->next) {
+        if (list->item->id == t->id) {
+            return;
+        }
+    }
+    s->used_types = typelist_append(s->used_types, t);
+    switch (t->comp) {
+    case STRUCT:
+        for (int i = 0; i < t->st.nmembers; i++) {
+            _register_type(s, t->st.member_types[i]);
+        }
+        break;
+    case ENUM:
+        _register_type(s, t->en.inner);
+        break;
+    case STATIC_ARRAY:
+        _register_type(s, t->array.inner);
+        break;
+    case ARRAY:
+    case REF:
+        _register_type(s, t->inner);
+        break;
+    case FUNC:
+        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
+            _register_type(s, list->item);
+        }
+        _register_type(s, t->fn.ret);
+        break;
+    default:
+        break;
+    }
+}
+void register_type(Scope *s, Type *t) {
+    while (s->parent != NULL) {
+        s = s->parent;
+    }
+    _register_type(s, t);
+}
 Type *define_polymorph(Scope *s, Type *poly, Type *type) {
     assert(poly->comp == POLYDEF);
     if (lookup_local_type(s, poly->name) != NULL) {
@@ -69,13 +109,7 @@ Type *define_polymorph(Scope *s, Type *poly, Type *type) {
 
     s->types = td;
 
-    Type *t = make_poly(s, poly->name, type->id);
-
-    while (s->parent != NULL) {
-        s = s->parent;
-    }
-    s->used_types = typelist_append(s->used_types, type);
-    return t;
+    return make_poly(s, poly->name, type->id);;
 }
 Type *define_type(Scope *s, char *name, Type *type) {
     if (lookup_local_type(s, name) != NULL) {
@@ -91,12 +125,7 @@ Type *define_type(Scope *s, char *name, Type *type) {
 
     type = make_type(s, name);
 
-    // TODO: why? so we can deifned used_types only on root?
-    while (s->parent != NULL) {
-        s = s->parent;
-    }
-    // maybe just do this somewhere else
-    s->used_types = typelist_append(s->used_types, type);
+    register_type(s, type);
     return type;
 }
 int local_type_name_conflict(Scope *scope, char *name) {

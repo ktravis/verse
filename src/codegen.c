@@ -672,14 +672,14 @@ void compile_block(Scope *scope, AstBlock *block) {
 }
 
 void emit_any_wrapper(Scope *scope, Ast *ast) {
-    printf("(struct _vs_%d){.value_pointer=", get_any_type()->id);
+    printf("(struct _vs_%d){.value_pointer=", get_any_type_id());
     if (is_lvalue(ast)) {
         compile_ref(scope, ast);
     } else {
         emit_temp_var(scope, ast, 1);
     }
     Type *obj_type = resolve_alias(ast->var_type);
-    printf(",.type=(struct _vs_Type *)&_type_info%d}", obj_type->id);
+    printf(",.type=(struct _vs_%d *)&_type_info%d}", get_typeinfo_type_id(), obj_type->id);
 }
 
 void compile_call_arg(Scope *scope, Ast *ast, int arr) {
@@ -752,13 +752,13 @@ void compile_fn_call(Scope *scope, Ast *ast) {
 
         Type *a = resolve_alias(args->item->var_type);
         if (is_any(argtypes->item) && !is_any(a)) {
-            printf("(struct _vs_%d){.value_pointer=", get_any_type()->id);
+            printf("(struct _vs_%d){.value_pointer=", get_any_type_id());
             if (needs_temp_var(args->item)) {
                 emit_temp_var(scope, args->item, 1);
             } else {
                 compile_ref(scope, args->item);
             }
-            printf(",.type=(struct _vs_Type *)&_type_info%d}", a->id);
+            printf(",.type=(struct _vs_%d *)&_type_info%d}", get_typeinfo_type_id(), a->id);
         } else {
             compile_call_arg(scope, args->item, argtypes->item->comp == ARRAY);
         }
@@ -832,9 +832,11 @@ void compile(Scope *scope, Ast *ast) {
             }
             printf("}");
             break;
-        case ENUM_LIT:
-            printf("%ld", ast->lit->enum_val.enum_type->en.member_values[ast->lit->enum_val.enum_index]);
+        case ENUM_LIT: {
+            Type *t = resolve_alias(ast->lit->enum_val.enum_type);
+            printf("%ld", t->en.member_values[ast->lit->enum_val.enum_index]);
             break;
+        }
         }
         break;     
     case AST_DOT:
@@ -1068,7 +1070,8 @@ void compile(Scope *scope, Ast *ast) {
         printf("}\n");
         break;
     case AST_TYPEINFO:
-        printf("((struct _vs_Type *)&_type_info%d)",
+        printf("((struct _vs_%d *)&_type_info%d)",
+            get_typeinfo_type_id(),
             resolve_alias(ast->typeinfo->typeinfo_target)->id);
         break;
     case AST_TYPE_DECL:

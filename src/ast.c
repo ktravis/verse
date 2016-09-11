@@ -183,8 +183,10 @@ Ast *make_ast_slice(Ast *object, Ast *offset, Ast *length) {
 }
 
 int can_coerce_type(Scope *scope, Type *to, Ast *from) {
-    if (is_any(to) && !is_any(from->var_type) && !is_lvalue(from)) {
-        allocate_temp_var(scope, from);
+    if (is_any(to)) {
+        if (!is_any(from->var_type) && !is_lvalue(from)) {
+            allocate_temp_var(scope, from);
+        }
         return 1;
     }
     
