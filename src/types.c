@@ -335,7 +335,7 @@ int can_cast(Type *from, Type *to) {
                 }
             }
         }
-        return 0;
+        return from->data->base == to->data->base;
     default:
         from = resolve_alias(from);
         to = resolve_alias(to);

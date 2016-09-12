@@ -37,13 +37,7 @@ int main(int argc, char **argv) {
 
     printf("%.*s\n", prelude_length, prelude);
 
-    VarList *varlist = get_global_vars();
-    while (varlist != NULL) {
-        emit_var_decl(root_scope, varlist->item);
-        varlist = varlist->next;
-    }
-
-    TypeList *reg = root_scope->used_types;
+    TypeList *reg = reverse_typelist(root_scope->used_types);
     TypeList *tmp = reg;
     while (tmp != NULL) {
         Type *t = resolve_alias(tmp->item);
@@ -61,6 +55,12 @@ int main(int argc, char **argv) {
             emit_typeinfo_decl(root_scope, reg->item);
             reg = reg->next;
         }
+    }
+
+    VarList *varlist = get_global_vars();
+    while (varlist != NULL) {
+        emit_var_decl(root_scope, varlist->item);
+        varlist = varlist->next;
     }
 
     printf("void _verse_init_typeinfo() {\n");

@@ -168,7 +168,6 @@ Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
     }
 
     // TODO refactor to "is_constant"
-    /*Var *v = get_ast_var(ast->binary->left);*/
     if (ast->binary->left->type == AST_IDENTIFIER && ast->binary->left->ident->var->constant) {
         error(ast->line, ast->file, "Cannot reassign constant '%s'.", ast->binary->left->ident->var->name);
     }
@@ -381,7 +380,7 @@ Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
 
         Ast *expr = parse_semantics(scope, lit->struct_val.member_exprs[i]);
         lit->struct_val.member_exprs[i] = expr;
-        Type *t = type->st.member_types[i];
+        Type *t = resolved->st.member_types[i];
         if (!check_type(t, expr->var_type) && !can_coerce_type(scope, t, expr)) {
             error(ast->line, ast->file, "Type mismatch in struct literal '%s' field '%s', expected %s but got %s.",
                 type_to_string(type), lit->struct_val.member_names[i], type_to_string(t), type_to_string(expr->var_type));
@@ -435,39 +434,42 @@ Ast *parse_use_semantics(Scope *scope, Ast *ast) {
     if (resolved->comp != STRUCT) {
         error(ast->use->object->line, ast->file,
             "'use' is not valid on non-struct type '%s'.", type_to_string(orig));
-    } else {
-        Var *ast_var = get_ast_var_noerror(ast->use->object);
-        if (ast_var == NULL) {
-            error(ast->use->object->line, ast->use->object->file, "Can't 'use' a non-variable.");
+    }
+
+    char *name = get_varname(ast->use->object);
+    if (name == NULL) {
+        error(ast->use->object->line, ast->use->object->file, "Can't 'use' a non-variable.");
+    }
+
+    for (int i = 0; i < resolved->st.nmembers; i++) {
+        char *member_name = resolved->st.member_names[i];
+        if (lookup_local_var(scope, member_name) != NULL) {
+            error(ast->use->object->line, ast->file,
+                "'use' statement on struct type '%s' conflicts with local variable named '%s'.",
+                type_to_string(t), member_name);
+        }
+        if (varlist_find(builtin_vars, member_name) != NULL) {
+            error(ast->use->object->line, ast->file,
+                "'use' statement on struct type '%s' conflicts with builtin type named '%s'.",
+                type_to_string(t), member_name);
         }
 
-        for (int i = 0; i < resolved->st.nmembers; i++) {
-            char *name = t->st.member_names[i];
-            if (lookup_local_var(scope, name) != NULL) {
-                error(ast->use->object->line, ast->file,
-                    "'use' statement on struct type '%s' conflicts with local variable named '%s'.",
-                    type_to_string(t), name);
-            }
-            if (varlist_find(builtin_vars, name) != NULL) {
-                error(ast->use->object->line, ast->file,
-                    "'use' statement on struct type '%s' conflicts with builtin type named '%s'.",
-                    type_to_string(t), name);
-            }
-
-            Var *v = make_var(name, resolved->st.member_types[i]); // should this be 't' or 't->st.member_types[i]'?
-            Var *proxy = ast_var->members[i];
-
-            // TODO: names shouldn't do this, this should be done in codegen
-            if (orig->comp == REF) {
-                int proxy_name_len = strlen(ast_var->name) + strlen(name) + 2;
-                char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
-                snprintf(proxy_name, proxy_name_len, "%s->%s", ast_var->name, name);
-                proxy_name[proxy_name_len] = 0;
-                proxy = make_var(proxy_name, t->st.member_types[i]);
-            }
-            v->proxy = proxy;
-            attach_var(scope, v);
+        Var *v = make_var(member_name, resolved->st.member_types[i]); // should this be 't' or 't->st.member_types[i]'?
+        char *proxy_name;
+        int proxy_name_len;
+        // TODO: names shouldn't do this, this should be done in codegen
+        if (orig->comp == REF) {
+            proxy_name_len = strlen(name) + strlen(member_name) + 2 + 1;
+            proxy_name = malloc(sizeof(char) * proxy_name_len);
+            snprintf(proxy_name, proxy_name_len, "%s->%s", name, member_name);
+        } else {
+            proxy_name_len = strlen(name) + strlen(member_name) + 1 + 1;
+            proxy_name = malloc(sizeof(char) * proxy_name_len);
+            snprintf(proxy_name, proxy_name_len, "%s.%s", name, member_name);
         }
+        Var *proxy = make_var(proxy_name, resolved->st.member_types[i]);
+        v->proxy = proxy;
+        attach_var(scope, v);
     }
     return ast;
 }
@@ -835,7 +837,11 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
                         proxy_name[proxy_name_len] = 0;
                         v->proxy = make_var(proxy_name, t->st.member_types[i]);
                     } else {
-                        v->proxy = args->item->members[i];
+                        int proxy_name_len = strlen(args->item->name) + strlen(name) + 1;
+                        char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
+                        sprintf(proxy_name, "%s.%s", args->item->name, name);
+                        proxy_name[proxy_name_len] = 0;
+                        v->proxy = make_var(proxy_name, t->st.member_types[i]);
                     }
                     attach_var(ast->fn_decl->scope, v);
                 }
@@ -907,7 +913,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         c->condition = parse_semantics(scope, c->condition);
 
         // TODO: I don't think typedefs of bool should be allowed here...
-        if (c->condition->var_type->id != base_type(BOOL_T)->id) {
+        if (!is_bool(c->condition->var_type)) {
             error(ast->line, ast->file, "Non-boolean ('%s') condition for if statement.",
                 type_to_string(c->condition->var_type));
         }

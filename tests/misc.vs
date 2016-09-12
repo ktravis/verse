@@ -35,9 +35,9 @@ fn main():int {
     }()));
     p:ptr;
     assert(!validptr(p));
-    p = &b;
+    p = &b as ptr;
     assert(validptr(p));
-    assert(validptr(&b.x));
+    assert(validptr(&b.x as ptr));
     print_str("Success!\n");
     return *c - 1;
 }

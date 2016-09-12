@@ -62,18 +62,6 @@ fn test_array_with_struct() {
     }
 }
 
-fn test_hold_array() {
-    y:[]string = fn():auto {
-        x:[2]string;
-        x[0] = "hello, ";
-        x[1] = "world!";
-        return hold x; 
-    }();
-    // TODO release doing nothing!
-    println(y[0] + y[1]);
-    release y;
-}
-
 fn do_stuff(a:[]int):[]int {
     i:int;
     while i < a.length {
@@ -103,7 +91,6 @@ fn main():int {
     test_array_copy();
     test_array_with_struct();
     test_array_of_strings();
-    test_hold_array();
 
     // multi-dimensional arrays?
     m:[3][3]int;

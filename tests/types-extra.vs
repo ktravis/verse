@@ -21,7 +21,7 @@ fn main():int {
 
     i := 0;
     for m in t.members {
-        println(t.name + " member " + itoa(i) + ": " + m.name);
+        println("member " + itoa(i) + ": " + m.name);
         i = i + 1;
     }
 
@@ -38,12 +38,6 @@ fn main():int {
     type blerg : struct {
         floop:float;
     };
-
-    x:struct{
-        a:int;
-        b:blerg;
-    };
-    println(#typeof(x).name); // anonymous struct types still work
 
     return 0;
 }

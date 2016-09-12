@@ -39,22 +39,18 @@ fn otherthing(use b:vec3):vec3 {
     return b;
 }
 
-fn hold_struct(): &vec3 {
-    return hold vec3{x=1,y=2,z=3};
-}
-
 fn main():int {
     assert(v1.z == 2);
 
-    a := hold vec3 {
+    a := vec3 {
         x = 1,
         y = 2,
         z = 3
     };
 
-    check_use(*a, v1);
+    check_use(a, v1);
 
-    check_use_ptr(a);
+    check_use_ptr(&a);
 
     check_use_depth(Marker{});
 
@@ -64,8 +60,6 @@ fn main():int {
 
     assert(a.x == 7);
 
-    release a;
-
     assert((vec3{}).x == 0);
 
     assert(otherthing(vec3{x=1,y=2,z=3}).x == 2);
@@ -74,18 +68,8 @@ fn main():int {
 
     x.b = 1;
 
-    y:&struct{b:int;} = hold x;
-
-    assert(1 == y.b);
-
-    release y;
-
     empty:vec3 = vec3{};
     assert(empty.x == 0);
-
-    a1 := hold_struct();
-    println("held: x = " + itoa(a1.x) + ", y = " + itoa(a1.y) + ", z = " + itoa(a1.z));
-    release a1;
 
     return 0;
 }

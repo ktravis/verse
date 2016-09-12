@@ -174,8 +174,16 @@ void emit_assignment(Scope *scope, Ast *ast) {
     }
 
     if (is_dynamic(lt)) {
-        Var *v = get_ast_var_noerror(l);
-        if (v == NULL || v->initialized) {
+        if (l->type == AST_IDENTIFIER && !l->ident->var->initialized) {
+            printf("_vs_%s = ", l->ident->var->name);
+            if (is_lvalue(r)) {
+                emit_copy(scope, r);
+            } else {
+                compile(scope, r);
+            }
+
+            l->ident->var->initialized = 1;
+        } else {
             Var *temp = find_temp_var(scope, r);
             printf("_tmp%d = ", temp->id);
             temp->initialized = 1;
@@ -190,21 +198,10 @@ void emit_assignment(Scope *scope, Ast *ast) {
 
             if (l->type == AST_DOT || l->type == AST_INDEX) {
                 compile(scope, l);
-            } else {
-                printf("_vs_%s", v->name);
+            } else { // missing any cases?
+                printf("_vs_%s", l->ident->var->name);
             }
             printf(",_tmp%d)", temp->id);
-        } else {
-            printf("_vs_%s = ", v->name);
-            if (is_lvalue(r)) {
-                emit_copy(scope, r);
-            } else {
-                compile(scope, r);
-            }
-
-            if (v != NULL) {
-                v->initialized = 1;
-            }
         }
     } else {
         compile(scope, l);
@@ -808,14 +805,14 @@ void compile(Scope *scope, Ast *ast) {
             printf("\", %d)", (int)strlen(ast->lit->string_val));
             break;
         case STRUCT_LIT:
-            printf("(struct _vs_%d){", ast->lit->struct_val.type->id);
+            printf("(struct _vs_%d){", resolve_alias(ast->lit->struct_val.type)->id);
             if (ast->lit->struct_val.nmembers == 0) {
                 printf("0");
             } else {
                 StructType st = resolve_alias(ast->lit->struct_val.type)->st;
                 for (int i = 0; i < ast->lit->struct_val.nmembers; i++) {
                     Ast *expr = ast->lit->struct_val.member_exprs[i];
-                    printf(".%s = ", st.member_names[i]);
+                    printf(".%s = ", ast->lit->struct_val.member_names[i]);
 
                     if (is_any(st.member_types[i]) && !is_any(expr->var_type)) {
                         emit_any_wrapper(scope, expr);
@@ -1107,6 +1104,8 @@ void emit_scope_start(Scope *scope) {
 
 void emit_free_struct(Scope *scope, char *name, Type *st, int is_ref) {
     char *sep = is_ref ? "->" : ".";
+    st = resolve_alias(st);
+    assert(st->comp == STRUCT);
 
     for (int i = 0; i < st->st.nmembers; i++) {
         Type *t = st->st.member_types[i];

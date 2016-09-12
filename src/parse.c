@@ -460,6 +460,7 @@ Ast *parse_type_decl(Scope *scope) {
 
     Type *type = parse_type(scope, next_token());
     ast->type_decl->target_type = define_type(scope, t->sval, type);
+    register_type(scope, type);
     return ast;
 }
 
@@ -569,7 +570,10 @@ Type *parse_struct_type(Scope *scope) {
         }
     }
 
-    return make_struct_type(nmembers, member_names, member_types);
+    Type *t = make_struct_type(nmembers, member_names, member_types);
+    register_type(scope, t);
+
+    return t;
 }
 
 Ast *parse_statement(Scope *scope, Tok *t) {
@@ -685,6 +689,7 @@ Ast *parse_struct_literal(Scope *scope, char *name) {
     ast->lit->lit_type = STRUCT_LIT;
     ast->lit->struct_val.name = name;
     ast->lit->struct_val.nmembers = 0;
+    ast->lit->struct_val.type = make_type(scope, name);
 
     if (peek_token()->type == TOK_RBRACE) {
         t = NEXT_TOKEN_UNWINDABLE;

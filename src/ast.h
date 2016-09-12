@@ -186,8 +186,7 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right);
 Ast *make_ast_slice(Ast *inner, Ast *offset, Ast *length);
 
 //Type *var_type(Ast *ast);
-Var *get_ast_var(Ast *ast);
-Var *get_ast_var_noerror(Ast *ast);
+char *get_varname(Ast *ast);
 
 int can_coerce_type(Scope *scope, Type *to, Ast *from);
 

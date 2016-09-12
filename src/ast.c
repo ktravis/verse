@@ -232,39 +232,41 @@ int can_coerce_type(Scope *scope, Type *to, Ast *from) {
     return 0;
 }
 
-Var *get_ast_var_noerror(Ast *ast) {
+char *get_varname(Ast *ast) {
     switch (ast->type) {
     case AST_DOT: {
-        Var *v = get_ast_var_noerror(ast->dot->object); // should this just error?
-        if (v == NULL) {
+        char *name = get_varname(ast->dot->object);
+        if (name == NULL) {
             return NULL;
         }
-        Type *t = v->type;
+        Type *orig = ast->dot->object->var_type;
+        Type *t = resolve_alias(orig);
         for (int i = 0; i < t->st.nmembers; i++) {
+            char *member_name = t->st.member_names[i];
             if (!strcmp(t->st.member_names[i], ast->dot->member_name)) {
-                return v->members[i];
+                char *proxy_name;
+                int proxy_name_len;
+                if (orig->comp == REF) {
+                    proxy_name_len = strlen(name) + strlen(member_name) + 2 + 1;
+                    proxy_name = malloc(sizeof(char) * proxy_name_len);
+                    snprintf(proxy_name, proxy_name_len, "%s->%s", name, member_name);
+                } else {
+                    proxy_name_len = strlen(name) + strlen(member_name) + 1 + 1;
+                    proxy_name = malloc(sizeof(char) * proxy_name_len);
+                    snprintf(proxy_name, proxy_name_len, "%s.%s", name, member_name);
+                }
+                return proxy_name;
             }
         }
+        // shouldn't get here
         error(ast->line, ast->file, "Couldn't get member '%s' in struct '%s' (%d).", ast->dot->member_name, t->name, t->id);
     }
     case AST_IDENTIFIER:
-        return ast->ident->var;
-    case AST_DECL:
-        return ast->decl->var;
-    case AST_FUNC_DECL: // is this allowed?
-        return ast->fn_decl->var;
+        return ast->ident->var->name;
     default:
         break;
     }
     return NULL;
-}
-
-Var *get_ast_var(Ast *ast) {
-    Var *v = get_ast_var_noerror(ast);
-    if (v == NULL) {
-        error(ast->line, ast->file, "Can't get_ast_var(%d)", ast->type);
-    }
-    return v;
 }
 
 AstList *reverse_astlist(AstList *list) {

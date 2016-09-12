@@ -15,13 +15,13 @@ Var *make_var(char *name, Type *type) {
     var->id = new_var_id();
     var->type = type;
 
-    if (type == NULL) {
-        return var;
-    }
+    /*if (type == NULL) {*/
+        /*return var;*/
+    /*}*/
 
-    if (resolve_alias(type)->comp == STRUCT) {
-        init_struct_var(var);
-    }
+    /*if (resolve_alias(type)->comp == STRUCT) {*/
+        /*init_struct_var(var);*/
+    /*}*/
     return var;
 }
 

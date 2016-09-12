@@ -18,6 +18,7 @@ Type *lookup_local_type(Scope *s, char *name);
 Type *define_polymorph(Scope *s, Type *poly, Type *type);
 Type *define_type(Scope *s, char *name, Type *type);
 int local_type_name_conflict(Scope *scope, char *name);
+void register_type(Scope *s, Type *t);
 
 Var *make_temp_var(Scope *scope, Type *type);
 

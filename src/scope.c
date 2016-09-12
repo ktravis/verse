@@ -58,6 +58,9 @@ Type *lookup_type(Scope *s, char *name) {
 }
 void _register_type(Scope *s, Type *t) {
     t = resolve_alias(t); // eh?
+    if (t == NULL) {
+        return;
+    }
     for (TypeList *list = s->used_types; list != NULL; list = list->next) {
         if (list->item->id == t->id) {
             return;
