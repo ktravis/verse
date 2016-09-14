@@ -183,6 +183,7 @@ Ast *make_ast_slice(Ast *object, Ast *offset, Ast *length) {
 }
 
 int can_coerce_type(Scope *scope, Type *to, Ast *from) {
+    // resolve polymorphs
     if (is_any(to)) {
         if (!is_any(from->var_type) && !is_lvalue(from)) {
             allocate_temp_var(scope, from);
@@ -191,6 +192,13 @@ int can_coerce_type(Scope *scope, Type *to, Ast *from) {
     }
     
     Type *t = resolve_alias(to);
+    if (t->comp == ARRAY) {
+        if (from->var_type->comp == ARRAY) {
+            return check_type(t->inner, from->var_type->inner);
+        } else if (from->var_type->comp == STATIC_ARRAY) {
+            return check_type(t->inner, from->var_type->array.inner);
+        }
+    }
     if (from->type == AST_LITERAL) {
         if (is_numeric(t) && is_numeric(from->var_type)) {
             int loss = 0;

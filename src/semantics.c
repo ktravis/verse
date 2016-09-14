@@ -581,8 +581,8 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
 
             // TODO: type-checking
             if (!(check_type(lt, init->var_type) || can_coerce_type(scope, lt, init))) {
-                error(ast->line, ast->file, "Cannot assign value '%ld' to type '%s'.",
-                        type_to_string(lt), type_to_string(lt));
+                error(ast->line, ast->file, "Cannot assign value '%s' to type '%s'.",
+                        type_to_string(init->var_type), type_to_string(lt));
             }
             decl->init = init;
         }

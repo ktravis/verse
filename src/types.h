@@ -30,6 +30,7 @@ Type *make_array_type(Type *inner);
 Type *make_enum_type(Type *inner, int nmembers, char **member_names, long *member_values);
 Type *make_struct_type(int nmembers, char **member_names, Type **member_types);
 
+Type *resolve_polymorph(Type *type);
 Type *resolve_alias(Type *type);
 TypeData *resolve_type_data(Type *t);
 int match_polymorph(Scope *scope, Type *expected, Type *got);

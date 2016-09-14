@@ -219,7 +219,7 @@ int is_dynamic(Type *t) {
         }
         return 0;
     } else if (t->comp == STATIC_ARRAY) {
-        return is_dynamic(t->inner);
+        return is_dynamic(t->array.inner);
     }
     return 0;
 }
@@ -518,9 +518,9 @@ char *type_to_string(Type *t) {
     /*PARAMS*/
     case STATIC_ARRAY: {
         char *inner = type_to_string(t->array.inner);
-        int len = strlen(inner) + 3 + sprintf(NULL, "%ld", t->array.length);
+        int len = strlen(inner) + 3 + snprintf(NULL, 0, "%ld", t->array.length);
         char *dest = malloc(sizeof(char) * len);
-        dest[len - 1] = '\0';
+        dest[len] = '\0';
         sprintf(dest, "[%ld]%s", t->array.length, inner);
         free(inner);
         return dest;
@@ -528,8 +528,7 @@ char *type_to_string(Type *t) {
     case ARRAY: {
         char *inner = type_to_string(t->inner);
         char *dest = malloc(sizeof(char) * (strlen(inner) + 3));
-        dest[strlen(inner) + 2] = '\0';
-        sprintf(dest, "[]%s", inner);
+        snprintf(dest, strlen(inner) + 3, "[]%s", inner);
         free(inner);
         return dest;
     }

@@ -262,12 +262,36 @@ void emit_copy(Scope *scope, Ast *ast) {
         compile(scope, ast);
         printf(")");
     } else if (t->comp == STRUCT) {
-        printf("_copy_%d(", t->id);
+        printf("_copy_%d(", get_struct_type_id(t));
         compile(scope, ast);
         printf(")");
     } else {
         error(-1, "internal", "wut even");
     }
+}
+
+static TypeList *struct_types = NULL;
+int get_struct_type_id(Type *type) {
+    for (TypeList *list = struct_types; list != NULL; list = list->next) {
+        if (list->item->st.nmembers != type->st.nmembers) {
+            continue;
+        }
+        if (list->item->id == type->id) {
+            return type->id;
+        }
+        int match = 1;
+        for (int i = 0; i < type->st.nmembers; i++) {
+            if (strcmp(list->item->st.member_names[i], type->st.member_names[i]) ||
+               !check_type(list->item->st.member_types[i], type->st.member_types[i])) {
+                match = 0;
+                break;
+            }
+        }
+        if (match) {
+            return list->item->id;
+        }
+    }
+    return type->id;
 }
 
 void emit_type(Type *type) {
@@ -321,7 +345,7 @@ void emit_type(Type *type) {
         printf("*");
         break;
     case STRUCT:
-        printf("struct _vs_%d ", type->id);
+        printf("struct _vs_%d ", get_struct_type_id(type));
         break;
     case ENUM:
         emit_type(type->en.inner);
@@ -421,7 +445,7 @@ void emit_decl(Scope *scope, Ast *ast) {
         } else if (t->comp == STRUCT) {
             printf(";\n");
             indent();
-            printf("_init_%d(&_vs_%s)", t->id, ast->decl->var->name);
+            printf("_init_%d(&_vs_%s)", get_struct_type_id(t), ast->decl->var->name);
             ast->decl->var->initialized = 1;
         } else if (t->comp == REF)  {
             printf(" = NULL");
@@ -526,7 +550,7 @@ void emit_static_array_copy(Scope *scope, Type *t, char *dest, char *src) {
         free(dname);
         free(sname);
     } else if (inner->comp == STRUCT) {
-        printf("%s[i] = _copy_%d(%s[i])", dest, inner->id, src);
+        printf("%s[i] = _copy_%d(%s[i])", dest, get_struct_type_id(inner), src);
     } else if (inner->comp == BASIC && inner->data->base == STRING_T) {
         printf("%s[i] = copy_string(%s[i])", dest, src);
     } else {
@@ -546,6 +570,11 @@ void emit_static_array_copy(Scope *scope, Type *t, char *dest, char *src) {
 
 void emit_struct_decl(Scope *scope, Type *st) {
     assert(st->comp == STRUCT);
+
+    if (st->id != get_struct_type_id(st)) {
+        return;
+    }
+    struct_types = typelist_append(struct_types, st);
 
     emit_type(st);
     printf("{\n");
@@ -617,7 +646,7 @@ void emit_struct_decl(Scope *scope, Type *st) {
         } else if (t->comp == STRUCT) {
             indent();
             printf("x.%s = _copy_%d(x.%s);\n", st->st.member_names[i],
-                    t->id, st->st.member_names[i]);
+                    get_struct_type_id(t), st->st.member_names[i]);
         }
     }
     indent();
@@ -934,12 +963,13 @@ void compile(Scope *scope, Ast *ast) {
         indent();
         printf("return");
         if (ast->ret->expr != NULL) {
-            if (ast->ret->expr->type == AST_IDENTIFIER) {
-                printf(" ");
-                compile(scope, ast->ret->expr);
-            } else {
+            // why was this here?
+            /*if (ast->ret->expr->type == AST_IDENTIFIER) {*/
+                /*printf(" ");*/
+                /*compile(scope, ast->ret->expr);*/
+            /*} else {*/
                 printf(" _ret");
-            }
+            /*}*/
         }
         break;
     case AST_BREAK:

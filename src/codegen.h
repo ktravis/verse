@@ -18,6 +18,8 @@
 void indent();
 void change_indent(int n);
 
+int get_struct_type_id(Type *type);
+
 void emit_temp_var(Scope *scope, Ast *ast, int ref);
 
 void emit_string_comparison(Scope *scope, Ast *ast);
