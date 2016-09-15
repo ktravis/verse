@@ -109,6 +109,7 @@ typedef struct Var {
     int ext;
     struct Var *proxy;
     struct Var **members;
+    struct AstFnDecl *fn_decl;
 } Var;
 
 typedef struct VarList {
@@ -129,6 +130,13 @@ typedef struct TempVarList {
     struct TempVarList *next;
 } TempVarList;
 
+typedef struct Polymorph {
+    int               id;
+    TypeList         *args;
+    TypeDef          *defs;
+    struct Polymorph *next;
+} Polymorph;
+
 typedef struct Scope {
     struct Scope *parent;
     ScopeType type;
@@ -138,6 +146,7 @@ typedef struct Scope {
     TypeList *used_types;
     unsigned char has_return;
     Var *fn_var;
+    Polymorph *polymorph;
 } Scope;
 
 typedef enum {

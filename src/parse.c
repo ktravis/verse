@@ -77,7 +77,7 @@ Ast *parse_declaration(Scope *scope, Tok *t) {
 
     Tok *next = next_token();
     if (!(next->type == TOK_OP && next->op == OP_ASSIGN)) {
-        type = parse_type(scope, next);
+        type = parse_type(scope, next, 0);
         next = next_token();
     }
 
@@ -135,7 +135,7 @@ Ast *parse_expression(Scope *scope, Tok *t, int priority) {
             } else if (t->op == OP_CAST) {
                 Ast *c = ast_alloc(AST_CAST);
                 c->cast->object = ast;
-                c->cast->cast_type = parse_type(scope, next_token());
+                c->cast->cast_type = parse_type(scope, next_token(), 0);
                 ast = c;
             } else {
                 ast = make_ast_binop(t->op, ast, parse_expression(scope, next_token(), next_priority + 1));
@@ -151,7 +151,7 @@ Ast *parse_expression(Scope *scope, Tok *t, int priority) {
     }
 }
 
-Type *parse_fn_type(Scope *scope) {
+Type *parse_fn_type(Scope *scope, int poly_ok) {
     TypeList *args = NULL;
     int nargs = 0;
     int variadic = 0;
@@ -163,7 +163,7 @@ Type *parse_fn_type(Scope *scope) {
         error(lineno(), current_file_name(), "Unexpected EOF while parsing type.");
     } else if (t->type != TOK_RPAREN) {
         for (;;) {
-            args = typelist_append(args, parse_type(scope, t));
+            args = typelist_append(args, parse_type(scope, t, poly_ok));
 
             nargs++;
             t = next_token();
@@ -192,7 +192,7 @@ Type *parse_fn_type(Scope *scope) {
 
     t = next_token();
     if (t->type == TOK_COLON) {
-        ret = parse_type(scope, next_token());
+        ret = parse_type(scope, next_token(), 0);
     } else {
         unget_token(t);
     }
@@ -200,7 +200,7 @@ Type *parse_fn_type(Scope *scope) {
     return make_fn_type(nargs, args, ret, variadic);
 }
 
-Type *parse_type(Scope *scope, Tok *t) {
+Type *parse_type(Scope *scope, Tok *t, int poly_ok) {
     if (t == NULL) {
         error(lineno(), current_file_name(), "Unexpected EOF while parsing type.");
     }
@@ -216,6 +216,11 @@ Type *parse_type(Scope *scope, Tok *t) {
 
     if (t->type == TOK_ID) {
         type = make_type(scope, t->sval);
+    } else if (t->type == TOK_POLY) {
+        if (!poly_ok) {
+            error(lineno(), current_file_name(), "Polymorph type definitions are not allowed outside of function arguments.");
+        }
+        type = make_polydef(scope, t->sval);
     } else if (t->type == TOK_LSQUARE) {
         t = next_token();
 
@@ -237,7 +242,7 @@ Type *parse_type(Scope *scope, Tok *t) {
             expect(TOK_RSQUARE);
         }
 
-        type = parse_type(scope, next_token());
+        type = parse_type(scope, next_token(), poly_ok);
 
         if (slice) {
             type = make_array_type(type);
@@ -245,12 +250,12 @@ Type *parse_type(Scope *scope, Tok *t) {
             type = make_static_array_type(type, length);
         }
     } else if (t->type == TOK_STRUCT) {
-        type = parse_struct_type(scope);
+        type = parse_struct_type(scope, poly_ok);
     } else if (t->type == TOK_FN) {
         if (ref) {
             error(lineno(), current_file_name(), "Cannot make a reference to a function.");
         }
-        return parse_fn_type(scope);
+        return parse_fn_type(scope, poly_ok);
     } else {
         error(lineno(), current_file_name(), "Unexpected token '%s' while parsing type.", tok_to_string(t));
     }
@@ -284,7 +289,7 @@ Ast *parse_extern_func_decl(Scope *scope) {
             break;
         }
 
-        Type *argtype = parse_type(scope, t);
+        Type *argtype = parse_type(scope, t, 0);
         arg_types = typelist_append(arg_types, argtype);
 
         n++;
@@ -301,7 +306,7 @@ Ast *parse_extern_func_decl(Scope *scope) {
 
     t = next_token();
     if (t->type == TOK_COLON) {
-        ret = parse_type(scope, next_token());
+        ret = parse_type(scope, next_token(), 0);
     } else {
         unget_token(t);
     }
@@ -366,7 +371,7 @@ Ast *parse_func_decl(Scope *scope, int anonymous) {
         expect(TOK_COLON);
 
         char *argname = t->sval;
-        Type *argtype = parse_type(scope, next_token());
+        Type *argtype = parse_type(fn_scope, next_token(), 1);
         n++;
 
         t = next_token();
@@ -406,7 +411,7 @@ Ast *parse_func_decl(Scope *scope, int anonymous) {
 
     t = next_token();
     if (t->type == TOK_COLON) {
-        ret = parse_type(fn_scope, next_token()); // fn_scope or scope?
+        ret = parse_type(fn_scope, next_token(), 0); // fn_scope or scope?
     } else if (t->type == TOK_LBRACE) {
         unget_token(t);
     } else {
@@ -418,6 +423,7 @@ Ast *parse_func_decl(Scope *scope, int anonymous) {
 
     Var *fn_decl_var = make_var(fname, fn_type);
     fn_decl_var->constant = !anonymous;
+    fn_decl_var->fn_decl = func->fn_decl;
 
     func->fn_decl->anon = anonymous;
     func->fn_decl->var = fn_decl_var;
@@ -458,7 +464,7 @@ Ast *parse_type_decl(Scope *scope) {
     Ast *ast = ast_alloc(AST_TYPE_DECL);
     ast->type_decl->type_name = t->sval;
 
-    Type *type = parse_type(scope, next_token());
+    Type *type = parse_type(scope, next_token(), 0);
     ast->type_decl->target_type = define_type(scope, t->sval, type);
     register_type(scope, type);
     return ast;
@@ -476,7 +482,7 @@ Ast *parse_enum_decl(Scope *scope) {
 
     Tok *next = next_token();
     if (next->type == TOK_COLON) {
-        inner = parse_type(scope, next_token());
+        inner = parse_type(scope, next_token(), 0);
         next = next_token();
     }
     if (next->type != TOK_LBRACE) {
@@ -527,7 +533,7 @@ Ast *parse_enum_decl(Scope *scope) {
     return ast;
 }
 
-Type *parse_struct_type(Scope *scope) {
+Type *parse_struct_type(Scope *scope, int poly_ok) {
     expect(TOK_LBRACE);
 
     int alloc = 6;
@@ -546,7 +552,7 @@ Type *parse_struct_type(Scope *scope) {
         Tok *t = expect(TOK_ID);
         expect(TOK_COLON);
 
-        Type *ty = parse_type(scope, next_token());
+        Type *ty = parse_type(scope, next_token(), poly_ok);
 
         member_names[nmembers] = t->sval;
         member_types[nmembers++] = ty;
@@ -749,7 +755,7 @@ Ast *parse_directive(Scope *scope, Tok *t) {
 
     if (!strcmp(t->sval, "type")) {
         dir->directive->object = NULL;
-        dir->var_type = parse_type(scope, next);
+        dir->var_type = parse_type(scope, next, 0);
         return dir;
     } else if (!strcmp(t->sval, "import")) {
         error(lineno(), current_file_name(), "#import directive must be a statement.");

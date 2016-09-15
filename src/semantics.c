@@ -625,7 +625,6 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
 }
 
 Ast *parse_call_semantics(Scope *scope, Ast *ast) {
-    // TODO don't allow auto explicitly?
     ast->call->fn = parse_semantics(scope, ast->call->fn);
 
     Type *orig = ast->call->fn->var_type;
@@ -644,6 +643,7 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
                 a = list->item;
                 list = list->next;
             }
+            // TODO: make this work with polydef?
             a = make_static_array_type(a, ast->call->nargs - (resolved->fn.nargs - 1));
 
             // TODO: this should do something else
@@ -662,33 +662,100 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
     }
 
     AstList *call_args = ast->call->args;
-    TypeList *fn_arg_types = resolved->fn.args;
+    TypeList *call_arg_types = NULL;
 
     for (int i = 0; call_args != NULL; i++) {
         Ast *arg = parse_semantics(scope, call_args->item);
-
-        if (is_any(fn_arg_types->item)) {
-            if (!is_any(arg->var_type) && !is_lvalue(arg)) {
-                if (needs_temp_var(arg)) {
-                    allocate_temp_var(scope, arg);
-                }
-            }
-        }
-
-        if (!(check_type(arg->var_type, fn_arg_types->item) || can_coerce_type(scope, fn_arg_types->item, arg))) {
-            error(ast->line, ast->file, "Expected argument (%d) of type '%s', but got type '%s'.",
-                    i, type_to_string(fn_arg_types->item), type_to_string(arg->var_type));
-        }
-
         call_args->item = arg;
         call_args = call_args->next;
+        call_arg_types = typelist_append(call_arg_types, arg->var_type);
+    }
 
-        if (!resolved->fn.variadic || i < resolved->fn.nargs - 1) {
-            fn_arg_types = fn_arg_types->next;
+    int poly = is_polydef(resolved);
+    AstFnDecl *decl = NULL;
+    Polymorph *match = NULL;
+    if (poly) {
+        if (ast->call->fn->type == AST_IDENTIFIER) {
+            decl = ast->call->fn->ident->var->fn_decl;
+        } else if (ast->call->fn->type == AST_ANON_FUNC_DECL) {
+            decl = ast->call->fn->fn_decl;
+        } 
+        if (decl == NULL) {
+            error(-1, "internal", "Uh oh, polymorph func decl was null...");
+        }
+        for (Polymorph *p = decl->polymorphs; p != NULL; p = p->next) {
+            TypeList *args = call_arg_types;
+            for (TypeList *list = p->args; list != NULL; list = list->next) {
+                match = p;
+                if (!check_type(list->item, args->item)) {
+                    match = NULL;
+                    break;
+                }
+                args = args->next;
+            }
+            if (match != NULL) {
+                break;
+            }
         }
     }
 
-    ast->var_type = resolved->fn.ret;
+    if (match != NULL) {
+        ast->call->polymorph = match;
+    } else {
+        if (poly) {
+            match = malloc(sizeof(Polymorph));
+            match->id = decl->polymorphs == NULL ? 0 : decl->polymorphs->id + 1;
+            match->args = call_arg_types;
+            match->next = decl->polymorphs;
+            decl->polymorphs = match;
+
+            decl->scope->polymorph = match;
+            // TODO: need to do something other than this, don't modify AST
+            ast->call->polymorph = match;
+        }
+        TypeList *fn_arg_types = resolved->fn.args;
+        call_args = ast->call->args;
+
+        for (int i = 0; call_args != NULL; i++) {
+            Ast *arg = call_args->item;
+            Type *expected = fn_arg_types->item;
+
+            // TODO: Need to loop through and do polydefs first!
+            if (is_polydef(expected)) {
+                if (!match_polymorph(decl->scope, expected, arg->var_type)) {
+                    error(ast->line, ast->file, "Expected polymorphic argument type %s, but got an argument of type %s",
+                            type_to_string(fn_arg_types->item), type_to_string(arg->var_type));
+                }
+            } else {
+                if (!(check_type(arg->var_type, expected) || can_coerce_type(scope, expected, arg))) {
+                error(ast->line, ast->file, "Expected argument (%d) of type '%s', but got type '%s'.",
+                        i, type_to_string(expected), type_to_string(arg->var_type));
+                }
+
+                if (is_any(expected)) {
+                    if (!is_any(arg->var_type) && !is_lvalue(arg)) {
+                        if (needs_temp_var(arg)) {
+                            allocate_temp_var(scope, arg);
+                        }
+                    }
+                }
+            }
+
+            call_args = call_args->next;
+
+            if (!resolved->fn.variadic || i < resolved->fn.nargs - 1) {
+                fn_arg_types = fn_arg_types->next;
+            }
+        }
+
+        if (poly) {
+            parse_block_semantics(new_scope(decl->scope), decl->body, 1);
+        }
+    }
+    ast->var_type = resolve_polymorph(resolved->fn.ret);
+
+    // This will have to resolve in the scope of the function itself, most
+    //  likely...
     return ast;
 }
 
@@ -803,9 +870,10 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         break;
     case AST_ANON_FUNC_DECL:
     case AST_FUNC_DECL: {
-        // TODO: loop over args, check each for use
+        int poly = 0;
         for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
             if (args->item->use) {
+                // allow polydef here?
                 int ref = 0;
                 Type *orig = args->item->type;
                 Type *t = resolve_alias(orig);
@@ -845,12 +913,16 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
                     }
                     attach_var(ast->fn_decl->scope, v);
                 }
+            } else if (is_polydef(args->item->type)) {
+                poly = 1;
             }
         }
 
-        ast->fn_decl->body = parse_block_semantics(ast->fn_decl->scope, ast->fn_decl->body, 1);
+        if (!poly) {
+            ast->fn_decl->body = parse_block_semantics(ast->fn_decl->scope, ast->fn_decl->body, 1);
 
-        detach_var(ast->fn_decl->scope, ast->fn_decl->var);
+            detach_var(ast->fn_decl->scope, ast->fn_decl->var);
+        }
 
         if (ast->type == AST_ANON_FUNC_DECL) {
             ast->var_type = ast->fn_decl->var->type;
@@ -1015,6 +1087,8 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         return parse_directive_semantics(scope, ast);
     case AST_ENUM_DECL:
         return parse_enum_decl_semantics(scope, ast);
+    case AST_TYPEINFO:
+        break;
     default:
         error(-1, "internal", "idk parse semantics %d", ast->type);
     }

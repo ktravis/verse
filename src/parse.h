@@ -22,7 +22,7 @@ enum {
 AstList *get_global_funcs();
 TypeList *get_global_structs();
 
-Type *parse_type(Scope *scope, Tok *t);
+Type *parse_type(Scope *scope, Tok *t, int poly_ok);
 Ast *parse_directive(Scope *scope, Tok *t);
 Ast *parse_expression(Scope *scope, Tok *t, int priority);
 Ast *parse_arg_list(Scope *scope, Ast *left);
@@ -40,7 +40,7 @@ Ast *parse_block(Scope *scope, int bracketed);
 
 Ast *parse_conditional(Scope *scope);
 
-Type *parse_struct_type(Scope *scope);
+Type *parse_struct_type(Scope *scope, int poly_ok);
 
 void init_builtins();
 

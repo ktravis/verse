@@ -45,7 +45,7 @@ void emit_decl(Scope *scope, Ast *ast);
 void emit_func_decl(Scope *scope, Ast *fn);
 void emit_struct_decl(Scope *scope, Type *st);
 void emit_var_decl(Scope *scope, Var *v);
-void emit_forward_decl(Scope *scope, Var *v);
+void emit_forward_decl(Scope *scope, AstFnDecl *decl);
 
 void emit_structmember(Scope *scope, char *name, Type *st);
 

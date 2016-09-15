@@ -156,6 +156,17 @@ Tok *next_token() {
     }
     if (isdigit(c)) {
         return read_number(c);
+    } else if (c == '$') {
+        c = get_char();
+        if (!(isalpha(c) || c == '_')) {
+            error(lineno(), current_file_name(), "Unexpected character '%c' following '$'.", c);
+        }
+        Tok *t = read_identifier(c);
+        if (t->type != TOK_ID) {
+            error(lineno(), current_file_name(), "Bad name for polymorphic type: '%s' is reserved.", t->sval);
+        }
+        t->type = TOK_POLY;
+        return t;
     } else if (isalpha(c) || c == '_') {
         return read_identifier(c);
     } else if (c == '\'') {
@@ -544,21 +555,6 @@ Tok *read_identifier(char c) {
     return t;
 }
 
-int type_id(char *buf) {
-    if (!strcmp(buf, "int")) {
-        return INT_T;
-    } else if (!strcmp(buf, "bool")) {
-        return BOOL_T;
-    } else if (!strcmp(buf, "string")) {
-        return STRING_T;
-    } else if (!strcmp(buf, "void")) {
-        return VOID_T;
-    } else if (!strcmp(buf, "ptr")) {
-        return BASEPTR_T;
-    }
-    return 0;
-}
-
 int valid_unary_op(int op) {
     switch (op) {
     case OP_NOT:
@@ -621,6 +617,12 @@ const char *tok_to_string(Tok *t) {
     switch (t->type) {
     case TOK_STR: case TOK_ID:
         return t->sval;
+    case TOK_POLY: {
+        int n = strlen(t->sval) + 2;
+        char *c = malloc(sizeof(char) * n);
+        snprintf(c, n, "$%s", t->sval);
+        return c;
+    }
     case TOK_INT: {
         int n = 1;
         if (t->ival < 0) n++;
@@ -700,6 +702,8 @@ const char *token_type(int type) {
         return "STR";
     case TOK_ID:
         return "ID";
+    case TOK_POLY:
+        return "POLY";
     case TOK_INT:
         return "INT";
     case TOK_SEMI:

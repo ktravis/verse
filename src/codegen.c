@@ -470,30 +470,64 @@ void emit_decl(Scope *scope, Ast *ast) {
 }
 
 void emit_func_decl(Scope *scope, Ast *fn) {
-    printf("/* %s */\n", fn->fn_decl->var->name);
-    indent();
-    emit_type(fn->fn_decl->var->type->fn.ret);
+    if (fn->fn_decl->polymorphs != NULL) {
+        scope = fn->fn_decl->scope;
+        Polymorph *p = fn->fn_decl->polymorphs;
+        while (p != NULL) {
+            scope->polymorph = p;
+            printf("/* %s */\n", fn->fn_decl->var->name);
+            indent();
+            emit_type(fn->fn_decl->var->type->fn.ret);
 
-    printf("_vs_%d(", fn->fn_decl->var->id);
+            printf("_poly_%d_vs_%d(", p->id, fn->fn_decl->var->id);
 
-    VarList *args = fn->fn_decl->args;
-    while (args != NULL) {
-        if (fn->fn_decl->var->type->fn.variadic && args->next == NULL) {
-            printf("struct array_type ");
-        } else {
-            emit_type(args->item->type);
+            VarList *args = fn->fn_decl->args;
+            while (args != NULL) {
+                if (fn->fn_decl->var->type->fn.variadic && args->next == NULL) {
+                    printf("struct array_type ");
+                } else {
+                    emit_type(args->item->type);
+                }
+                printf("_vs_%s", args->item->name);
+                if (args->next != NULL) {
+                    printf(",");
+                }
+                args = args->next;
+            }
+            printf(") ");
+            
+            emit_scope_start(scope);
+            compile_block(scope, fn->fn_decl->body);
+            emit_scope_end(scope);
+            scope->polymorph = NULL;
+            p = p->next;
         }
-        printf("_vs_%s", args->item->name);
-        if (args->next != NULL) {
-            printf(",");
+    } else {
+        printf("/* %s */\n", fn->fn_decl->var->name);
+        indent();
+        emit_type(fn->fn_decl->var->type->fn.ret);
+
+        printf("_vs_%d(", fn->fn_decl->var->id);
+
+        VarList *args = fn->fn_decl->args;
+        while (args != NULL) {
+            if (fn->fn_decl->var->type->fn.variadic && args->next == NULL) {
+                printf("struct array_type ");
+            } else {
+                emit_type(args->item->type);
+            }
+            printf("_vs_%s", args->item->name);
+            if (args->next != NULL) {
+                printf(",");
+            }
+            args = args->next;
         }
-        args = args->next;
+        printf(") ");
+        
+        emit_scope_start(fn->fn_decl->scope);
+        compile_block(fn->fn_decl->scope, fn->fn_decl->body);
+        emit_scope_end(fn->fn_decl->scope);
     }
-    printf(") ");
-    
-    emit_scope_start(fn->fn_decl->scope);
-    compile_block(fn->fn_decl->scope, fn->fn_decl->body);
-    emit_scope_end(fn->fn_decl->scope);
 }
 
 void emit_structmember(Scope *scope, char *name, Type *st) {
@@ -719,6 +753,7 @@ void compile_call_arg(Scope *scope, Ast *ast, int arr) {
 }
 
 void compile_fn_call(Scope *scope, Ast *ast) {
+    // does this resolution need to happen differently for polymorphs?
     Type *t = resolve_alias(ast->call->fn->var_type);
     assert(t->comp == FUNC);
 
@@ -745,24 +780,27 @@ void compile_fn_call(Scope *scope, Ast *ast) {
             }
         }
         printf("))(");
-        if (needs_temp_var(ast->call->fn)) {
-            emit_temp_var(scope, ast->call->fn, 0);
-        } else {
-            compile(scope, ast->call->fn);
-        }
-        printf("))");
+    }
+
+    TypeList *argtypes = t->fn.args;
+
+    if (ast->call->polymorph != NULL) {
+        printf("_poly_%d", ast->call->polymorph->id);
+        argtypes = ast->call->polymorph->args;
+    }
+    if (needs_temp_var(ast->call->fn)) {
+        emit_temp_var(scope, ast->call->fn, 0);
     } else {
-        if (needs_temp_var(ast->call->fn)) {
-            emit_temp_var(scope, ast->call->fn, 0);
-        } else {
-            compile(scope, ast->call->fn);
-        }
+        compile(scope, ast->call->fn);
+    }
+
+    if (needs_wrapper) {
+        printf("))");
     }
 
     printf("(");
 
     AstList *args = ast->call->args;
-    TypeList *argtypes = t->fn.args;
     Var *vt = ast->call->variadic_tempvar;
 
     int i = 0;
@@ -1300,33 +1338,68 @@ void emit_var_decl(Scope *scope, Var *v) {
     }
     printf(";\n");
 }
-void emit_forward_decl(Scope *scope, Var *v) {
-    printf("/* %s */\n", v->name);
-    if (v->ext) {
-        printf("extern ");
-    }
+void emit_forward_decl(Scope *scope, AstFnDecl *decl) {
+    if (decl->polymorphs != NULL) {
+        scope = decl->scope;
+        Polymorph *p = decl->polymorphs;
+        while (p != NULL) {
+            scope->polymorph = p;
 
-    Type *t = resolve_alias(v->type);
-    assert(t->comp == FUNC);
-    emit_type(t->fn.ret);
+            printf("/* %s */\n", decl->var->name);
+            // TODO: integrate var with polymorph specializations so this works
+            //  better/more naturally here
 
-    if (!v->ext) {
-        printf("_vs_");
-    }
-    printf("%d(", v->id);
+            Type *t = resolve_alias(decl->var->type);
+            assert(t->comp == FUNC);
+            emit_type(t->fn.ret);
 
-    TypeList *args = t->fn.args;
-    for (int i = 0; args != NULL; i++) {
-        if (t->fn.variadic && args->next == NULL) {
-            printf("struct array_type ");
-        } else {
-            emit_type(args->item);
+            printf("_poly_%d_vs_%d(", p->id, decl->var->id);
+
+            TypeList *args = t->fn.args;
+            for (int i = 0; args != NULL; i++) {
+                if (t->fn.variadic && args->next == NULL) {
+                    printf("struct array_type ");
+                } else {
+                    emit_type(args->item);
+                }
+                printf("a%d", i);
+                if (args->next != NULL) {
+                    printf(",");
+                }
+                args = args->next;
+            }
+            printf(");\n");
+            scope->polymorph = NULL;
+
+            p = p->next;
         }
-        printf("a%d", i);
-        if (args->next != NULL) {
-            printf(",");
+    } else {
+        printf("/* %s */\n", decl->var->name);
+        if (decl->var->ext) {
+            printf("extern ");
         }
-        args = args->next;
+        Type *t = resolve_alias(decl->var->type);
+        assert(t->comp == FUNC);
+        emit_type(t->fn.ret);
+
+        if (!decl->var->ext) {
+            printf("_vs_");
+        }
+        printf("%d(", decl->var->id);
+
+        TypeList *args = t->fn.args;
+        for (int i = 0; args != NULL; i++) {
+            if (t->fn.variadic && args->next == NULL) {
+                printf("struct array_type ");
+            } else {
+                emit_type(args->item);
+            }
+            printf("a%d", i);
+            if (args->next != NULL) {
+                printf(",");
+            }
+            args = args->next;
+        }
+        printf(");\n");
     }
-    printf(");\n");
 }

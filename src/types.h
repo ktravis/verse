@@ -19,9 +19,11 @@ int is_dynamic(Type *t);
 int is_numeric(Type *t);
 int is_string(Type *t);
 int is_bool(Type *t);
+int is_polydef(Type *t);
 
 Type *make_primitive(int base, int size);
 Type *make_type(Scope *scope, char *name);
+Type *make_polydef(Scope *scope, char *name);
 Type *make_poly(Scope *scope, char *name, int id);
 Type *make_ref_type(Type *inner);
 Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic);

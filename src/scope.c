@@ -40,6 +40,13 @@ Type *fn_scope_return_type(Scope *scope) {
 }
 
 Type *lookup_local_type(Scope *s, char *name) {
+    if (s->polymorph != NULL) {
+        for (TypeDef *td = s->polymorph->defs; td != NULL; td = td->next) {
+            if (!strcmp(td->name, name)) {
+                return td->type;
+            }
+        }
+    }
     for (TypeDef *td = s->types; td != NULL; td = td->next) {
         if (!strcmp(td->name, name)) {
             return td->type;
@@ -101,6 +108,7 @@ void register_type(Scope *s, Type *t) {
 }
 Type *define_polymorph(Scope *s, Type *poly, Type *type) {
     assert(poly->comp == POLYDEF);
+    assert(s->polymorph != NULL);
     if (lookup_local_type(s, poly->name) != NULL) {
         error(-1, "internal", "Type '%s' already declared within this scope.", poly->name);
     }
@@ -108,11 +116,11 @@ Type *define_polymorph(Scope *s, Type *poly, Type *type) {
     TypeDef *td = malloc(sizeof(TypeDef));
     td->name = poly->name;
     td->type = type;
-    td->next = s->types;
+    td->next = s->polymorph->defs;
 
-    s->types = td;
+    s->polymorph->defs = td;
 
-    return make_poly(s, poly->name, type->id);;
+    return make_poly(s, poly->name, type->id);
 }
 Type *define_type(Scope *s, char *name, Type *type) {
     if (lookup_local_type(s, name) != NULL) {
@@ -132,14 +140,10 @@ Type *define_type(Scope *s, char *name, Type *type) {
     return type;
 }
 int local_type_name_conflict(Scope *scope, char *name) {
-    for (TypeDef *td = scope->types; td != NULL; td = td->next) {
-        if (!strcmp(td->name, name)) {
-            return 1;
-        }
-    }
-    return 0;
+    return lookup_local_type(scope, name) != NULL;
 }
 TypeDef *find_type_definition(Type *t) {
+    // handle t->comp == POLY? or is this covered by resolve_polymorph?
     assert(t->comp == ALIAS);
     Scope *scope = t->scope;
     while (scope != NULL) {

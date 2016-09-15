@@ -18,6 +18,7 @@ typedef enum {
     TOK_SEMI,
     TOK_REF,
     TOK_ID,
+    TOK_POLY,
     TOK_FN,
     TOK_TYPE,
     TOK_OP,
@@ -98,7 +99,6 @@ TokList *reverse_toklist(TokList *list);
 
 void skip_spaces();
 int is_id_char(char c);
-int type_id(char *buf);
 
 Tok *make_token(int t);
 Tok *next_token();

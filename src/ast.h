@@ -74,6 +74,7 @@ typedef struct AstCall {
     int nargs;
     struct AstList *args;
     Var *variadic_tempvar;
+    Polymorph *polymorph;
 } AstCall;
 
 typedef struct AstSlice {
@@ -89,17 +90,18 @@ typedef struct AstIndex {
 
 typedef struct AstBlock {
     struct AstList *statements;
-    char *file;
-    int startline;
-    int endline;
+    char           *file;
+    int             startline;
+    int             endline;
 } AstBlock;
 
 typedef struct AstFnDecl {
-    Var      *var;
-    int       anon;
-    VarList  *args;
-    Scope    *scope;
-    AstBlock *body;
+    Var       *var;
+    int        anon;
+    VarList   *args;
+    Scope     *scope;
+    AstBlock  *body;
+    Polymorph *polymorphs;
 } AstFnDecl;
 
 typedef struct AstConditional {

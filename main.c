@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
         if (!strcmp(v->name, "main")) {
             main_var = v;
         }
-        emit_forward_decl(root_scope, v);
+        emit_forward_decl(root_scope, fnlist->item->fn_decl);
         fnlist = fnlist->next;
     }
 

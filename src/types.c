@@ -23,6 +23,13 @@ Type *make_type(Scope *scope, char *name) {
     type->id = last_type_id++;
     return type;
 }
+Type *make_polydef(Scope *scope, char *name) {
+    Type *type = malloc(sizeof(Type));
+    type->comp = POLYDEF;
+    type->name = name;
+    type->scope = scope;
+    return type;
+}
 Type *make_poly(Scope *scope, char *name, int id) {
     Type *type = malloc(sizeof(Type));
     type->comp = POLY;
@@ -149,7 +156,7 @@ Type *lookup_local_type(Scope *s, char *name);
 
 Type *resolve_polymorph(Type *type) {
     Scope *s = type->scope;
-    if (type->comp == POLY) {
+    while (type->comp == POLY || type->comp == POLYDEF) {
         type = lookup_type(s, type->name);
     }
     return type;
@@ -160,6 +167,7 @@ Type *resolve_alias(Type *type) {
     if (type == NULL) {
         return NULL;
     }
+    type = resolve_polymorph(type);
     Scope *s = type->scope;
     if (s == NULL) {
         return type;
@@ -220,6 +228,35 @@ int is_dynamic(Type *t) {
         return 0;
     } else if (t->comp == STATIC_ARRAY) {
         return is_dynamic(t->array.inner);
+    }
+    return 0;
+}
+
+int is_polydef(Type *t) {
+    switch (t->comp) {
+    case POLYDEF:
+        return 1;
+    case REF:
+    case ARRAY:
+        return is_polydef(t->inner);
+    case STATIC_ARRAY:
+        return is_polydef(t->array.inner);
+    case STRUCT:
+        for (int i = 0; i < t->st.nmembers; i++) {
+            if (is_polydef(t->st.member_types[i])) {
+                return 1;
+            }
+        }
+        return 0;
+    case FUNC:
+        for (TypeList *args = t->fn.args; args != NULL; args = args->next) {
+            if (is_polydef(args->item)) {
+                return 1;
+            }
+        }
+        return 0;
+    default:
+        break;
     }
     return 0;
 }
