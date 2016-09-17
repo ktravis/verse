@@ -157,7 +157,18 @@ Type *lookup_local_type(Scope *s, char *name);
 Type *resolve_polymorph(Type *type) {
     Scope *s = type->scope;
     while (type->comp == POLY || type->comp == POLYDEF) {
-        type = lookup_type(s, type->name);
+        Type *t = lookup_type(s, type->name);
+        if (t == NULL) {
+            break;
+        }
+        type = t;
+    }
+    if (type->comp == ALIAS && s->polymorph != NULL) {
+        for (TypeDef *defs = s->polymorph->defs; defs != NULL; defs = defs->next) {
+            if (!strcmp(defs->name, type->name)) {
+                return defs->type;
+            }
+        }
     }
     return type;
 }
@@ -390,6 +401,9 @@ int match_polymorph(Scope *scope, Type *expected, Type *got) {
     }
     Type *res = resolve_alias(got);
     if (res->comp != expected->comp) {
+        if (expected->comp == ARRAY && res->comp == STATIC_ARRAY) {
+            return match_polymorph(scope, expected->inner, res->array.inner);
+        }
         return 0;
     }
     switch (expected->comp) {
@@ -550,6 +564,21 @@ char *type_to_string(Type *t) {
     case ALIAS: {
         char *name = malloc(sizeof(char) * (strlen(t->name) + 1));
         strcpy(name, t->name);
+        return name;
+    }
+    case POLY:
+    case POLYDEF: {
+        Type *r = resolve_polymorph(t);
+        if (t == r) {
+            int n = strlen(t->name) + 1;
+            char *name = malloc(sizeof(char) * n);
+            snprintf(name, n, "%s", t->name);
+            return name;
+        }
+        char *inner = type_to_string(r);
+        int n = strlen(t->name) + 7 + strlen(inner) + 1;
+        char *name = malloc(sizeof(char) * n);
+        snprintf(name, n, "%s (aka %s)", t->name, inner);
         return name;
     }
     /*PARAMS*/

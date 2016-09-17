@@ -411,7 +411,7 @@ Ast *parse_func_decl(Scope *scope, int anonymous) {
 
     t = next_token();
     if (t->type == TOK_COLON) {
-        ret = parse_type(fn_scope, next_token(), 0); // fn_scope or scope?
+        ret = parse_type(fn_scope, next_token(), 0);
     } else if (t->type == TOK_LBRACE) {
         unget_token(t);
     } else {

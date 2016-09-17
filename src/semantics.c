@@ -668,7 +668,12 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
         Ast *arg = parse_semantics(scope, call_args->item);
         call_args->item = arg;
         call_args = call_args->next;
-        call_arg_types = typelist_append(call_arg_types, arg->var_type);
+        Type *t = arg->var_type;
+        // TODO: this is super hacky
+        if (t->comp == STATIC_ARRAY) {
+            t = make_array_type(t->array.inner);
+        }
+        call_arg_types = typelist_append(call_arg_types, t);
     }
 
     int poly = is_polydef(resolved);
@@ -685,13 +690,18 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
         }
         for (Polymorph *p = decl->polymorphs; p != NULL; p = p->next) {
             TypeList *args = call_arg_types;
+            AstList *ast_args = ast->call->args;
             for (TypeList *list = p->args; list != NULL; list = list->next) {
                 match = p;
+                /*if (!(check_type(list->item, args->item) || can_coerce_type(decl->scope, list->item, ast_args->item))) {*/
+                // TODO: need to try coersion here, but need non-erroring
+                // version
                 if (!check_type(list->item, args->item)) {
                     match = NULL;
                     break;
                 }
                 args = args->next;
+                ast_args = ast_args->next;
             }
             if (match != NULL) {
                 break;
@@ -707,6 +717,8 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
             match->id = decl->polymorphs == NULL ? 0 : decl->polymorphs->id + 1;
             match->args = call_arg_types;
             match->next = decl->polymorphs;
+            // TODO: SCOPES DEFINED IN decl->scope ARE BEING CUT OFF HERE!
+            match->scope = new_scope(decl->scope);
             decl->polymorphs = match;
 
             decl->scope->polymorph = match;
@@ -749,7 +761,7 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
         }
 
         if (poly) {
-            parse_block_semantics(new_scope(decl->scope), decl->body, 1);
+            parse_block_semantics(match->scope, decl->body, 1);
         }
     }
     ast->var_type = resolve_polymorph(resolved->fn.ret);
@@ -1014,7 +1026,6 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         break;
     }
     case AST_FOR: {
-        // TODO: need to attach new scopes to AstFor etc
         AstFor *lp = ast->for_loop;
         lp->iterable = parse_semantics(scope, lp->iterable);
 

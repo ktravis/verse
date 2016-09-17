@@ -135,6 +135,7 @@ typedef struct Polymorph {
     TypeList         *args;
     TypeDef          *defs;
     struct Polymorph *next;
+    struct Scope     *scope;
 } Polymorph;
 
 typedef struct Scope {

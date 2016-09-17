@@ -497,12 +497,18 @@ void emit_func_decl(Scope *scope, Ast *fn) {
             printf(") ");
             
             emit_scope_start(scope);
-            compile_block(scope, fn->fn_decl->body);
+            emit_scope_start(p->scope);
+            compile_block(p->scope, fn->fn_decl->body);
+            emit_scope_end(p->scope);
             emit_scope_end(scope);
             scope->polymorph = NULL;
             p = p->next;
         }
     } else {
+        if (is_polydef(fn->fn_decl->var->type)) {
+            // polymorph not being used
+            return;
+        }
         printf("/* %s */\n", fn->fn_decl->var->name);
         indent();
         emit_type(fn->fn_decl->var->type->fn.ret);
@@ -763,6 +769,12 @@ void compile_fn_call(Scope *scope, Ast *ast) {
         needs_wrapper = !v->ext && !v->constant;
     }
 
+    TypeList *argtypes = t->fn.args;
+
+    if (ast->call->polymorph != NULL) {
+        argtypes = ast->call->polymorph->args;
+    }
+
     if (needs_wrapper) {
         printf("((");
         emit_type(t->fn.ret);
@@ -770,7 +782,7 @@ void compile_fn_call(Scope *scope, Ast *ast) {
         if (t->fn.nargs == 0) {
             printf("void");
         } else {
-            TypeList *args = t->fn.args;
+            TypeList *args = argtypes;
             while (args != NULL) {
                 emit_type(args->item);
                 if (args->next != NULL) {
@@ -782,11 +794,8 @@ void compile_fn_call(Scope *scope, Ast *ast) {
         printf("))(");
     }
 
-    TypeList *argtypes = t->fn.args;
-
     if (ast->call->polymorph != NULL) {
         printf("_poly_%d", ast->call->polymorph->id);
-        argtypes = ast->call->polymorph->args;
     }
     if (needs_temp_var(ast->call->fn)) {
         emit_temp_var(scope, ast->call->fn, 0);
@@ -824,7 +833,7 @@ void compile_fn_call(Scope *scope, Ast *ast) {
             }
             printf(",.type=(struct _vs_%d *)&_type_info%d}", get_typeinfo_type_id(), a->id);
         } else {
-            compile_call_arg(scope, args->item, argtypes->item->comp == ARRAY);
+            compile_call_arg(scope, args->item, resolve_alias(argtypes->item)->comp == ARRAY);
         }
 
         if (args->next != NULL) {
@@ -1374,11 +1383,15 @@ void emit_forward_decl(Scope *scope, AstFnDecl *decl) {
             p = p->next;
         }
     } else {
+        Type *t = resolve_alias(decl->var->type);
+        if (is_polydef(t)) {
+            // polymorph not being used
+            return;
+        }
         printf("/* %s */\n", decl->var->name);
         if (decl->var->ext) {
             printf("extern ");
         }
-        Type *t = resolve_alias(decl->var->type);
         assert(t->comp == FUNC);
         emit_type(t->fn.ret);
 
