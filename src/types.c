@@ -15,6 +15,57 @@ Type *make_primitive(int base, int size) {
     return type;
 }
 
+Type *copy_type(Scope *scope, Type *t) {
+    // TODO: change id?
+    if (t->comp == BASIC) {
+        return t;
+    }
+    Type *type = malloc(sizeof(Type));
+    *type = *t;
+    type->scope = scope;
+    switch (t->comp) {
+    case BASIC:
+    case ALIAS:
+    case POLYDEF:
+    case PARAMS:
+        break;
+    case STATIC_ARRAY:
+        type->array.inner = copy_type(scope, t->array.inner);
+        break;
+    case ARRAY:
+    case REF:
+        type->inner = copy_type(scope, t->inner);
+        break;
+    case FUNC:
+        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
+            type->fn.args = typelist_append(type->fn.args, copy_type(scope, list->item));
+        }
+        type->fn.args = reverse_typelist(type->fn.args);
+        type->fn.ret = copy_type(scope, t->fn.ret);
+        break;
+    case STRUCT:
+        type->st.member_types = malloc(sizeof(Type) * t->st.nmembers);
+        type->st.member_names = malloc(sizeof(char*) * t->st.nmembers);
+        for (int i = 0; i < t->st.nmembers; i++) {
+            type->st.member_types[i] = copy_type(scope, t->st.member_types[i]);
+            type->st.member_names[i] = malloc(sizeof(char) * strlen(t->st.member_names[i] + 1));
+            strcpy(type->st.member_names[i], t->st.member_names[i]);
+        }
+        break;
+    case ENUM:
+        type->en.inner = copy_type(scope, t->en.inner);
+        type->en.member_names = malloc(sizeof(char*) * t->en.nmembers);
+        type->en.member_values = malloc(sizeof(long) * t->en.nmembers);
+        for (int i = 0; i < t->st.nmembers; i++) {
+            type->en.member_values[i] = t->en.member_values[i];
+            type->en.member_names[i] = malloc(sizeof(char) * strlen(t->en.member_names[i] + 1));
+            strcpy(type->st.member_names[i], t->st.member_names[i]);
+        }
+        break;
+    }
+    return type;
+}
+
 Type *make_type(Scope *scope, char *name) {
     Type *type = malloc(sizeof(Type));
     type->comp = ALIAS;
@@ -28,14 +79,6 @@ Type *make_polydef(Scope *scope, char *name) {
     type->comp = POLYDEF;
     type->name = name;
     type->scope = scope;
-    return type;
-}
-Type *make_poly(Scope *scope, char *name, int id) {
-    Type *type = malloc(sizeof(Type));
-    type->comp = POLY;
-    type->name = name;
-    type->scope = scope;
-    type->id = id;
     return type;
 }
 Type *make_ref_type(Type *inner) {
@@ -155,19 +198,28 @@ Type *lookup_type(Scope *s, char *name);
 Type *lookup_local_type(Scope *s, char *name);
 
 Type *resolve_polymorph(Type *type) {
-    Scope *s = type->scope;
-    while (type->comp == POLY || type->comp == POLYDEF) {
-        Type *t = lookup_type(s, type->name);
-        if (t == NULL) {
-            break;
-        }
-        type = t;
-    }
-    if (type->comp == ALIAS && s->polymorph != NULL) {
-        for (TypeDef *defs = s->polymorph->defs; defs != NULL; defs = defs->next) {
-            if (!strcmp(defs->name, type->name)) {
-                return defs->type;
+    for (;;) {
+        if (type->comp == POLYDEF) {
+            Type *t = lookup_type(type->scope, type->name);
+            if (t == NULL) {
+                break;
             }
+            type = t;
+        } else if (type->comp == ALIAS && type->scope->polymorph != NULL) {
+            int found = 0;
+            for (TypeDef *defs = type->scope->polymorph->defs; defs != NULL; defs = defs->next) {
+                if (!strcmp(defs->name, type->name)) {
+                    /*return defs->type;*/
+                    type = defs->type;
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found) {
+                break;
+            }
+        } else {
+            break;
         }
     }
     return type;
@@ -180,7 +232,7 @@ Type *resolve_alias(Type *type) {
     }
     type = resolve_polymorph(type);
     Scope *s = type->scope;
-    if (s == NULL) {
+    if (s == NULL || type->comp != ALIAS) {
         return type;
     }
     Type *t = lookup_local_type(s, type->name);
@@ -275,16 +327,19 @@ int is_polydef(Type *t) {
 TypeDef *find_type_definition(Type *t);
 
 int check_type(Type *a, Type *b) {
-    a = resolve_polymorph(a);
-    b = resolve_polymorph(b);
-
+    /*a = resolve_polymorph(a);*/
+    /*b = resolve_polymorph(b);*/
     if (a->comp != b->comp) {
-        return 0;
+        if (!((a->comp == ALIAS && b->comp == POLYDEF) ||
+              (a->comp == POLYDEF && b->comp == ALIAS))) {
+            return 0;
+        }
     }
     switch (a->comp) {
     case BASIC:
     case ENUM:
         return a->id == b->id;
+    case POLYDEF:
     case ALIAS:
         return find_type_definition(a) == find_type_definition(b);
     case REF:
@@ -424,18 +479,22 @@ int match_polymorph(Scope *scope, Type *expected, Type *got) {
                 return 0;
             }
             // TODO: not sure this was right
-            if (!match_polymorph(scope, exp_args->item, got_args->item)) {
+            if (is_polydef(exp_args->item)) {
+                if (!match_polymorph(scope, exp_args->item, got_args->item)) {
+                    return 0;
+                }
+            } else if (!check_type(exp_args->item, got_args->item)) {
                 return 0;
             }
             exp_args = exp_args->next;
             got_args = got_args->next;
         }
-        return match_polymorph(scope, expected->fn.ret, res->fn.ret);
+        return check_type(expected->fn.ret, res->fn.ret);
     case STRUCT: // naw dog
     case STATIC_ARRAY: // can't use static array as arg can we?
     case PARAMS:
     case POLYDEF:
-    case POLY:
+    /*case POLY:*/
     case BASIC:
     case ENUM:
     case ALIAS:
@@ -474,8 +533,8 @@ Type *promote_number_type(Type *a, int left_lit, Type *b, int right_lit) {
 }
 
 int type_equality_comparable(Type *a, Type *b) {
-    a = resolve_polymorph(a);
-    b = resolve_polymorph(b);
+    /*a = resolve_polymorph(a);*/
+    /*b = resolve_polymorph(b);*/
 
     if (is_numeric(a)) {
         return is_numeric(b);
@@ -566,7 +625,7 @@ char *type_to_string(Type *t) {
         strcpy(name, t->name);
         return name;
     }
-    case POLY:
+    /*case POLY:*/
     case POLYDEF: {
         Type *r = resolve_polymorph(t);
         if (t == r) {
@@ -634,13 +693,13 @@ char *type_to_string(Type *t) {
         }
         char *dest = malloc(sizeof(char) * len);
         dest[0] = '\0';
-        sprintf(dest, "fn(");
+        snprintf(dest, 4, "fn(");
         for (int j = 0; j < i; j++) {
-            strcat(dest, args[i]);
+            strcat(dest, args[j]);
             if (j != i - 1) {
                 strcat(dest, ",");
             }
-            free(args[i]);
+            free(args[j]);
         }
         if (t->fn.variadic) {
             strcat(dest, "...");

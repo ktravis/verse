@@ -26,6 +26,7 @@ fn main():int {
     // z:blah = "test3" as string;
     grp(x as string);
     grp("heyyyy lol");
+    grp("heyyyy lol");
 
     not_a_thing:struct{
         a:int;

@@ -93,20 +93,182 @@ Ast *ast_alloc(AstType type) {
     return ast;
 }
 
+Ast *copy_ast(Scope *scope, Ast *ast) {
+    Ast *cp = ast_alloc(ast->type);
+    cp->line = ast->line;
+    cp->file = ast->file;
+    cp->var_type = ast->var_type;
+
+    switch (ast->type) {
+    case AST_LITERAL:
+        cp->lit = calloc(sizeof(AstLiteral), 1);
+        *cp->lit = *ast->lit;
+        switch (cp->lit->lit_type) {
+        case STRUCT_LIT:
+            cp->lit->struct_val.type = copy_type(scope, cp->lit->struct_val.type);
+            cp->lit->struct_val.member_exprs = malloc(sizeof(Ast*) * cp->lit->struct_val.nmembers);
+            for (int i = 0; i < cp->lit->struct_val.nmembers; i++) {
+                cp->lit->struct_val.member_exprs[i] = copy_ast(scope, cp->lit->struct_val.member_exprs[i]);
+            }
+            break;
+        case ENUM_LIT:
+            cp->lit->enum_val.enum_type = copy_type(scope, cp->lit->enum_val.enum_type);
+            break;
+        default:
+            break;
+        }
+        break;
+    case AST_DOT:
+        cp->dot = calloc(sizeof(AstDot), 1);
+        cp->dot->object = copy_ast(scope, ast->dot->object);
+        break;
+    case AST_ASSIGN:
+    case AST_BINOP:
+        cp->binary = calloc(sizeof(AstBinaryOp), 1);
+        cp->binary->op = ast->binary->op;
+        cp->binary->left = copy_ast(scope, ast->binary->left);
+        cp->binary->right = copy_ast(scope, ast->binary->right);
+        break;
+    case AST_UOP:
+        cp->unary = calloc(sizeof(AstUnaryOp), 1);
+        cp->unary->op = ast->unary->op;
+        cp->unary->object = copy_ast(scope, ast->unary->object);
+        break;
+    case AST_IDENTIFIER:
+        cp->ident = calloc(sizeof(AstIdent), 1);
+        cp->ident->varname = ast->ident->varname;
+        break;
+    case AST_COPY:
+        cp->copy = calloc(sizeof(AstCopy), 1);
+        cp->copy->expr = copy_ast(scope, ast->copy->expr);
+        break;
+    case AST_DECL:
+        cp->decl = calloc(sizeof(AstDecl), 1);
+        cp->decl->global = ast->decl->global;
+        cp->decl->var = copy_var(scope, ast->decl->var);
+        if (ast->decl->init != NULL) {
+            cp->decl->init = copy_ast(scope, ast->decl->init);
+        }
+        break;
+    case AST_ANON_FUNC_DECL:
+    case AST_EXTERN_FUNC_DECL:
+    case AST_FUNC_DECL:
+        cp->fn_decl = calloc(sizeof(AstFnDecl), 1);
+        cp->fn_decl->var = copy_var(scope, ast->fn_decl->var);
+        cp->fn_decl->anon = ast->fn_decl->anon;
+        for (VarList *list = ast->fn_decl->args; list != NULL; list = list->next) {
+            cp->fn_decl->args = varlist_append(cp->fn_decl->args, copy_var(scope, list->item));
+        }
+        cp->fn_decl->args = reverse_varlist(cp->fn_decl->args);
+        cp->fn_decl->body = copy_ast_block(scope, ast->fn_decl->body);
+        break;
+    case AST_CALL:
+        cp->call = calloc(sizeof(AstCall), 1);
+        cp->call->fn = copy_ast(scope, ast->call->fn);
+        cp->call->nargs = ast->call->nargs;
+        for (AstList *list = ast->call->args; list != NULL; list = list->next) {
+            cp->call->args = astlist_append(cp->call->args, copy_ast(scope, list->item));
+        }
+        cp->call->args = reverse_astlist(cp->call->args);
+        if (ast->call->variadic_tempvar != NULL) {
+            cp->call->variadic_tempvar = copy_var(scope, ast->call->variadic_tempvar);
+        }
+        break;
+    case AST_INDEX:
+        cp->index = calloc(sizeof(AstIndex), 1);
+        cp->index->object = copy_ast(scope, cp->index->object);
+        cp->index->index = copy_ast(scope, cp->index->index);
+        break;
+    case AST_SLICE:
+        cp->slice = calloc(sizeof(AstSlice), 1);
+        cp->slice->object = copy_ast(scope, ast->slice->object);
+        if (ast->slice->offset != NULL) {
+            cp->slice->offset = copy_ast(scope, ast->slice->offset);
+        }
+        if (ast->slice->length != NULL) {
+            cp->slice->length = copy_ast(scope, ast->slice->length);
+        }
+        break;
+    case AST_CONDITIONAL:
+        cp->cond = calloc(sizeof(AstConditional), 1);
+        cp->cond->condition = copy_ast(scope, ast->cond->condition);
+        cp->cond->if_body = copy_ast_block(scope, ast->cond->if_body);
+        if (ast->cond->else_body != NULL) {
+            cp->cond->else_body = copy_ast_block(scope, ast->cond->else_body);
+        }
+        break;
+    case AST_RETURN:
+        cp->ret = calloc(sizeof(AstReturn), 1);
+        cp->ret->expr = copy_ast(scope, ast->ret->expr);
+        break;
+    case AST_TYPE_DECL:
+        cp->type_decl = calloc(sizeof(AstTypeDecl), 1);
+        // This will have to happen before first_pass
+        break;
+    case AST_BLOCK:
+        cp->block = copy_ast_block(scope, ast->block);
+        break;
+    case AST_WHILE:
+        cp->while_loop = calloc(sizeof(AstWhile), 1);
+        cp->while_loop->condition = copy_ast(scope, ast->while_loop->condition);
+        cp->while_loop->body = copy_ast_block(scope, ast->while_loop->body);
+        break;
+    case AST_FOR:
+        cp->for_loop = calloc(sizeof(AstFor), 1);
+        cp->for_loop->itervar = copy_var(scope, ast->for_loop->itervar);
+        cp->for_loop->iterable = copy_ast(scope, ast->for_loop->iterable);
+        cp->for_loop->body = copy_ast_block(scope, ast->for_loop->body);
+        break;
+    case AST_BREAK:
+    case AST_CONTINUE:
+        break;
+    case AST_CAST:
+        cp->cast = calloc(sizeof(AstCast), 1);
+        cp->cast->cast_type = copy_type(scope, ast->cast->cast_type);
+        cp->cast->object = copy_ast(scope, ast->cast->object);
+        break;
+    case AST_DIRECTIVE:
+        cp->directive = calloc(sizeof(AstDirective), 1);
+        cp->directive->name = ast->directive->name;
+        if (ast->directive->object != NULL) {
+            cp->directive->object = copy_ast(scope, ast->directive->object);
+        }
+        break;
+    case AST_TYPEINFO:
+        cp->typeinfo = calloc(sizeof(AstTypeInfo), 1);
+        cp->typeinfo->typeinfo_target = copy_type(scope, ast->typeinfo->typeinfo_target);
+        break;
+    case AST_ENUM_DECL:
+        cp->enum_decl = calloc(sizeof(AstEnumDecl), 1);
+        cp->enum_decl->enum_name = ast->enum_decl->enum_name;
+        cp->enum_decl->enum_type = copy_type(scope, ast->enum_decl->enum_type);
+        // TODO: wtf
+        break;
+    case AST_USE:
+        cp->use = calloc(sizeof(AstUse), 1);
+        cp->use->object = copy_ast(scope, ast->use->object);
+        break;
+    }
+    return cp;
+}
+
+AstBlock *copy_ast_block(Scope *scope, AstBlock *block) {
+    AstBlock *b = calloc(sizeof(AstBlock), 1);
+    b->startline = block->startline;
+    b->endline = block->endline;
+    b->file = block->file;
+    for (AstList *list = block->statements; list != NULL; list = list->next) {
+        b->statements = astlist_append(b->statements, copy_ast(scope, list->item));
+    }
+    b->statements = reverse_astlist(b->statements);
+    return b;
+}
+
 Ast *make_ast_copy(Ast *ast) {
     Ast *cp = ast_alloc(AST_COPY);
     cp->copy->expr = ast;
     cp->var_type = ast->var_type;
     return cp;
-}
-
-Type *type_of_directive(Ast *ast) {
-    char *n = ast->directive->name;
-    /*if (!strcmp(n, "type")) {*/
-        /*return typeinfo_t();*/
-    /*}*/
-    error(ast->line, ast->file, "Cannot determine type of unknown directive '%s'.", n);
-    return NULL;
 }
 
 int is_lvalue(Ast *ast) {

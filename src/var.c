@@ -17,6 +17,19 @@ Var *make_var(char *name, Type *type) {
     return var;
 }
 
+Var *copy_var(Scope *scope, Var *v) {
+    Var *var = malloc(sizeof(Var));
+    *var = *v;
+    var->name = malloc(strlen(v->name)+1);
+    strcpy(var->name, v->name); // just in case
+    if (v->type != NULL) {
+        var->type = copy_type(scope, v->type);
+    }
+    // TODO: check for type and members, proxy?
+    // copy fn_decl?
+    return var;
+}
+
 void init_struct_var(Var *var) {
     Type *type = resolve_alias(var->type);
     assert(type->comp == STRUCT);

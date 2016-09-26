@@ -498,7 +498,7 @@ void emit_func_decl(Scope *scope, Ast *fn) {
             
             emit_scope_start(scope);
             emit_scope_start(p->scope);
-            compile_block(p->scope, fn->fn_decl->body);
+            compile_block(p->scope, p->body);
             emit_scope_end(p->scope);
             emit_scope_end(scope);
             scope->polymorph = NULL;

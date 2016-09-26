@@ -144,33 +144,43 @@ int expect_line_break_or_semicolon() {
     return 0;
 }
 
+struct TokListList {
+    TokList *list;
+    struct TokListList *next;
+};
+
+struct TokListList *_unwind_stack;
+
 Tok *next_token() {
     if (unwind_stack != NULL) {
         Tok *t = unwind_stack->item;
         unwind_stack = unwind_stack->next;
+        if (_unwind_stack != NULL) {
+            _unwind_stack->list = toklist_append(_unwind_stack->list, t);
+        }
         return t;
     }
     char c = read_non_space();
     if (c == EOF) {
         return NULL;
     }
+    Tok *t = NULL;
     if (isdigit(c)) {
-        return read_number(c);
+        t = read_number(c);
     } else if (c == '$') {
         c = get_char();
         if (!(isalpha(c) || c == '_')) {
             error(lineno(), current_file_name(), "Unexpected character '%c' following '$'.", c);
         }
-        Tok *t = read_identifier(c);
+        t = read_identifier(c);
         if (t->type != TOK_ID) {
             error(lineno(), current_file_name(), "Bad name for polymorphic type: '%s' is reserved.", t->sval);
         }
         t->type = TOK_POLY;
-        return t;
     } else if (isalpha(c) || c == '_') {
-        return read_identifier(c);
+        t = read_identifier(c);
     } else if (c == '\'') {
-        Tok *t = make_token(TOK_CHAR);
+        t = make_token(TOK_CHAR);
         c = get_char();
         if (c == '\\') {
             c = get_char();
@@ -180,26 +190,24 @@ Tok *next_token() {
         if (c != '\'') {
             error(lineno(), current_file_name(), "Invalid character literal sequence.");
         }
-        return t;
     } else if (c == '\"') {
-        Tok *t = make_token(TOK_STR);
+        t = make_token(TOK_STR);
         t->sval = read_string();
-        return t;
     } else if (c == '(') {
-        return make_token(TOK_LPAREN);
+        t = make_token(TOK_LPAREN);
     } else if (c == ')') {
-        return make_token(TOK_RPAREN);
+        t = make_token(TOK_RPAREN);
     } else if (c == '[') {
-        return make_token(TOK_LSQUARE);
+        t = make_token(TOK_LSQUARE);
     } else if (c == ']') {
-        return make_token(TOK_RSQUARE);
+        t = make_token(TOK_RSQUARE);
     } else if (c == '#') {
         c = get_char();
         if (c == '{') {
-            return make_token(TOK_STARTBIND);
+            t = make_token(TOK_STARTBIND);
         } else if (isalpha(c) || c == '_') {
             // TODO refactor this
-            Tok *t = make_token(TOK_DIRECTIVE);
+            t = make_token(TOK_DIRECTIVE);
             int alloc = 8;
             char *buf = malloc(alloc);
             buf[0] = c;
@@ -218,35 +226,33 @@ Tok *next_token() {
             }
             buf[len] = 0;
             t->sval = buf;
-            return t;
         } else {
             error(lineno(), current_file_name(), "Unexpected character sequence '#%c'", c);
         }
     } else if (c == '{') {
-        return make_token(TOK_LBRACE);
+        t = make_token(TOK_LBRACE);
     } else if (c == '}') {
-        return make_token(TOK_RBRACE);
+        t = make_token(TOK_RBRACE);
     } else if (c == ',') {
-        return make_token(TOK_COMMA);
+        t = make_token(TOK_COMMA);
     } else if (c == '.') {
         if ((c = get_char()) == '.') { // TODO are multiple dots in a row (but not three) ever valid?
             if ((c = get_char()) == '.') {
-                return make_token(TOK_ELLIPSIS); 
+                t = make_token(TOK_ELLIPSIS); 
+            } else {
+                error(lineno(), current_file_name(), "Unexected character '%c' following '..'", c);
             }
-            error(lineno(), current_file_name(), "Unexected character '%c' following '..'", c);
         } else {
             unget_char(c);
+            t = make_token(TOK_OP);
+            t->op = OP_DOT;
         }
-        Tok *t = make_token(TOK_OP);
-        t->op = OP_DOT;
-        return t;
     } else if (c == ';') {
-        return make_token(TOK_SEMI);
+        t = make_token(TOK_SEMI);
     } else if (c == ':') {
-        return make_token(TOK_COLON);
+        t = make_token(TOK_COLON);
     } else if (c == '+') {
         char n = get_char();
-        Tok *t = NULL;
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
         } else {
@@ -254,10 +260,8 @@ Tok *next_token() {
             unget_char(n);
         }
         t->op = OP_PLUS;
-        return t;
     } else if (c == '-') {
         char n = get_char();
-        Tok *t = NULL;
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
         } else {
@@ -265,10 +269,8 @@ Tok *next_token() {
             unget_char(n);
         }
         t->op = OP_MINUS;
-        return t;
     } else if (c == '*') {
         char n = get_char();
-        Tok *t = NULL;
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
         } else {
@@ -276,10 +278,8 @@ Tok *next_token() {
             unget_char(n);
         }
         t->op = OP_MUL;
-        return t;
     } else if (c == '/') {
         char n = get_char();
-        Tok *t = NULL;
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
         } else {
@@ -287,10 +287,8 @@ Tok *next_token() {
             unget_char(n);
         }
         t->op = OP_DIV;
-        return t;
     } else if (c == '^') {
         char n = get_char();
-        Tok *t = NULL;
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
         } else {
@@ -298,10 +296,8 @@ Tok *next_token() {
             unget_char(n);
         }
         t->op = OP_XOR;
-        return t;
     } else if (c == '&') {
         char n = get_char();
-        Tok *t = NULL;
         int op = OP_BINAND;
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
@@ -313,9 +309,8 @@ Tok *next_token() {
             unget_char(n);
         }
         t->op = op;
-        return t;
     } else if (c == '>') {
-        Tok *t = make_token(TOK_OP);
+        t = make_token(TOK_OP);
         int d = get_char();
         if (d == '=') {
             t->op = OP_GTE;
@@ -323,9 +318,8 @@ Tok *next_token() {
             unget_char(d);
             t->op = OP_GT;
         } // TODO binary shift
-        return t;
     } else if (c == '<') {
-        Tok *t = make_token(TOK_OP);
+        t = make_token(TOK_OP);
         int d = get_char();
         if (d == '=') {
             t->op = OP_LTE;
@@ -333,9 +327,7 @@ Tok *next_token() {
             unget_char(d);
             t->op = OP_LT;
         } // TODO binary shift
-        return t;
     } else if (c == '!') {
-        Tok *t;
         int d = get_char();
         if (d == '=') {
             t = make_token(TOK_OP);
@@ -345,23 +337,40 @@ Tok *next_token() {
             t = make_token(TOK_UOP);
             t->op = OP_NOT;
         }
-        return t;
     } else if (c == '|' || c == '=') {
         int d = get_char();
         int same = (d == c);
         if (!same) {
             unget_char(d);
         }
-        Tok *t = make_token(TOK_OP);
+        t = make_token(TOK_OP);
         switch (c) {
         case '&': t->op = same ? OP_AND : OP_BINAND; break;
         case '|': t->op = same ? OP_OR : OP_BINOR; break;
         case '=': t->op = same ? OP_EQUALS : OP_ASSIGN; break;
         }
-        return t;
     }
-    error(lineno(), current_file_name(), "Unexpected character '%c'.", c);
-    return NULL;
+    if (t == NULL) {
+        error(lineno(), current_file_name(), "Unexpected character '%c'.", c);
+    }
+    if (_unwind_stack != NULL) {
+        _unwind_stack->list = toklist_append(_unwind_stack->list, t);
+    }
+    return t;
+}
+
+void unwind_set() {
+    struct TokListList *ll = malloc(sizeof(struct TokListList));
+    ll->list = NULL;
+    ll->next = _unwind_stack;
+    _unwind_stack = ll;
+}
+
+void unwind_tokens() {
+    for (TokList *list = _unwind_stack->list; list != NULL; list = list->next) {
+        unget_token(list->item);
+    }
+    _unwind_stack = _unwind_stack->next;
 }
 
 Tok *peek_token() {
@@ -371,6 +380,10 @@ Tok *peek_token() {
 }
 
 void unget_token(Tok *tok) {
+    if (_unwind_stack != NULL && _unwind_stack->list != NULL &&
+        _unwind_stack->list->item == tok) {
+        _unwind_stack->list = _unwind_stack->list->next;
+    }
     unwind_stack = toklist_append(unwind_stack, tok);
 }
 

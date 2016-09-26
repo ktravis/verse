@@ -21,6 +21,7 @@ int is_string(Type *t);
 int is_bool(Type *t);
 int is_polydef(Type *t);
 
+Type *copy_type(Scope *scope, Type *t);
 Type *make_primitive(int base, int size);
 Type *make_type(Scope *scope, char *name);
 Type *make_polydef(Scope *scope, char *name);

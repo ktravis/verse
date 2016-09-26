@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
     init_types(root_scope);
     init_builtins();
 
-    Ast *root = parse_block(root_scope, 0);
+    Ast *root = parse_block(0);
     root = parse_semantics(root_scope, root);
 
     Var *main_var = NULL;

@@ -297,7 +297,192 @@ Ast *parse_enum_decl_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
+void first_pass_type(Scope *scope, Type *t) {
+    switch (t->comp) {
+    /*case POLY:*/
+    case POLYDEF:
+    case ALIAS:
+        t->scope = scope;
+        break;
+    case FUNC:
+        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
+            first_pass_type(scope, list->item);
+        }
+        first_pass_type(scope, t->fn.ret);
+        break;
+    case STRUCT:
+        for (int i = 0; i < t->st.nmembers; i++) {
+            first_pass_type(scope, t->st.member_types[i]);
+        }
+        register_type(scope, t);
+        break;
+    case ENUM:
+        first_pass_type(scope, t->en.inner);
+        break;
+    case REF:
+    case ARRAY:
+        first_pass_type(scope, t->inner);
+        break;
+    case STATIC_ARRAY:
+        first_pass_type(scope, t->array.inner);
+        break;
+    default:
+        break;
+    }
+}
+
+Ast *first_pass(Scope *scope, Ast *ast) {
+    switch (ast->type) {
+    case AST_LITERAL:
+        if (ast->lit->lit_type == STRUCT_LIT) {
+            first_pass_type(scope, ast->lit->struct_val.type);
+        } else if (ast->lit->lit_type == ENUM_LIT) {
+            first_pass_type(scope, ast->lit->enum_val.enum_type);
+        }
+        break;
+    case AST_DECL:
+        if (ast->decl->var->type != NULL) {
+            first_pass_type(scope, ast->decl->var->type);
+        }
+        if (ast->decl->init != NULL) {
+            ast->decl->init = first_pass(scope, ast->decl->init);
+        }
+        break;
+    case AST_EXTERN_FUNC_DECL:
+        if (lookup_local_var(scope, ast->fn_decl->var->name) != NULL) {
+            error(lineno(), current_file_name(), "Declared extern function name '%s' already exists in this scope.", ast->fn_decl->var->name);
+        }
+
+        first_pass_type(scope, ast->fn_decl->var->type);
+        break;
+    case AST_FUNC_DECL:
+    case AST_ANON_FUNC_DECL:
+        // TODO: split off if polydef here
+        ast->fn_decl->scope = new_fn_scope(scope);
+        ast->fn_decl->scope->fn_var = ast->fn_decl->var;
+
+        if (!ast->fn_decl->anon) {
+            if (lookup_local_var(scope, ast->fn_decl->var->name) != NULL) {
+                error(lineno(), current_file_name(), "Declared function name '%s' already exists in this scope.", ast->fn_decl->var->name);
+            }
+
+            attach_var(scope, ast->fn_decl->var);
+            attach_var(ast->fn_decl->scope, ast->fn_decl->var);
+        }
+
+        first_pass_type(ast->fn_decl->scope, ast->fn_decl->var->type);
+
+        // TODO handle case where arg has same name as func
+        for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
+            attach_var(ast->fn_decl->scope, args->item);
+        }
+        break;
+    case AST_ENUM_DECL:
+        if (local_type_name_conflict(scope, ast->enum_decl->enum_name)) {
+            error(lineno(), current_file_name(),
+                "Type named '%s' already exists in local scope.", ast->enum_decl->enum_name);
+        }
+        // TODO: need to do the epxrs here or not?
+        first_pass_type(scope, ast->enum_decl->enum_type);
+        ast->enum_decl->enum_type = define_type(scope, ast->enum_decl->enum_name, ast->enum_decl->enum_type);
+        break;
+    case AST_TYPE_DECL:
+        ast->type_decl->target_type->scope = scope;
+        first_pass_type(scope, ast->type_decl->target_type);
+        ast->type_decl->target_type = define_type(scope, ast->type_decl->type_name, ast->type_decl->target_type);
+        register_type(scope, ast->type_decl->target_type);
+        break;
+    case AST_DOT:
+        ast->dot->object = first_pass(scope, ast->dot->object);
+        break;
+    case AST_ASSIGN:
+    case AST_BINOP:
+        ast->binary->left = first_pass(scope, ast->binary->left);
+        ast->binary->right = first_pass(scope, ast->binary->right);
+        break;
+    case AST_UOP:
+        ast->unary->object = first_pass(scope, ast->unary->object);
+        break;
+    case AST_COPY:
+        ast->copy->expr = first_pass(scope, ast->copy->expr);
+        break;
+    case AST_CALL:
+        // TODO: rather than attach a polymorph, this should find the function
+        // it's calling in another way
+        ast->call->fn = first_pass(scope, ast->call->fn);
+        for (AstList *args = ast->call->args; args != NULL; args = args->next) {
+            args->item = first_pass(scope, args->item);
+        }
+        if (ast->call->variadic_tempvar != NULL) {
+            first_pass_type(scope, ast->call->variadic_tempvar->type);
+        }
+        break;
+    case AST_SLICE:
+        ast->slice->object = first_pass(scope, ast->slice->object);
+        if (ast->slice->offset != NULL) {
+            ast->slice->offset = first_pass(scope, ast->slice->offset);
+        }
+        if (ast->slice->length != NULL) {
+            ast->slice->length = first_pass(scope, ast->slice->length);
+        }
+        break;
+    case AST_INDEX:
+        ast->index->object = first_pass(scope, ast->index->object);
+        ast->index->index = first_pass(scope, ast->index->index);
+        break;
+    case AST_CONDITIONAL:
+        ast->cond->condition = first_pass(scope, ast->cond->condition);
+        ast->cond->scope = new_scope(scope);
+        break;
+    case AST_WHILE:
+        ast->while_loop->condition = first_pass(scope, ast->while_loop->condition);
+        ast->while_loop->scope = new_loop_scope(scope);
+        break;
+    case AST_FOR:
+        ast->for_loop->iterable = first_pass(scope, ast->for_loop->iterable);
+        ast->for_loop->scope = new_loop_scope(scope);
+        if (ast->for_loop->itervar->type != NULL) {
+            first_pass_type(scope, ast->for_loop->itervar->type);
+        }
+        break;
+    case AST_BLOCK:
+        // XXX: eh?
+        /*ast->block->scope = new_scope(scope);*/
+        break;
+    case AST_RETURN:
+        ast->ret->expr = first_pass(scope, ast->ret->expr);
+        break;
+    case AST_CAST:
+        ast->cast->object = first_pass(scope, ast->cast->object);
+        first_pass_type(scope, ast->cast->cast_type);
+        break;
+    case AST_DIRECTIVE:
+        if (ast->directive->object != NULL) {
+            ast->directive->object = first_pass(scope, ast->directive->object);
+        }
+        if (ast->var_type != NULL) {
+            first_pass_type(scope, ast->var_type);
+        }
+        break;
+    case AST_TYPEINFO:
+        first_pass_type(scope, ast->typeinfo->typeinfo_target);
+        break;
+    case AST_USE:
+        ast->use->object = first_pass(scope, ast->use->object);
+        break;
+    case AST_BREAK:
+    case AST_CONTINUE:
+    case AST_IDENTIFIER:
+        break;
+    }
+    return ast;
+}
+
 AstBlock *parse_block_semantics(Scope *scope, AstBlock *block, int fn_body) {
+    for (AstList *list = block->statements; list != NULL; list = list->next) {
+        list->item = first_pass(scope, list->item);
+    }
+
     Ast *last = NULL;
     int mainline_return_reached = 0;
     for (AstList *list = block->statements; list != NULL; list = list->next) {
@@ -536,7 +721,8 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file, "Cannot use unspecified array type for variable '%s' without initialization.", decl->var->name);
         }
     } else {
-        init = parse_semantics(scope, init);
+        decl->init = parse_semantics(scope, init);
+        init = decl->init;
 
         if (decl->var->type == NULL) {
             decl->var->type = init->var_type;
@@ -584,7 +770,6 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
                 error(ast->line, ast->file, "Cannot assign value '%s' to type '%s'.",
                         type_to_string(init->var_type), type_to_string(lt));
             }
-            decl->init = init;
         }
 
     }
@@ -682,6 +867,9 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
     if (poly) {
         if (ast->call->fn->type == AST_IDENTIFIER) {
             decl = ast->call->fn->ident->var->fn_decl;
+            // TODO: make function arguments register their declarations with
+            // the called function's scope so that declarations can be retrieved
+            // for functions pass as arguments. See tests/poly.vs:23
         } else if (ast->call->fn->type == AST_ANON_FUNC_DECL) {
             decl = ast->call->fn->fn_decl;
         } 
@@ -717,8 +905,8 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
             match->id = decl->polymorphs == NULL ? 0 : decl->polymorphs->id + 1;
             match->args = call_arg_types;
             match->next = decl->polymorphs;
-            // TODO: SCOPES DEFINED IN decl->scope ARE BEING CUT OFF HERE!
             match->scope = new_scope(decl->scope);
+            match->body = copy_ast_block(match->scope, decl->body); // match->scope or scope?
             decl->polymorphs = match;
 
             decl->scope->polymorph = match;
@@ -761,10 +949,14 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
         }
 
         if (poly) {
-            parse_block_semantics(match->scope, decl->body, 1);
+            match->body = parse_block_semantics(match->scope, match->body, 1);
         }
     }
+    /*if (poly) {*/
+        /*first_pass_type(match->scope, resolved->fn.ret);*/
+    /*}*/
     ast->var_type = resolve_polymorph(resolved->fn.ret);
+    /*ast->var_type = resolved->fn.ret;*/
 
     // This will have to resolve in the scope of the function itself, most
     //  likely...
@@ -925,8 +1117,12 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
                     }
                     attach_var(ast->fn_decl->scope, v);
                 }
-            } else if (is_polydef(args->item->type)) {
-                poly = 1;
+            } else {
+                // may not want this to happen here for polydef
+                /*attach_var(ast->fn_decl->scope, args->item);*/
+                if (is_polydef(args->item->type)) {
+                    poly = 1;
+                }
             }
         }
 

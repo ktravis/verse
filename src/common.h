@@ -40,7 +40,6 @@ typedef struct TypeList {
 typedef enum TypeComp {
     BASIC,
     ALIAS,
-    POLY,
     POLYDEF,
     PARAMS,
     STATIC_ARRAY,
@@ -136,6 +135,7 @@ typedef struct Polymorph {
     TypeDef          *defs;
     struct Polymorph *next;
     struct Scope     *scope;
+    struct AstBlock  *body;
 } Polymorph;
 
 typedef struct Scope {
@@ -150,7 +150,7 @@ typedef struct Scope {
     Polymorph *polymorph;
 } Scope;
 
-typedef enum {
+typedef enum AstType {
     AST_LITERAL,
     AST_DOT,
     AST_ASSIGN,

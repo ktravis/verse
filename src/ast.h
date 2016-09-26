@@ -167,14 +167,10 @@ typedef struct AstEnumDecl {
     Ast **exprs;
 } AstEnumDecl;
 
-//typedef struct AstListList {
-    //int id;
-    //AstList *item;
-    //struct AstListList *next;
-//} AstListList;
-
 Ast *ast_alloc(AstType type);
 Ast *deep_copy(Ast *ast);
+Ast *copy_ast(Scope *scope, Ast *ast);
+AstBlock *copy_ast_block(Scope *scope, AstBlock *block);
 
 Ast *make_ast_copy(Ast *ast);
 Ast *make_ast_bool(long ival);

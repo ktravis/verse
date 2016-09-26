@@ -15,16 +15,34 @@ fn sum(x:[]$T):T {
     for a in x {
         s = s + a;
     }
-    return a;
+    return s;
 }
+
+/*fn wow(f:fn($T)) {*/
+    /*x:T;*/
+    /*f(x);*/
+/*}*/
 
 fn main():int {
     (fn(x:$T){
         println("anyony");
     })(2);
     x:[2]int;
-    sum(x);
+    x[0] = 1;
+    x[1] = 12;
+    println("Uh: " + itoa(sum(x)));
     doit(1, 2);
     doit("test", "test2");
+
+    strs:[3]string;
+    strs[0] = "oh";
+    strs[1] = " hai ";
+    strs[2] = "there";
+    println(sum(strs));
+
+    /*wow(fn(a:int) {*/
+        /*a *= 2;*/
+    /*});*/
+
     return 0;
 }

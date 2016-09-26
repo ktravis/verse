@@ -120,7 +120,7 @@ Type *define_polymorph(Scope *s, Type *poly, Type *type) {
 
     s->polymorph->defs = td;
 
-    return make_poly(s, poly->name, type->id);
+    return make_type(s, poly->name);
 }
 Type *define_type(Scope *s, char *name, Type *type) {
     if (lookup_local_type(s, name) != NULL) {
@@ -143,10 +143,17 @@ int local_type_name_conflict(Scope *scope, char *name) {
     return lookup_local_type(scope, name) != NULL;
 }
 TypeDef *find_type_definition(Type *t) {
-    // handle t->comp == POLY? or is this covered by resolve_polymorph?
-    assert(t->comp == ALIAS);
+    assert(t->comp == ALIAS || t->comp == POLYDEF);
     Scope *scope = t->scope;
     while (scope != NULL) {
+        // eh?
+        if (scope->polymorph != NULL) {
+            for (TypeDef *td = scope->polymorph->defs; td != NULL; td = td->next) {
+                if (!strcmp(td->name, t->name)) {
+                    return td;
+                }
+            }
+        }
         for (TypeDef *td = scope->types; td != NULL; td = td->next) {
             if (!strcmp(td->name, t->name)) {
                 return td;

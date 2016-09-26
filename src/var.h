@@ -8,6 +8,7 @@
 
 int new_var_id();
 Var *make_var(char *name, Type *type);
+Var *copy_var(Scope *scope, Var *v);
 void init_struct_var(Var *var);
 
 VarList *varlist_append(VarList *list, Var *v);
