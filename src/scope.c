@@ -150,7 +150,7 @@ TypeDef *find_type_definition(Type *t) {
         if (scope->polymorph != NULL) {
             for (TypeDef *td = scope->polymorph->defs; td != NULL; td = td->next) {
                 if (!strcmp(td->name, t->name)) {
-                    return td;
+                    return find_type_definition(td->type);
                 }
             }
         }

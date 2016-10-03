@@ -18,10 +18,12 @@ fn sum(x:[]$T):T {
     return s;
 }
 
-/*fn wow(f:fn($T)) {*/
-    /*x:T;*/
-    /*f(x);*/
-/*}*/
+fn wow(f: fn($T), stuff: []T) {
+    for x in stuff {
+        println("stuff!");
+        f(x);
+    }
+}
 
 fn main():int {
     (fn(x:$T){
@@ -40,9 +42,10 @@ fn main():int {
     strs[2] = "there";
     println(sum(strs));
 
-    /*wow(fn(a:int) {*/
-        /*a *= 2;*/
-    /*});*/
+    zztop:[2]int;
+    wow(fn(a:int) {
+        a *= 2;
+    }, zztop);
 
     return 0;
 }
