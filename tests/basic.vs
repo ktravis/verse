@@ -9,6 +9,18 @@ x:int = 2;
 x1:int = 2;
 x2:string = "hi";
 
+fn to_be_passed():bool {
+    return false;
+}
+
+assigned:fn():bool;
+
+fn to_pass_to(f:fn():bool) {
+    g:fn():bool;
+    g = f;
+    assert(!f());
+}
+
 fn main():int {
     assert(2 == 2);
     assert(1 + 2 == 3);
@@ -17,6 +29,9 @@ fn main():int {
     x:string;
     x = "123";
     assert(x != "1234");
+
+    assigned = to_be_passed;
+    to_pass_to(assigned);
 
     z := fn ():bool {
         return true;

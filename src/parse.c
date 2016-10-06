@@ -310,6 +310,7 @@ Ast *parse_extern_func_decl() {
     Type *fn_type = make_fn_type(n, arg_types, ret, 0);
     Var *fn_decl_var = make_var(fname, fn_type);
     fn_decl_var->ext = 1;
+    fn_decl_var->constant = 1;
     func->fn_decl->var = fn_decl_var;
     return func; 
 }

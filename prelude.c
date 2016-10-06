@@ -93,26 +93,29 @@ struct array_type string_as_array(struct string_type str) {
 /*void assert(unsigned char a) {*/
     /*assert(a);*/
 /*}*/
-void println(struct string_type str) {
+void _vs_assert(int a) {
+    assert(a);
+}
+void _vs_println(struct string_type str) {
     printf("%s\n", str.bytes);
     free(str.bytes);
     /*free(str);*/
 }
-unsigned char validptr(ptr_type p) {
+unsigned char _vs_validptr(ptr_type p) {
     return (p != NULL);
 }
-void print_str(struct string_type str) {
+void _vs_print_str(struct string_type str) {
     printf("%s", str.bytes);
     free(str.bytes);
     /*free(str);*/
 }
-struct string_type itoa(int x) {
+struct string_type _vs_itoa(int x) {
     struct string_type v;
     v.bytes = malloc(8);
     snprintf(v.bytes, 7, "%d", x);
     v.length = strlen(v.bytes);
     return v;
 }
-void print_buf(uint8_t *buf) {
+void _vs_print_buf(uint8_t *buf) {
     fputs(buf, stdout);
 }

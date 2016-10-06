@@ -393,8 +393,7 @@ void emit_static_array_decl(Scope *scope, Ast *ast) {
     membername[strlen(ast->decl->var->name) + 5] = 0;
     emit_structmember(scope, membername, ast->decl->var->type);
     free(membername);
-    /*emit_type(ast->decl_var->type->inner);*/
-    /*printf("_vs_%s[%ld]", ast->decl_var->name, ast->decl_var->type->length);*/
+
     if (ast->decl->init == NULL) {
         printf(" = {0}");
     } else {
@@ -456,8 +455,6 @@ void emit_decl(Scope *scope, Ast *ast) {
         printf(" = ");
         if (t->comp == ARRAY) {
             compile_unspecified_array(scope, ast->decl->init);
-        /*} else if (lt->comp == STATIC_ARRAY) {*/ // Eh?
-            /*compile_static_array(ascope, st->binary->right);*/
         } else if (is_any(t) && !is_any(ast->decl->init->var_type)) {
             emit_any_wrapper(scope, ast->decl->init);
         } else if (is_lvalue(ast->decl->init)) {
@@ -540,7 +537,12 @@ void emit_structmember(Scope *scope, char *name, Type *st) {
     st = resolve_alias(st);
     if (st->comp == STATIC_ARRAY) {
         emit_structmember(scope, name, st->array.inner);
-        printf("[%ld]", st->array.length);
+        long length = 0;
+        while (st->comp == STATIC_ARRAY) {
+            length += st->array.length;
+            st = st->array.inner;
+        }
+        printf("[%ld]", length);
     } else {
         emit_type(st);
         printf("%s", name);
@@ -766,7 +768,7 @@ void compile_fn_call(Scope *scope, Ast *ast) {
     unsigned char needs_wrapper = 1;
     if (ast->call->fn->type == AST_IDENTIFIER) {
         Var *v = ast->call->fn->ident->var;
-        needs_wrapper = !v->ext && !v->constant;
+        needs_wrapper = !v->constant;
     }
 
     TypeList *argtypes = t->fn.args;
@@ -985,7 +987,7 @@ void compile(Scope *scope, Ast *ast) {
         Type *t = resolve_alias(ast->ident->var->type);
         assert(!ast->ident->var->proxy);
         if (ast->ident->var->ext) {
-            printf("%s", ast->ident->var->name);
+            printf("_vs_%s", ast->ident->var->name);
         } else if (t->comp == FUNC && ast->ident->var->constant) {
             printf("_vs_%d", ast->ident->var->id);
         } else {
@@ -1307,9 +1309,36 @@ void emit_scope_end(Scope *scope) {
     printf("}\n");
 }
 
+void emit_extern_fn_decl(Scope *scope, Var *v) {
+    printf("extern ");
+
+    Type *t = resolve_alias(v->type);
+    emit_type(t->fn.ret);
+    printf("%s(", v->name);
+    for (TypeList *args = t->fn.args; args != NULL; args = args->next) {
+        emit_type(args->item);
+        if (args->next != NULL) {
+            printf(",");
+        }
+    }
+    printf(");\n");
+
+    emit_type(t->fn.ret);
+    printf("(*_vs_%s)(", v->name);
+    
+    for (TypeList *args = t->fn.args; args != NULL; args = args->next) {
+        emit_type(args->item);
+        if (args->next != NULL) {
+            printf(",");
+        }
+    }
+    printf(") = %s;\n", v->name);
+}
+
 void emit_var_decl(Scope *scope, Var *v) {
     if (v->ext) {
-        printf("extern ");
+        emit_extern_fn_decl(scope, v);
+        return;
     }
 
     Type *t = resolve_alias(v->type);
@@ -1318,20 +1347,13 @@ void emit_var_decl(Scope *scope, Var *v) {
         printf("(*");
     } else if (t->comp == STATIC_ARRAY) {
         emit_type(t->array.inner);
-        if (!v->ext) {
-            printf("_vs_");
-        }
-        printf("%s[%ld] = {0};\n", v->name, t->array.length);
+        printf("_vs_%s[%ld] = {0};\n", v->name, t->array.length);
         return;
     } else {
         emit_type(t);
     }
 
-    if (!v->ext) {
-        printf("_vs_");
-    }
-
-    printf("%s", v->name);
+    printf("_vs_%s", v->name);
     if (t->comp == FUNC) {
         printf(")(");
         TypeList *args = t->fn.args;
@@ -1395,10 +1417,12 @@ void emit_forward_decl(Scope *scope, AstFnDecl *decl) {
         assert(t->comp == FUNC);
         emit_type(t->fn.ret);
 
-        if (!decl->var->ext) {
-            printf("_vs_");
+        printf("_vs_");
+        if (decl->var->ext) {
+            printf("%s(", decl->var->name);
+        } else {
+            printf("%d(", decl->var->id);
         }
-        printf("%d(", decl->var->id);
 
         TypeList *args = t->fn.args;
         for (int i = 0; args != NULL; i++) {

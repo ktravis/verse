@@ -358,7 +358,13 @@ int can_coerce_type(Scope *scope, Type *to, Ast *from) {
         if (from->var_type->comp == ARRAY) {
             return check_type(t->inner, from->var_type->inner);
         } else if (from->var_type->comp == STATIC_ARRAY) {
-            return check_type(t->inner, from->var_type->array.inner);
+            t = t->inner;
+            Type *from_type = from->var_type->array.inner;
+            while (from_type->comp == STATIC_ARRAY && t->comp == ARRAY) {
+                t = t->inner;
+                from_type = from_type->array.inner;
+            }
+            return check_type(t, from_type);
         }
     }
     if (from->type == AST_LITERAL) {

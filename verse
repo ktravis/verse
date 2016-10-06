@@ -1,3 +1,18 @@
 #!/usr/bin/env bash
 
-./bin/compiler $1 > tmp.c && gcc tmp.c -g -o tmp.out -std=c99 && ./tmp.out
+f=$1
+shift
+
+C_FLAGS="-g -std=c99"
+CMD="gcc tmp.c -o tmp.out $C_FLAGS"
+
+for i in "$@"; do
+    shift
+    if [ "$i" == "-" ]; then
+        break
+    fi
+    CMD="$CMD $i"
+done
+ARGS=$@
+
+./bin/compiler $f > tmp.c && $CMD && ./tmp.out $ARGS

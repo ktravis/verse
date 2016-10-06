@@ -452,7 +452,9 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         /*ast->block->scope = new_scope(scope);*/
         break;
     case AST_RETURN:
-        ast->ret->expr = first_pass(scope, ast->ret->expr);
+        if (ast->ret->expr) {
+            ast->ret->expr = first_pass(scope, ast->ret->expr);
+        }
         break;
     case AST_CAST:
         ast->cast->object = first_pass(scope, ast->cast->object);
@@ -716,9 +718,11 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     AstDecl *decl = ast->decl;
     Ast *init = decl->init;
 
+    Type *t = resolve_alias(decl->var->type);
+
     if (init == NULL) {
-        if (decl->var->type == NULL) {
-            error(ast->line, ast->file, "Cannot use type 'auto' for variable '%s' without initialization.", decl->var->name);
+        if (t == NULL) {
+            error(ast->line, ast->file, "Unknown type '%s' in declaration of variable '%s'", type_to_string(decl->var->type), decl->var->name);
         } else if (decl->var->type->comp == STATIC_ARRAY && decl->var->type->array.length == -1) {
             error(ast->line, ast->file, "Cannot use unspecified array type for variable '%s' without initialization.", decl->var->name);
         }
@@ -952,7 +956,7 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
             Type *expected = fn_arg_types->item;
 
             if (!(check_type(arg->var_type, expected) || can_coerce_type(scope, expected, arg))) {
-            error(ast->line, ast->file, "Expected argument (%d) of type '%s', but got type '%s'.",
+                error(ast->line, ast->file, "Expected argument (%d) of type '%s', but got type '%s'.",
                     i, type_to_string(expected), type_to_string(arg->var_type));
             }
 
@@ -1063,6 +1067,9 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
     case AST_CAST: {
         AstCast *cast = ast->cast;
         cast->object = parse_semantics(scope, cast->object);
+        if (resolve_alias(cast->cast_type) == NULL) {
+            error(ast->line, ast->file, "Unknown cast result type '%s'", type_to_string(cast->cast_type));
+        }
 
         // TODO: might need to check for needing tempvar in codegen
         if (!(can_coerce_type(scope, cast->cast_type, cast->object) || can_cast(cast->object->var_type, cast->cast_type))) {
@@ -1094,6 +1101,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         }
 
         attach_var(scope, ast->fn_decl->var);
+        global_vars = varlist_append(global_vars, ast->fn_decl->var);
         break;
     case AST_ANON_FUNC_DECL:
     case AST_FUNC_DECL: {
@@ -1234,7 +1242,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         AstWhile *lp = ast->while_loop;
         lp->condition = parse_semantics(scope, lp->condition);
 
-        if (lp->condition->var_type->id != base_type(BOOL_T)->id) {
+        if (!is_bool(lp->condition->var_type)) {
             error(ast->line, ast->file, "Non-boolean ('%s') condition for while loop.",
                     type_to_string(lp->condition->var_type));
         }

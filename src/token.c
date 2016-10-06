@@ -730,9 +730,9 @@ const char *token_type(int type) {
     case TOK_RPAREN:
         return "RPAREN";
     case TOK_LSQUARE:
-        return "LSQURE";
+        return "LSQUARE";
     case TOK_RSQUARE:
-        return "RSQURE";
+        return "RSQUARE";
     case TOK_OPASSIGN:
         return "OPASSIGN";
     case TOK_OP:
