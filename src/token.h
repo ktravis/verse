@@ -16,6 +16,7 @@ typedef enum {
     TOK_BOOL,
     TOK_COLON,
     TOK_SEMI,
+    TOK_NL,
     TOK_REF,
     TOK_ID,
     TOK_POLY,
@@ -100,6 +101,7 @@ int is_id_char(char c);
 
 Tok *make_token(int t);
 Tok *next_token();
+Tok *next_token_or_newline();
 Tok *peek_token();
 
 void unget_token(Tok *tok);
@@ -121,6 +123,7 @@ void set_file_source(char *name, FILE *f);
 void pop_file_source();
 
 Tok *expect(int type);
+Tok *expect_eol();
 int expect_line_break();
 int expect_line_break_or_semicolon();
 

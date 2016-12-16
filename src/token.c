@@ -82,6 +82,7 @@ char read_non_space() {
             break;
         } else if (c == '\n') {
             source_stack->line++;
+            return c;
         }
     }
     return c;
@@ -151,7 +152,7 @@ struct TokListList {
 
 struct TokListList *_unwind_stack;
 
-Tok *next_token() {
+Tok *_next_token(int nl_ok) {
     if (unwind_stack != NULL) {
         Tok *t = unwind_stack->item;
         unwind_stack = unwind_stack->next;
@@ -161,10 +162,21 @@ Tok *next_token() {
         return t;
     }
     char c = read_non_space();
+    Tok *t = NULL;
+
+    if (c == '\n') {
+        if (nl_ok) {
+            t = make_token(TOK_NL);
+        } else {
+            while (c == '\n') {
+                c = read_non_space();
+            }
+        }
+    }
     if (c == EOF) {
         return NULL;
     }
-    Tok *t = NULL;
+
     if (isdigit(c)) {
         t = read_number(c);
     } else if (c == '$') {
@@ -357,6 +369,12 @@ Tok *next_token() {
         _unwind_stack->list = toklist_append(_unwind_stack->list, t);
     }
     return t;
+}
+Tok *next_token() {
+    return _next_token(0);
+}
+Tok *next_token_or_newline() {
+    return _next_token(1);
 }
 
 void unwind_set() {
@@ -648,6 +666,8 @@ const char *tok_to_string(Tok *t) {
     }
     case TOK_SEMI:
         return ";";
+    case TOK_NL:
+        return "\\n";
     case TOK_COLON:
         return ":";
     case TOK_COMMA:
@@ -721,6 +741,8 @@ const char *token_type(int type) {
         return "INT";
     case TOK_SEMI:
         return "SEMI";
+    case TOK_NL:
+        return "NEWLINE";
     case TOK_COLON:
         return "COLON";
     case TOK_COMMA:
@@ -801,9 +823,21 @@ const char *op_to_str(int op) {
 }
 
 Tok *expect(int type) {
-    Tok *t = next_token();
+    int nl_ok = 0;
+    if (type == TOK_NL) {
+        nl_ok = 1;
+    }
+    Tok *t = _next_token(nl_ok);
     if (t == NULL || t->type != type) {
         error(lineno(), current_file_name(), "Expected token of type '%s', got '%s'.", token_type(type), tok_to_string(t));
+    }
+    return t;
+}
+
+Tok *expect_eol() {
+    Tok *t = next_token_or_newline();
+    if (t == NULL || !(t->type == TOK_SEMI || t->type == TOK_NL)) {
+        error(lineno(), current_file_name(), "Expected end of line, got '%s'.", tok_to_string(t));
     }
     return t;
 }

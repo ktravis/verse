@@ -344,8 +344,60 @@ Ast *make_ast_slice(Ast *object, Ast *offset, Ast *length) {
     return s;
 }
 
-int can_coerce_type(Scope *scope, Type *to, Ast *from) {
+int can_coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
+    if (is_any(to)) {
+        if (!is_any(from->var_type) && !is_lvalue(from)) {
+            allocate_temp_var(scope, from);
+        }
+        return 1;
+    }
+    
+    // (TODO: why was this comment here?)
     // resolve polymorphs
+    Type *t = resolve_alias(to);
+    if (t->comp == ARRAY) {
+        if (from->var_type->comp == ARRAY) {
+            return check_type(t->inner, from->var_type->inner);
+        } else if (from->var_type->comp == STATIC_ARRAY) {
+            t = t->inner;
+            Type *from_type = from->var_type->array.inner;
+            while (from_type->comp == STATIC_ARRAY && t->comp == ARRAY) {
+                t = t->inner;
+                from_type = from_type->array.inner;
+            }
+            return check_type(t, from_type);
+        }
+    }
+    if (from->type == AST_LITERAL) {
+        if (is_numeric(t) && is_numeric(from->var_type)) {
+            int loss = 0;
+            if (from->lit->lit_type == INTEGER) {
+                if (t->data->base == UINT_T) {
+                    if (from->lit->int_val < 0) {
+                        return 0;
+                    }
+                    loss = precision_loss_uint(t, from->lit->int_val);
+                } else {
+                    loss = precision_loss_int(t, from->lit->int_val);
+                }
+            } else if (from->lit->lit_type == FLOAT) {
+                if (t->data->base != FLOAT_T) {
+                    return 0;
+                }
+                loss = precision_loss_float(t, from->lit->float_val);
+            }
+            if (!loss) {
+                return 1;
+            }
+        } else {
+            if (can_cast(from->var_type, t)) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+int can_coerce_type(Scope *scope, Type *to, Ast *from) {
     if (is_any(to)) {
         if (!is_any(from->var_type) && !is_lvalue(from)) {
             allocate_temp_var(scope, from);

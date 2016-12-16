@@ -1,4 +1,5 @@
 // SDL
+// ./verse samples/sdl.vs -lSDL2
 
 type SDL_Window : struct {
     _ : bool;

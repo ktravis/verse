@@ -286,11 +286,11 @@ Ast *parse_enum_decl_semantics(Scope *scope, Ast *ast) {
                 error(ast->line, ast->file, "Enum '%s' member name '%s' defined twice.",
                         ast->enum_decl->enum_name, et->en.member_names[i]);
             }
-            if (et->en.member_values[i] == et->en.member_values[j]) {
-                error(ast->line, ast->file, "Enum '%s' contains duplicate values for members '%s' and '%s'.",
-                    ast->enum_decl->enum_name, et->en.member_names[j],
-                    et->en.member_names[i]);
-            }
+            /*if (et->en.member_values[i] == et->en.member_values[j]) {*/
+                /*error(ast->line, ast->file, "Enum '%s' contains duplicate values for members '%s' and '%s'.",*/
+                    /*ast->enum_decl->enum_name, et->en.member_names[j],*/
+                    /*et->en.member_names[i]);*/
+            /*}*/
         }
     }
     ast->var_type = base_type(VOID_T);
@@ -822,11 +822,13 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
     Type *resolved = resolve_alias(orig);
     if (resolved->comp != FUNC) {
         error(ast->line, ast->file, "Cannot perform call on non-function type '%s'", type_to_string(orig));
+        return NULL;
     }
     
     if (resolved->fn.variadic) {
         if (ast->call->nargs < resolved->fn.nargs - 1) {
             error(ast->line, ast->file, "Expected at least %d arguments to variadic function, but only got %d.", resolved->fn.nargs-1, ast->call->nargs);
+            return NULL;
         } else {
             TypeList *list = resolved->fn.args;
             Type *a = list->item;
@@ -850,11 +852,13 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
         }
     } else if (ast->call->nargs != resolved->fn.nargs) {
         error(ast->line, ast->file, "Incorrect argument count to function (expected %d, got %d)", resolved->fn.nargs, ast->call->nargs);
+        return NULL;
     }
 
     AstList *call_args = ast->call->args;
     TypeList *call_arg_types = NULL;
 
+    // collect call arg types
     for (int i = 0; call_args != NULL; i++) {
         Ast *arg = parse_semantics(scope, call_args->item);
         call_args->item = arg;
@@ -885,10 +889,8 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
             AstList *ast_args = ast->call->args;
             for (TypeList *list = p->args; list != NULL; list = list->next) {
                 match = p;
-                /*if (!(check_type(list->item, args->item) || can_coerce_type(decl->scope, list->item, ast_args->item))) {*/
-                // TODO: need to try coersion here, but need non-erroring
-                // version
-                if (!check_type(list->item, args->item)) {
+                if (!(check_type(list->item, args->item) ||
+                      can_coerce_type_no_error(decl->scope, list->item, ast_args->item))) {
                     match = NULL;
                     break;
                 }
@@ -903,90 +905,188 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
 
     if (match != NULL) {
         ast->call->polymorph = match;
-    } else {
-        TypeList *fn_arg_types = NULL;
-        if (poly) {
-            match = malloc(sizeof(Polymorph));
-            match->id = decl->polymorphs == NULL ? 0 : decl->polymorphs->id + 1;
+        ast->var_type = resolve_polymorph(resolved->fn.ret);
+        return ast;
+    }
 
-            match->args = call_arg_types;
-            match->next = decl->polymorphs;
-            match->scope = new_scope(decl->scope);
-            match->body = copy_ast_block(match->scope, decl->body); // match->scope or scope?
-            decl->polymorphs = match;
+    TypeList *fn_arg_types = NULL;
+    if (poly) {
+        match = malloc(sizeof(Polymorph));
+        match->id = decl->polymorphs == NULL ? 0 : decl->polymorphs->id + 1;
 
-            decl->scope->polymorph = match;
-            ast->call->polymorph = match;
-            
-            call_args = ast->call->args;
-            VarList *arg_vars = decl->args;
-            for (TypeList *list = resolved->fn.args; list != NULL; list = list->next) {
-                Type *arg_type = call_args->item->var_type;
-                if (is_polydef(list->item)) {
-                    if (!match_polymorph(decl->scope, list->item, arg_type)) {
-                        error(ast->line, ast->file, "Expected polymorphic argument type %s, but got an argument of type %s",
-                                type_to_string(list->item), type_to_string(arg_type));
-                    }
-                    // TODO: make this better
-                    if (arg_type->comp == STATIC_ARRAY) {
-                        Type *t = make_array_type(arg_type->array.inner);
-                        fn_arg_types = typelist_append(fn_arg_types, t);
+        match->args = call_arg_types;
+        match->next = decl->polymorphs;
+        match->scope = new_scope(decl->scope);
+        match->body = copy_ast_block(match->scope, decl->body); // match->scope or scope?
+        decl->polymorphs = match;
 
-                    } else {
-                        fn_arg_types = typelist_append(fn_arg_types, arg_type);
-                    }
-                } else {
-                    fn_arg_types = typelist_append(fn_arg_types, list->item);
-                }
-                call_args = call_args->next;
-
-                Var *v = copy_var(match->scope, arg_vars->item);
-                v->type = fn_arg_types->item;
-                attach_var(match->scope, v);
-                arg_vars = arg_vars->next;
-            }
-            fn_arg_types = reverse_typelist(fn_arg_types);
-        } else {
-            fn_arg_types = resolved->fn.args;
-        }
+        decl->scope->polymorph = match;
+        ast->call->polymorph = match;
+        
         call_args = ast->call->args;
-
-        for (int i = 0; call_args != NULL; i++) {
-            Ast *arg = call_args->item;
-            Type *expected = fn_arg_types->item;
-
-            if (!(check_type(arg->var_type, expected) || can_coerce_type(scope, expected, arg))) {
-                error(ast->line, ast->file, "Expected argument (%d) of type '%s', but got type '%s'.",
-                    i, type_to_string(expected), type_to_string(arg->var_type));
-            }
-
-            if (is_any(expected)) {
-                if (!is_any(arg->var_type) && !is_lvalue(arg)) {
-                    if (needs_temp_var(arg)) {
-                        allocate_temp_var(scope, arg);
-                    }
+        VarList *arg_vars = decl->args;
+        for (TypeList *list = resolved->fn.args; list != NULL; list = list->next) {
+            Type *arg_type = call_args->item->var_type;
+            if (is_polydef(list->item)) {
+                if (!match_polymorph(decl->scope, list->item, arg_type)) {
+                    error(ast->line, ast->file, "Expected polymorphic argument type %s, but got an argument of type %s",
+                            type_to_string(list->item), type_to_string(arg_type));
                 }
-            }
+                // TODO: make this better
+                if (arg_type->comp == STATIC_ARRAY) {
+                    Type *t = make_array_type(arg_type->array.inner);
+                    fn_arg_types = typelist_append(fn_arg_types, t);
 
+                } else {
+                    fn_arg_types = typelist_append(fn_arg_types, arg_type);
+                }
+            } else {
+                fn_arg_types = typelist_append(fn_arg_types, list->item);
+            }
             call_args = call_args->next;
 
-            if (!resolved->fn.variadic || i < resolved->fn.nargs - 1) {
-                fn_arg_types = fn_arg_types->next;
+            Var *v = copy_var(match->scope, arg_vars->item);
+            v->type = fn_arg_types->item;
+            attach_var(match->scope, v);
+            arg_vars = arg_vars->next;
+        }
+        fn_arg_types = reverse_typelist(fn_arg_types);
+    } else {
+        fn_arg_types = resolved->fn.args;
+    }
+    call_args = ast->call->args;
+
+    for (int i = 0; call_args != NULL; i++) {
+        Ast *arg = call_args->item;
+        Type *expected = fn_arg_types->item;
+
+        if (!(check_type(arg->var_type, expected) || can_coerce_type(scope, expected, arg))) {
+            error(ast->line, ast->file, "Expected argument (%d) of type '%s', but got type '%s'.",
+                i, type_to_string(expected), type_to_string(arg->var_type));
+        }
+
+        if (is_any(expected)) {
+            if (!is_any(arg->var_type) && !is_lvalue(arg)) {
+                if (needs_temp_var(arg)) {
+                    allocate_temp_var(scope, arg);
+                }
             }
         }
 
-        if (poly) {
-            match->body = parse_block_semantics(match->scope, match->body, 1);
+        call_args = call_args->next;
+
+        if (!resolved->fn.variadic || i < resolved->fn.nargs - 1) {
+            fn_arg_types = fn_arg_types->next;
         }
+    }
+
+    if (poly) {
+        match->body = parse_block_semantics(match->scope, match->body, 1);
     }
     /*if (poly) {*/
         /*first_pass_type(match->scope, resolved->fn.ret);*/
     /*}*/
     ast->var_type = resolve_polymorph(resolved->fn.ret);
-    /*ast->var_type = resolved->fn.ret;*/
 
     // This will have to resolve in the scope of the function itself, most
     //  likely...
+    return ast;
+}
+
+Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
+    int poly = 0;
+    Scope *type_check_scope = scope;
+    if (is_polydef(ast->fn_decl->var->type)) {
+        type_check_scope = new_scope(scope);
+        poly = 1;
+
+        for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
+            if (is_polydef(args->item->type)) {
+                // get alias
+                define_polydef_alias(type_check_scope, args->item->type);
+            }
+        }
+    }
+    for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
+        // TODO: this type-checking doesn't work with polydefs properly
+        Scope *tmp = args->item->type->scope;
+        args->item->type->scope = type_check_scope;
+
+        if (resolve_alias(args->item->type) == NULL) {
+            error(ast->line, ast->file, "Unknown type '%s' in declaration of function '%s'", type_to_string(args->item->type), ast->fn_decl->var->name);
+        }
+
+        args->item->type->scope = tmp;
+
+        if (args->item->use) {
+            // allow polydef here?
+            int ref = 0;
+            Type *orig = args->item->type;
+            Type *t = resolve_alias(orig);
+            while (t->comp == REF) {
+                t = resolve_alias(t->inner);
+                ref = 1;
+            }
+            if (t->comp != STRUCT) {
+                error(lineno(), current_file_name(),
+                    "'use' is not allowed on args of non-struct type '%s'.",
+                    type_to_string(orig));
+            }
+            for (int i = 0; i < t->st.nmembers; i++) {
+                char *name = t->st.member_names[i];
+                if (lookup_local_var(ast->fn_decl->scope, name) != NULL) {
+                    error(lineno(), current_file_name(),
+                        "'use' statement on struct type '%s' conflicts with existing argument named '%s'.",
+                        type_to_string(orig), name);
+                } else if (local_type_name_conflict(scope, name)) {
+                    error(lineno(), current_file_name(),
+                        "'use' statement on struct type '%s' conflicts with builtin type named '%s'.",
+                        type_to_string(orig), name);
+                }
+                Var *v = make_var(name, t->st.member_types[i]);
+                if (ref) {
+                    int proxy_name_len = strlen(args->item->name) + strlen(name) + 2;
+                    char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
+                    sprintf(proxy_name, "%s->%s", args->item->name, name);
+                    proxy_name[proxy_name_len] = 0;
+                    v->proxy = make_var(proxy_name, t->st.member_types[i]);
+                } else {
+                    int proxy_name_len = strlen(args->item->name) + strlen(name) + 1;
+                    char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
+                    sprintf(proxy_name, "%s.%s", args->item->name, name);
+                    proxy_name[proxy_name_len] = 0;
+                    v->proxy = make_var(proxy_name, t->st.member_types[i]);
+                }
+                attach_var(ast->fn_decl->scope, v);
+            }
+        }
+        /*} else {*/
+            // may not want this to happen here for polydef
+            /*attach_var(ast->fn_decl->scope, args->item);*/
+            /*if (is_polydef(args->item->type)) {*/
+                /*poly = 1;*/
+            /*}*/
+        /*}*/
+    }
+
+    if (!poly) {
+        ast->fn_decl->body = parse_block_semantics(ast->fn_decl->scope, ast->fn_decl->body, 1);
+
+        detach_var(ast->fn_decl->scope, ast->fn_decl->var);
+    }
+
+    Scope *tmp = ast->fn_decl->var->type->fn.ret->scope;
+    ast->fn_decl->var->type->fn.ret->scope = type_check_scope;
+
+    if (resolve_alias(ast->fn_decl->var->type->fn.ret) == NULL) {
+        error(ast->line, ast->file, "Unknown type '%s' in declaration of function '%s'", type_to_string(ast->fn_decl->var->type->fn.ret), ast->fn_decl->var->name);
+    }
+
+    ast->fn_decl->var->type->fn.ret->scope = tmp;
+
+    if (ast->type == AST_ANON_FUNC_DECL) {
+        ast->var_type = ast->fn_decl->var->type;
+    }
     return ast;
 }
 
@@ -1099,75 +1199,21 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         if (scope->parent != NULL) {
             error(ast->line, ast->file, "Cannot declare an extern inside scope ('%s').", ast->fn_decl->var->name);
         }
+        for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
+            if (resolve_alias(args->item->type) == NULL) {
+                error(ast->line, ast->file, "Unknown type '%s' in declaration of extern function '%s'", type_to_string(args->item->type), ast->fn_decl->var->name);
+            }
+        }
+        if (resolve_alias(ast->fn_decl->var->type->fn.ret) == NULL) {
+            error(ast->line, ast->file, "Unknown type '%s' in declaration of extern function '%s'", type_to_string(ast->fn_decl->var->type->fn.ret), ast->fn_decl->var->name);
+        }
 
         attach_var(scope, ast->fn_decl->var);
         global_vars = varlist_append(global_vars, ast->fn_decl->var);
         break;
     case AST_ANON_FUNC_DECL:
-    case AST_FUNC_DECL: {
-        int poly = 0;
-        for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
-            if (args->item->use) {
-                // allow polydef here?
-                int ref = 0;
-                Type *orig = args->item->type;
-                Type *t = resolve_alias(orig);
-                while (t->comp == REF) {
-                    t = resolve_alias(t->inner);
-                    ref = 1;
-                }
-                if (t->comp != STRUCT) {
-                    error(lineno(), current_file_name(),
-                        "'use' is not allowed on args of non-struct type '%s'.",
-                        type_to_string(orig));
-                }
-                for (int i = 0; i < t->st.nmembers; i++) {
-                    char *name = t->st.member_names[i];
-                    if (lookup_local_var(ast->fn_decl->scope, name) != NULL) {
-                        error(lineno(), current_file_name(),
-                            "'use' statement on struct type '%s' conflicts with existing argument named '%s'.",
-                            type_to_string(orig), name);
-                    } else if (local_type_name_conflict(scope, name)) {
-                        error(lineno(), current_file_name(),
-                            "'use' statement on struct type '%s' conflicts with builtin type named '%s'.",
-                            type_to_string(orig), name);
-                    }
-                    Var *v = make_var(name, t->st.member_types[i]);
-                    if (ref) {
-                        int proxy_name_len = strlen(args->item->name) + strlen(name) + 2;
-                        char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
-                        sprintf(proxy_name, "%s->%s", args->item->name, name);
-                        proxy_name[proxy_name_len] = 0;
-                        v->proxy = make_var(proxy_name, t->st.member_types[i]);
-                    } else {
-                        int proxy_name_len = strlen(args->item->name) + strlen(name) + 1;
-                        char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
-                        sprintf(proxy_name, "%s.%s", args->item->name, name);
-                        proxy_name[proxy_name_len] = 0;
-                        v->proxy = make_var(proxy_name, t->st.member_types[i]);
-                    }
-                    attach_var(ast->fn_decl->scope, v);
-                }
-            } else {
-                // may not want this to happen here for polydef
-                /*attach_var(ast->fn_decl->scope, args->item);*/
-                if (is_polydef(args->item->type)) {
-                    poly = 1;
-                }
-            }
-        }
-
-        if (!poly) {
-            ast->fn_decl->body = parse_block_semantics(ast->fn_decl->scope, ast->fn_decl->body, 1);
-
-            detach_var(ast->fn_decl->scope, ast->fn_decl->var);
-        }
-
-        if (ast->type == AST_ANON_FUNC_DECL) {
-            ast->var_type = ast->fn_decl->var->type;
-        }
-        break;
-    }
+    case AST_FUNC_DECL:
+        return check_func_decl_semantics(scope, ast);
     case AST_CALL:
         return parse_call_semantics(scope, ast);
     case AST_INDEX: {

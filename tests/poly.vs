@@ -18,7 +18,7 @@ fn sum(x:[]$T):T {
     return s;
 }
 
-fn wow(f: fn($T), stuff: []T) {
+fn wow(f: fn($R), stuff: []R) {
     for x in stuff {
         println("stuff!");
         f(x);
@@ -43,8 +43,11 @@ fn main():int {
     println(sum(strs));
 
     zztop:[2]int;
+    zztop[0] = 3;
+    zztop[1] = 84;
     wow(fn(a:int) {
         a *= 2;
+        println("in wow: " + itoa(a));
     }, zztop);
 
     return 0;

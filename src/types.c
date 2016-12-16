@@ -134,7 +134,7 @@ Type *make_struct_type(int nmembers, char **member_names, Type **member_types) {
 }
 
 TypeList *typelist_append(TypeList *list, Type *t) {
-    TypeList *tl = malloc(sizeof(TypeList));
+    TypeList *tl = calloc(sizeof(TypeList), 1);
     tl->item = t;
     tl->next = list;
     if (list != NULL) {
@@ -609,6 +609,9 @@ int is_any(Type *t) {
     return resolve_alias(t)->id == any_type_id;
 }
 
+Type *get_any_type() {
+    return any_type;
+}
 int get_any_type_id() {
     return any_type_id;
 }
@@ -749,6 +752,7 @@ char *type_to_string(Type *t) {
     }
     return NULL;
 }
+
 
 // TODO inline?
 Type *base_type(int t) {

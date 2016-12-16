@@ -15,6 +15,7 @@ Type *fn_scope_return_type(Scope *scope);
 
 Type *lookup_type(Scope *s, char *name);
 Type *lookup_local_type(Scope *s, char *name);
+int define_polydef_alias(Scope *scope, Type *t);
 Type *define_polymorph(Scope *s, Type *poly, Type *type);
 Type *define_type(Scope *s, char *name, Type *type);
 TypeDef *find_type_definition(Type *t);

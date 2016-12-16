@@ -39,6 +39,7 @@ TypeData *resolve_type_data(Type *t);
 int match_polymorph(Scope *scope, Type *expected, Type *got);
 
 int get_any_type_id();
+Type *get_any_type();
 int get_typeinfo_type_id();
 Type *base_type(int t);
 Type *base_numeric_type(int t, int size);

@@ -122,6 +122,43 @@ Type *define_polymorph(Scope *s, Type *poly, Type *type) {
 
     return make_type(s, poly->name);
 }
+
+int define_polydef_alias(Scope *scope, Type *t) {
+    int count = 0;
+    switch (t->comp) {
+    case POLYDEF:
+        define_type(scope, t->name, get_any_type());
+        count++;
+        break;
+    case REF:
+    case ARRAY:
+        count += define_polydef_alias(scope, t->inner);
+        break;
+    case STATIC_ARRAY:
+        count += define_polydef_alias(scope, t->array.inner);
+        break;
+    case STRUCT:
+        for (int i = 0; i < t->st.nmembers; i++) {
+            if (is_polydef(t->st.member_types[i])) {
+                count += define_polydef_alias(scope, t->st.member_types[i]);
+            }
+        }
+        break;
+    case FUNC:
+        for (TypeList *args = t->fn.args; args != NULL; args = args->next) {
+            if (is_polydef(args->item)) {
+                count += define_polydef_alias(scope, args->item);
+            }
+        }
+        if (is_polydef(t->fn.ret)) {
+            count += define_polydef_alias(scope, t->fn.ret);
+        }
+        break;
+    default:
+        break;
+    }
+    return count;
+}
 Type *define_type(Scope *s, char *name, Type *type) {
     if (lookup_local_type(s, name) != NULL) {
         error(-1, "internal", "Type '%s' already declared within this scope.", name);
