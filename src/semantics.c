@@ -985,31 +985,8 @@ Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
     defined_arg_types = reverse_typelist(defined_arg_types);
     call_args = ast->call->args;
 
-    // I don't think we need this, I don't think anything is happening with this
-    // in the polymorphic version
-    /*verify_arg_types(scope, ast, defined_arg_types, call_args, resolved->fn.variadic);*/
-    /*for (int i = 0; call_args != NULL; i++) {*/
-        /*Ast *arg = call_args->item;*/
-        /*Type *expected = defined_arg_types->item;*/
-
-        /*if (!(check_type(arg->var_type, expected) || can_coerce_type(scope, expected, arg))) {*/
-            /*error(ast->line, ast->file, "Expected argument (%d) of type '%s', but got type '%s'.",*/
-                /*i, type_to_string(expected), type_to_string(arg->var_type));*/
-        /*}*/
-
-        /*if (is_any(expected)) {*/
-            /*if (!is_any(arg->var_type) && !is_lvalue(arg)) {*/
-                /*if (needs_temp_var(arg)) {*/
-                    /*allocate_temp_var(scope, arg);*/
-                /*}*/
-            /*}*/
-        /*}*/
-        /*call_args = call_args->next;*/
-
-        /*if (!resolved->fn.variadic || i < resolved->fn.nargs - 1) {*/
-            /*defined_arg_types = defined_arg_types->next;*/
-        /*}*/
-    /*}*/
+    // we still need this, not every argument is a polydef!!
+    verify_arg_types(scope, ast, defined_arg_types, call_args, resolved->fn.variadic);
 
     match->body = parse_block_semantics(match->scope, match->body, 1);
     ast->var_type = resolve_polymorph(resolved->fn.ret);

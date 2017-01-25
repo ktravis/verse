@@ -4,3 +4,4 @@ TODO
 - Reorganize files, factor out type-checking functions
 - Change struct literal syntax
     - Remove "rewind" code and simplify lexing
+- Better error message for checking polymorphic function arg types
