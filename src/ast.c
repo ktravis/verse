@@ -176,8 +176,8 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         break;
     case AST_INDEX:
         cp->index = calloc(sizeof(AstIndex), 1);
-        cp->index->object = copy_ast(scope, cp->index->object);
-        cp->index->index = copy_ast(scope, cp->index->index);
+        cp->index->object = copy_ast(scope, ast->index->object);
+        cp->index->index = copy_ast(scope, ast->index->index);
         break;
     case AST_SLICE:
         cp->slice = calloc(sizeof(AstSlice), 1);

@@ -409,8 +409,6 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         ast->copy->expr = first_pass(scope, ast->copy->expr);
         break;
     case AST_CALL:
-        // TODO: rather than attach a polymorph, this should find the function
-        // it's calling in another way
         ast->call->fn = first_pass(scope, ast->call->fn);
         for (AstList *args = ast->call->args; args != NULL; args = args->next) {
             args->item = first_pass(scope, args->item);
@@ -815,14 +813,100 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-Ast *parse_call_semantics(Scope *scope, Ast *ast) {
-    ast->call->fn = parse_semantics(scope, ast->call->fn);
+Polymorph *create_polymorph(AstFnDecl *decl, TypeList *arg_types) {
+    Polymorph *p = malloc(sizeof(Polymorph));
+    p->id = decl->polymorphs == NULL ? 0 : decl->polymorphs->id + 1;
+    p->args = arg_types;
+    p->next = decl->polymorphs;
+    p->scope = new_scope(decl->scope);
+    p->body = copy_ast_block(p->scope, decl->body); // p->scope or scope?
+    decl->polymorphs = p;
+    return p;
+}
 
-    Type *orig = ast->call->fn->var_type;
-    Type *resolved = resolve_alias(orig);
-    if (resolved->comp != FUNC) {
-        error(ast->line, ast->file, "Cannot perform call on non-function type '%s'", type_to_string(orig));
-        return NULL;
+Polymorph *check_for_existing_polymorph(AstFnDecl *decl, TypeList *arg_types) {
+    Polymorph *match = NULL;
+    for (Polymorph *p = decl->polymorphs; p != NULL; p = p->next) {
+        TypeList *types = arg_types;
+
+        for (TypeList *list = p->args; list != NULL; list = list->next) {
+            match = p;
+            // if variadic and list->next == NULL
+            if (decl->var->type->fn.variadic && list->next == NULL) {
+                // for remaining call args
+                for (TypeList *rem = types; rem->next != NULL; rem = rem->next) {
+                    // if !check_type(arg, list->item->inner) || ...
+                    if (!check_type(rem->item, list->item->inner)) {
+                        match = NULL;
+                        break;
+                    }
+                }
+                break;
+            }
+            if (!check_type(list->item, types->item)) {
+                match = NULL;
+                break;
+            }
+            types = types->next;
+        }
+        if (match != NULL) {
+            return match;
+        }
+    }
+    return NULL;
+}
+
+void verify_arg_types(Scope *scope, Ast *call, TypeList *expected_types, AstList *arg_vals, int variadic) {
+    for (int i = 0; arg_vals != NULL; i++) {
+        Ast *arg = arg_vals->item;
+        Type *expected = expected_types->item;
+
+        if (!(check_type(arg->var_type, expected) || can_coerce_type(scope, expected, arg))) {
+            error(call->line, call->file, "Expected argument (%d) of type '%s', but got type '%s'.",
+                i, type_to_string(expected), type_to_string(arg->var_type));
+        }
+
+        if (is_any(expected)) {
+            if (!is_any(arg->var_type) && !is_lvalue(arg)) {
+                if (needs_temp_var(arg)) {
+                    allocate_temp_var(scope, arg);
+                }
+            }
+        }
+
+        arg_vals = arg_vals->next;
+        if (!(variadic && expected_types->next == NULL)) {
+            expected_types = expected_types->next;
+        }
+    }
+}
+
+Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
+    AstList *call_args = ast->call->args;
+    TypeList *call_arg_types = NULL;
+
+    // collect call arg types
+    for (int i = 0; call_args != NULL; i++) {
+        Ast *arg = parse_semantics(scope, call_args->item);
+        call_args->item = arg;
+        call_args = call_args->next;
+        Type *t = arg->var_type;
+        // TODO: this is super hacky / or is it?
+        if (t->comp == STATIC_ARRAY) {
+            t = make_array_type(t->array.inner);
+        }
+        call_arg_types = typelist_append(call_arg_types, t);
+    }
+    call_arg_types = reverse_typelist(call_arg_types);
+
+    AstFnDecl *decl = NULL;
+    if (ast->call->fn->type == AST_IDENTIFIER) {
+        decl = ast->call->fn->ident->var->fn_decl;
+    } else if (ast->call->fn->type == AST_ANON_FUNC_DECL) {
+        decl = ast->call->fn->fn_decl;
+    } 
+    if (decl == NULL) {
+        error(ast->line, "internal", "Uh oh, polymorph func decl was null...");
     }
     
     if (resolved->fn.variadic) {
@@ -830,13 +914,12 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file, "Expected at least %d arguments to variadic function, but only got %d.", resolved->fn.nargs-1, ast->call->nargs);
             return NULL;
         } else {
-            TypeList *list = resolved->fn.args;
+            TypeList *list = call_arg_types;
             Type *a = list->item;
             while (list != NULL) {
                 a = list->item;
                 list = list->next;
             }
-            // TODO: make this work with polydef?
             a = make_static_array_type(a, ast->call->nargs - (resolved->fn.nargs - 1));
 
             // TODO: this should do something else
@@ -855,141 +938,140 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
         return NULL;
     }
 
-    AstList *call_args = ast->call->args;
-    TypeList *call_arg_types = NULL;
-
-    // collect call arg types
-    for (int i = 0; call_args != NULL; i++) {
-        Ast *arg = parse_semantics(scope, call_args->item);
-        call_args->item = arg;
-        call_args = call_args->next;
-        Type *t = arg->var_type;
-        // TODO: this is super hacky
-        if (t->comp == STATIC_ARRAY) {
-            t = make_array_type(t->array.inner);
-        }
-        call_arg_types = typelist_append(call_arg_types, t);
-    }
-    call_arg_types = reverse_typelist(call_arg_types);
-
-    int poly = is_polydef(resolved);
-    AstFnDecl *decl = NULL;
-    Polymorph *match = NULL;
-    if (poly) {
-        if (ast->call->fn->type == AST_IDENTIFIER) {
-            decl = ast->call->fn->ident->var->fn_decl;
-        } else if (ast->call->fn->type == AST_ANON_FUNC_DECL) {
-            decl = ast->call->fn->fn_decl;
-        } 
-        if (decl == NULL) {
-            error(ast->line, "internal", "Uh oh, polymorph func decl was null...");
-        }
-        for (Polymorph *p = decl->polymorphs; p != NULL; p = p->next) {
-            TypeList *args = call_arg_types;
-            AstList *ast_args = ast->call->args;
-            for (TypeList *list = p->args; list != NULL; list = list->next) {
-                match = p;
-                if (!(check_type(list->item, args->item) ||
-                      can_coerce_type_no_error(decl->scope, list->item, ast_args->item))) {
-                    match = NULL;
-                    break;
-                }
-                args = args->next;
-                ast_args = ast_args->next;
-            }
-            if (match != NULL) {
-                break;
-            }
-        }
-    }
-
+    Polymorph *match = check_for_existing_polymorph(decl, call_arg_types);
     if (match != NULL) {
+        // made a match to existing polymorph
         ast->call->polymorph = match;
         ast->var_type = resolve_polymorph(resolved->fn.ret);
         return ast;
-    }
-
-    TypeList *fn_arg_types = NULL;
-    if (poly) {
-        match = malloc(sizeof(Polymorph));
-        match->id = decl->polymorphs == NULL ? 0 : decl->polymorphs->id + 1;
-
-        match->args = call_arg_types;
-        match->next = decl->polymorphs;
-        match->scope = new_scope(decl->scope);
-        match->body = copy_ast_block(match->scope, decl->body); // match->scope or scope?
-        decl->polymorphs = match;
-
-        decl->scope->polymorph = match;
-        ast->call->polymorph = match;
-        
-        call_args = ast->call->args;
-        VarList *arg_vars = decl->args;
-        for (TypeList *list = resolved->fn.args; list != NULL; list = list->next) {
-            Type *arg_type = call_args->item->var_type;
-            if (is_polydef(list->item)) {
-                if (!match_polymorph(decl->scope, list->item, arg_type)) {
-                    error(ast->line, ast->file, "Expected polymorphic argument type %s, but got an argument of type %s",
-                            type_to_string(list->item), type_to_string(arg_type));
-                }
-                // TODO: make this better
-                if (arg_type->comp == STATIC_ARRAY) {
-                    Type *t = make_array_type(arg_type->array.inner);
-                    fn_arg_types = typelist_append(fn_arg_types, t);
-
-                } else {
-                    fn_arg_types = typelist_append(fn_arg_types, arg_type);
-                }
-            } else {
-                fn_arg_types = typelist_append(fn_arg_types, list->item);
-            }
-            call_args = call_args->next;
-
-            Var *v = copy_var(match->scope, arg_vars->item);
-            v->type = fn_arg_types->item;
-            attach_var(match->scope, v);
-            arg_vars = arg_vars->next;
-        }
-        fn_arg_types = reverse_typelist(fn_arg_types);
     } else {
-        fn_arg_types = resolved->fn.args;
+        match = create_polymorph(decl, call_arg_types);
     }
+
+    decl->scope->polymorph = match;
+    ast->call->polymorph = match;
+    
+    TypeList *defined_arg_types = NULL;
+
     call_args = ast->call->args;
-
-    for (int i = 0; call_args != NULL; i++) {
-        Ast *arg = call_args->item;
-        Type *expected = fn_arg_types->item;
-
-        if (!(check_type(arg->var_type, expected) || can_coerce_type(scope, expected, arg))) {
-            error(ast->line, ast->file, "Expected argument (%d) of type '%s', but got type '%s'.",
-                i, type_to_string(expected), type_to_string(arg->var_type));
-        }
-
-        if (is_any(expected)) {
-            if (!is_any(arg->var_type) && !is_lvalue(arg)) {
-                if (needs_temp_var(arg)) {
-                    allocate_temp_var(scope, arg);
-                }
+    VarList *arg_vars = decl->args;
+    for (TypeList *list = resolved->fn.args; list != NULL; list = list->next) {
+        Type *arg_type = call_args->item->var_type;
+        if (is_polydef(list->item)) {
+            if (!match_polymorph(decl->scope, list->item, arg_type)) {
+                error(ast->line, ast->file, "Expected polymorphic argument type %s, but got an argument of type %s",
+                        type_to_string(list->item), type_to_string(arg_type));
             }
+            // TODO: make this better
+            if (arg_type->comp == STATIC_ARRAY) {
+                Type *t = make_array_type(arg_type->array.inner);
+                defined_arg_types = typelist_append(defined_arg_types, t);
+            } else {
+                defined_arg_types = typelist_append(defined_arg_types, arg_type);
+            }
+        } else {
+            defined_arg_types = typelist_append(defined_arg_types, list->item);
         }
-
         call_args = call_args->next;
 
-        if (!resolved->fn.variadic || i < resolved->fn.nargs - 1) {
-            fn_arg_types = fn_arg_types->next;
+        Var *v = copy_var(match->scope, arg_vars->item);
+        v->type = defined_arg_types->item;
+        if (resolved->fn.variadic && list->next == NULL) {
+            v->type = make_array_type(v->type);
         }
+        attach_var(match->scope, v);
+        arg_vars = arg_vars->next;
     }
+    defined_arg_types = reverse_typelist(defined_arg_types);
+    call_args = ast->call->args;
 
-    if (poly) {
-        match->body = parse_block_semantics(match->scope, match->body, 1);
-    }
-    /*if (poly) {*/
-        /*first_pass_type(match->scope, resolved->fn.ret);*/
+    // I don't think we need this, I don't think anything is happening with this
+    // in the polymorphic version
+    /*verify_arg_types(scope, ast, defined_arg_types, call_args, resolved->fn.variadic);*/
+    /*for (int i = 0; call_args != NULL; i++) {*/
+        /*Ast *arg = call_args->item;*/
+        /*Type *expected = defined_arg_types->item;*/
+
+        /*if (!(check_type(arg->var_type, expected) || can_coerce_type(scope, expected, arg))) {*/
+            /*error(ast->line, ast->file, "Expected argument (%d) of type '%s', but got type '%s'.",*/
+                /*i, type_to_string(expected), type_to_string(arg->var_type));*/
+        /*}*/
+
+        /*if (is_any(expected)) {*/
+            /*if (!is_any(arg->var_type) && !is_lvalue(arg)) {*/
+                /*if (needs_temp_var(arg)) {*/
+                    /*allocate_temp_var(scope, arg);*/
+                /*}*/
+            /*}*/
+        /*}*/
+        /*call_args = call_args->next;*/
+
+        /*if (!resolved->fn.variadic || i < resolved->fn.nargs - 1) {*/
+            /*defined_arg_types = defined_arg_types->next;*/
+        /*}*/
     /*}*/
+
+    match->body = parse_block_semantics(match->scope, match->body, 1);
     ast->var_type = resolve_polymorph(resolved->fn.ret);
 
-    // This will have to resolve in the scope of the function itself, most
-    //  likely...
+    return ast;
+}
+
+Ast *parse_call_semantics(Scope *scope, Ast *ast) {
+    ast->call->fn = parse_semantics(scope, ast->call->fn);
+
+    Type *orig = ast->call->fn->var_type;
+    Type *resolved = resolve_alias(orig);
+    if (resolved->comp != FUNC) {
+        error(ast->line, ast->file, "Cannot perform call on non-function type '%s'", type_to_string(orig));
+        return NULL;
+    }
+
+    if (is_polydef(resolved)) {
+        return parse_poly_call_semantics(scope, ast, resolved);
+    }
+    
+    if (resolved->fn.variadic) {
+        if (ast->call->nargs < resolved->fn.nargs - 1) {
+            error(ast->line, ast->file, "Expected at least %d arguments to variadic function, but only got %d.", resolved->fn.nargs-1, ast->call->nargs);
+            return NULL;
+        } else {
+            TypeList *list = resolved->fn.args;
+            Type *a = list->item;
+            while (list != NULL) {
+                a = list->item;
+                list = list->next;
+            }
+            a = make_static_array_type(a, ast->call->nargs - (resolved->fn.nargs - 1));
+
+            // TODO: this should do something else
+            Var *v = make_var("", a);
+            v->temp = 1;
+            TempVarList *tvlist = malloc(sizeof(TempVarList));
+            tvlist->id = ast->id;
+            tvlist->var = v;
+            tvlist->next = scope->temp_vars;
+            scope->temp_vars = tvlist;
+            attach_var(scope, v);
+            ast->call->variadic_tempvar = v;
+        }
+    } else if (ast->call->nargs != resolved->fn.nargs) {
+        error(ast->line, ast->file, "Incorrect argument count to function (expected %d, got %d)", resolved->fn.nargs, ast->call->nargs);
+        return NULL;
+    }
+
+    
+    // if we make this a part of "verify_arg_types" and remove its use from the
+    // polymorph version, there only has to be one loop over the call args
+    for (AstList *args = ast->call->args; args != NULL; args = args->next) {
+        args->item = parse_semantics(scope, args->item);
+    }
+
+    // check types and allocate tempvars for "Any"
+    verify_arg_types(scope, ast, resolved->fn.args, ast->call->args, resolved->fn.variadic);
+
+    ast->var_type = resolve_polymorph(resolved->fn.ret);
+
     return ast;
 }
 

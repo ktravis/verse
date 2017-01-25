@@ -25,6 +25,10 @@ fn wow(f: fn($R), stuff: []R) {
     }
 }
 
+fn var(x:$T...):T {
+    return x[1];
+}
+
 fn main():int {
     (fn(x:$T){
         println("anyony");
@@ -49,6 +53,14 @@ fn main():int {
         a *= 2;
         println("in wow: " + itoa(a));
     }, zztop);
+
+    println("variadic (int): " + itoa(var(1, 2, 3)));
+    println("variadic (string): " + var("Hello, ", "World"));
+    anys:[2]Any;
+    anys[0] = 1.2;
+    anys[1] = "test, please";
+    a := var(anys[0], anys[1]);
+    println(*(a.value_pointer as &string));
 
     return 0;
 }
