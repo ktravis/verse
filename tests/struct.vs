@@ -4,7 +4,7 @@ type vec3: struct {
     z:int;
 };
 
-v1:vec3 = vec3{x = 1, z = 2};
+v1:vec3 = vec3::{x = 1, z = 2};
 
 fn check_use(a:vec3, use b:vec3) {
     l:struct{
@@ -42,7 +42,7 @@ fn otherthing(use b:vec3):vec3 {
 fn main():int {
     assert(v1.z == 2);
 
-    a := vec3 {
+    a := vec3::{
         x = 1,
         y = 2,
         z = 3
@@ -52,7 +52,7 @@ fn main():int {
 
     check_use_ptr(&a);
 
-    check_use_depth(Marker{});
+    check_use_depth(Marker::{});
 
     print_str("test: " + itoa(a.x) + " " + itoa(a.y) + " " + itoa(a.z));
 
@@ -60,15 +60,15 @@ fn main():int {
 
     assert(a.x == 7);
 
-    assert((vec3{}).x == 0);
+    assert(vec3::{}.x == 0);
 
-    assert(otherthing(vec3{x=1,y=2,z=3}).x == 2);
+    assert(otherthing(vec3::{x=1,y=2,z=3}).x == 2);
 
     x:struct { b: int; };
 
     x.b = 1;
 
-    empty:vec3 = vec3{};
+    empty:vec3 = vec3::{};
     assert(empty.x == 0);
 
     return 0;

@@ -631,7 +631,6 @@ Ast *parse_statement(Tok *t) {
         t = next_token();
         ast->for_loop->iterable = parse_expression(t, 0);
 
-        // TODO handle empty for body case by trying rollback here
         t = next_token();
         if (t == NULL || t->type != TOK_LBRACE) {
             error(lineno(), current_file_name(),
@@ -659,10 +658,6 @@ Ast *parse_statement(Tok *t) {
 
 // TODO: make this take a type instead
 Ast *parse_struct_literal(char *name) {
-    unwind_set();
-
-    Tok *t = next_token();
-
     Ast *ast = ast_alloc(AST_LITERAL);
 
     ast->lit->lit_type = STRUCT_LIT;
@@ -671,20 +666,20 @@ Ast *parse_struct_literal(char *name) {
     ast->lit->struct_val.type = make_type(NULL, name);
 
     if (peek_token()->type == TOK_RBRACE) {
-        t = next_token();
+        next_token();
         return ast;
     }
 
+    Tok *t = NULL;
     int alloc = 0;
     for (;;) {
         t = next_token();
-
         if (t == NULL) {
             error(lineno(), current_file_name(), "Unexpected EOF while parsing struct literal.");
         } else if (t->type != TOK_ID) {
-            unwind_tokens();
-            return NULL;
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing struct literal.", tok_to_string(t));
         }
+
         if (ast->lit->struct_val.nmembers >= alloc) {
             alloc += 4;
             ast->lit->struct_val.member_names = realloc(ast->lit->struct_val.member_names, sizeof(char *)*alloc);
@@ -697,8 +692,7 @@ Ast *parse_struct_literal(char *name) {
         if (t == NULL) {
             error(lineno(), current_file_name(), "Unexpected EOF while parsing struct literal.");
         } else if (t->type != TOK_OP || t->op != OP_ASSIGN) {
-            unwind_tokens();
-            return NULL;
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing struct literal.", tok_to_string(t));
         }
 
         ast->lit->struct_val.member_exprs[ast->lit->struct_val.nmembers++] = parse_expression(next_token(), 0);
@@ -709,8 +703,7 @@ Ast *parse_struct_literal(char *name) {
         } else if (t->type == TOK_RBRACE) {
             break;
         } else if (t->type != TOK_COMMA) {
-            unwind_tokens();
-            return NULL;
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing struct literal.", tok_to_string(t));
         }
     }
     return ast;
@@ -778,12 +771,17 @@ Ast *parse_primary(Tok *t) {
         if (next == NULL) {
             error(lineno(), current_file_name(), "Unexpected end of input.");
         }
-        unget_token(next);
-        if (peek_token()->type == TOK_LBRACE) {
-            Ast *ast = parse_struct_literal(t->sval);
-            if (ast != NULL) {
-                return ast;
+        if (next->type == TOK_DCOLON) {
+            // either namespace or struct literal
+            next = next_token();
+            if (next->type == TOK_LBRACE) {
+                return parse_struct_literal(t->sval);
+            } else {
+                // TODO: namespace, enum?
+                error(lineno(), current_file_name(), "Unexpected token '%s' following '::'.", tok_to_string(next));
             }
+        } else {
+            unget_token(next);
         }
         Ast *id = ast_alloc(AST_IDENTIFIER);
         id->ident->var = NULL;

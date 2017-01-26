@@ -74,6 +74,7 @@ Type *make_type(Scope *scope, char *name) {
     type->id = last_type_id++;
     return type;
 }
+
 Type *make_polydef(Scope *scope, char *name) {
     Type *type = malloc(sizeof(Type));
     type->comp = POLYDEF;
@@ -81,6 +82,7 @@ Type *make_polydef(Scope *scope, char *name) {
     type->scope = scope;
     return type;
 }
+
 Type *make_ref_type(Type *inner) {
     Type *type = malloc(sizeof(Type));
     type->comp = REF;
@@ -88,6 +90,7 @@ Type *make_ref_type(Type *inner) {
     type->id = last_type_id++;
     return type;
 }
+
 Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic) {
     Type *type = malloc(sizeof(Type));
     type->comp = FUNC;
@@ -98,6 +101,7 @@ Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic) {
     type->id = last_type_id++;
     return type;
 }
+
 Type *make_static_array_type(Type *inner, long length) {
     Type *type = malloc(sizeof(Type));
     type->comp = STATIC_ARRAY;
@@ -106,6 +110,7 @@ Type *make_static_array_type(Type *inner, long length) {
     type->id = last_type_id++;
     return type;
 }
+
 Type *make_array_type(Type *inner) {
     Type *type = malloc(sizeof(Type));
     type->comp = ARRAY;
@@ -113,6 +118,7 @@ Type *make_array_type(Type *inner) {
     type->id = last_type_id++;
     return type;
 }
+
 Type *make_enum_type(Type *inner, int nmembers, char **member_names, long *member_values) {
     Type *t = malloc(sizeof(Type));
     t->comp = ENUM;
@@ -123,6 +129,7 @@ Type *make_enum_type(Type *inner, int nmembers, char **member_names, long *membe
     t->id = last_type_id++;
     return t;
 }
+
 Type *make_struct_type(int nmembers, char **member_names, Type **member_types) {
     Type *s = malloc(sizeof(Type));
     s->comp = STRUCT;

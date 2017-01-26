@@ -8,8 +8,8 @@ typedef struct FileStack {
     struct FileStack *next;
 } FileStack;
 
-static TokList *unwind_stack = NULL;
 static FileStack *source_stack = NULL;
+static Tok *_last_token = NULL;
 
 void set_file_source(char *name, FILE *f) {
     FileStack *stack = malloc(sizeof(struct FileStack));
@@ -150,15 +150,10 @@ struct TokListList {
     struct TokListList *next;
 };
 
-struct TokListList *_unwind_stack;
-
 Tok *_next_token(int nl_ok) {
-    if (unwind_stack != NULL) {
-        Tok *t = unwind_stack->item;
-        unwind_stack = unwind_stack->next;
-        if (_unwind_stack != NULL) {
-            _unwind_stack->list = toklist_append(_unwind_stack->list, t);
-        }
+    if (_last_token != NULL) {
+        Tok *t = _last_token;
+        _last_token = NULL;
         return t;
     }
     char c = read_non_space();
@@ -248,7 +243,7 @@ Tok *_next_token(int nl_ok) {
     } else if (c == ',') {
         t = make_token(TOK_COMMA);
     } else if (c == '.') {
-        if ((c = get_char()) == '.') { // TODO are multiple dots in a row (but not three) ever valid?
+        if ((c = get_char()) == '.') {
             if ((c = get_char()) == '.') {
                 t = make_token(TOK_ELLIPSIS); 
             } else {
@@ -262,7 +257,12 @@ Tok *_next_token(int nl_ok) {
     } else if (c == ';') {
         t = make_token(TOK_SEMI);
     } else if (c == ':') {
-        t = make_token(TOK_COLON);
+        if ((c = get_char()) == ':') {
+            t = make_token(TOK_DCOLON);
+        } else {
+            unget_char(c);
+            t = make_token(TOK_COLON);
+        }
     } else if (c == '+') {
         char n = get_char();
         if (n == '=') {
@@ -365,9 +365,6 @@ Tok *_next_token(int nl_ok) {
     if (t == NULL) {
         error(lineno(), current_file_name(), "Unexpected character '%c'.", c);
     }
-    if (_unwind_stack != NULL) {
-        _unwind_stack->list = toklist_append(_unwind_stack->list, t);
-    }
     return t;
 }
 Tok *next_token() {
@@ -377,20 +374,6 @@ Tok *next_token_or_newline() {
     return _next_token(1);
 }
 
-void unwind_set() {
-    struct TokListList *ll = malloc(sizeof(struct TokListList));
-    ll->list = NULL;
-    ll->next = _unwind_stack;
-    _unwind_stack = ll;
-}
-
-void unwind_tokens() {
-    for (TokList *list = _unwind_stack->list; list != NULL; list = list->next) {
-        unget_token(list->item);
-    }
-    _unwind_stack = _unwind_stack->next;
-}
-
 Tok *peek_token() {
     Tok *t = next_token();
     unget_token(t);
@@ -398,11 +381,10 @@ Tok *peek_token() {
 }
 
 void unget_token(Tok *tok) {
-    if (_unwind_stack != NULL && _unwind_stack->list != NULL &&
-        _unwind_stack->list->item == tok) {
-        _unwind_stack->list = _unwind_stack->list->next;
+    if (_last_token != NULL) {
+        error(-1, "<internal>", "Cannot unget_token() twice in a row.");
     }
-    unwind_stack = toklist_append(unwind_stack, tok);
+    _last_token = tok;
 }
 
 double read_decimal(char c) {
@@ -670,6 +652,8 @@ const char *tok_to_string(Tok *t) {
         return "\\n";
     case TOK_COLON:
         return ":";
+    case TOK_DCOLON:
+        return "::";
     case TOK_COMMA:
         return ",";
     case TOK_LPAREN:
@@ -745,6 +729,8 @@ const char *token_type(int type) {
         return "NEWLINE";
     case TOK_COLON:
         return "COLON";
+    case TOK_DCOLON:
+        return "DOUBLE COLON";
     case TOK_COMMA:
         return "COMMA";
     case TOK_LPAREN:

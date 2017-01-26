@@ -15,6 +15,7 @@ typedef enum {
     TOK_FLOAT,
     TOK_BOOL,
     TOK_COLON,
+    TOK_DCOLON,
     TOK_SEMI,
     TOK_NL,
     TOK_REF,
@@ -92,9 +93,6 @@ typedef struct TokList {
 
 TokList *toklist_append(TokList *list, Tok *t);
 TokList *reverse_toklist(TokList *list);
-
-void unwind_set();
-void unwind_tokens();
 
 void skip_spaces();
 int is_id_char(char c);

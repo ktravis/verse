@@ -1,5 +1,5 @@
 .PHONY=compiler
-CFLAGS=-Wall -std=gnu99 -g -Werror -Wno-error=unused-variable
+CFLAGS=-Wall -std=gnu99 -g -Werror -Wno-error=unused-variable -Wfatal-errors
 OBJS=main.o src/ast.o src/codegen.o src/eval.o src/parse.o src/scope.o src/semantics.o src/token.o src/types.o src/util.o src/var.o
 
 compiler: bin/compiler
