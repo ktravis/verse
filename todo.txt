@@ -2,5 +2,13 @@ TODO
 ====
 
 - Reorganize files, factor out type-checking functions
-- Remove "rewind" code and simplify lexing
 - Better error message for checking polymorphic function arg types
+- Parameterized struct types
+- Packages
+  - Create namespace/package structures
+  - Add behavior for :: to do lookups in namespaces
+  - Change #import behavior
+    - Import should create an identifier as a package "alias", i.e.:
+      #import "pkg/a/b" would bind the identifier "b" to refer to the package
+      "pkg/a/b" in the current scope (just make sure that the packages are uniquely
+      identified by the path to them within a compiler run)
