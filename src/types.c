@@ -753,6 +753,7 @@ char *type_to_string(Type *t) {
         return dest;
     }
     case ENUM:
+        return "enum";
     default:
         error(-1, "internal", "but why bro");
         break;

@@ -37,38 +37,30 @@ int main(int argc, char **argv) {
 
     printf("%.*s\n", prelude_length, prelude);
 
-    TypeList *reg = reverse_typelist(root_scope->used_types);
-    TypeList *tmp = reg;
-    while (tmp != NULL) {
-        Type *t = resolve_alias(tmp->item);
+    TypeList *used_types = reverse_typelist(root_scope->used_types);
+
+    // declare structs
+    for (TypeList *list = used_types; list != NULL; list = list->next) {
+        Type *t = resolve_alias(list->item);
         if (t->comp == STRUCT) {
             emit_struct_decl(root_scope, t);
         }
-        tmp = tmp->next;
     }
-    if (reg != NULL) {
-        /*fprintf(stderr, "Types in use:\n");*/
-        while (reg != NULL) {
-            /*if (reg->item->unresolved) {*/
-                /*error(-1, "internal", "Undefined type '%s'.", reg->item->name);*/
-            /*}*/
-            emit_typeinfo_decl(root_scope, reg->item);
-            reg = reg->next;
-        }
+    // declare other types
+    for (TypeList *list = used_types; list != NULL; list = list->next) {
+        emit_typeinfo_decl(root_scope, list->item);
     }
 
-    VarList *varlist = get_global_vars();
-    while (varlist != NULL) {
-        emit_var_decl(root_scope, varlist->item);
-        varlist = varlist->next;
+    // declare globals
+    for (VarList *vars = get_global_vars(); vars != NULL; vars = vars->next) {
+        emit_var_decl(root_scope, vars->item);
     }
 
+    // init types
     printf("void _verse_init_typeinfo() {\n");
     change_indent(1);
-    reg = root_scope->used_types;
-    while (reg != NULL) {
-        emit_typeinfo_init(root_scope, reg->item);
-        reg = reg->next;
+    for (TypeList *list = used_types; list != NULL; list = list->next) {
+        emit_typeinfo_init(root_scope, list->item);
     }
     change_indent(-1);
     printf("}\n");

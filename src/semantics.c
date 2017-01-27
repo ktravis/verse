@@ -318,6 +318,7 @@ void first_pass_type(Scope *scope, Type *t) {
         break;
     case ENUM:
         first_pass_type(scope, t->en.inner);
+        register_type(scope, t);
         break;
     case REF:
     case ARRAY:
@@ -471,6 +472,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         break;
     case AST_TYPEINFO:
         first_pass_type(scope, ast->typeinfo->typeinfo_target);
+        /*register_type(scope, ast->typeinfo->typeinfo_target);*/
         break;
     case AST_USE:
         ast->use->object = first_pass(scope, ast->use->object);
@@ -530,12 +532,18 @@ Ast *parse_directive_semantics(Scope *scope, Ast *ast) {
         t->line = ast->line;
         t->typeinfo->typeinfo_target = ast->directive->object->var_type;
         t->var_type = typeinfo_ref();
+        /*register_type(scope, t->var_type);*/
+        /*errlog("registering: %s", t->var_type);*/
+        /*register_type(scope, ast->var_type);*/
         return t;
     } else if (!strcmp(n, "type")) {
         Ast *t = ast_alloc(AST_TYPEINFO);
         t->line = ast->line;
         t->typeinfo->typeinfo_target = ast->var_type;
         t->var_type = typeinfo_ref();
+        /*register_type(scope, t->var_type);*/
+        /*errlog("registering: %s", type_to_string(ast->var_type));*/
+        /*register_type(scope, ast->var_type);*/
         return t;
     }
 
