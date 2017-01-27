@@ -121,6 +121,7 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
     case AST_DOT:
         cp->dot = calloc(sizeof(AstDot), 1);
         cp->dot->object = copy_ast(scope, ast->dot->object);
+        cp->dot->member_name = ast->dot->member_name;
         break;
     case AST_ASSIGN:
     case AST_BINOP:

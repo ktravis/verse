@@ -107,6 +107,7 @@ typedef struct AstFnDecl {
 typedef struct AstConditional {
     Ast *condition;
     Scope *scope;
+    Scope *else_scope;
     AstBlock *if_body;
     AstBlock *else_body;
 } AstConditional;

@@ -1098,9 +1098,9 @@ void compile(Scope *scope, Ast *ast) {
         if (ast->cond->else_body != NULL) {
             indent();
             printf("else ");
-            emit_scope_start(ast->cond->scope);
-            compile_block(ast->cond->scope, ast->cond->else_body);
-            emit_scope_end(ast->cond->scope);
+            emit_scope_start(ast->cond->else_scope);
+            compile_block(ast->cond->else_scope, ast->cond->else_body);
+            emit_scope_end(ast->cond->else_scope);
         }
         break;
     case AST_WHILE:

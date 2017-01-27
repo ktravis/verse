@@ -433,6 +433,9 @@ Ast *first_pass(Scope *scope, Ast *ast) {
     case AST_CONDITIONAL:
         ast->cond->condition = first_pass(scope, ast->cond->condition);
         ast->cond->scope = new_scope(scope);
+        if (ast->cond->else_body != NULL) {
+            ast->cond->else_scope = new_scope(scope);
+        }
         break;
     case AST_WHILE:
         ast->while_loop->condition = first_pass(scope, ast->while_loop->condition);
@@ -1337,7 +1340,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         c->if_body = parse_block_semantics(c->scope, c->if_body, 0);
 
         if (c->else_body != NULL) {
-            c->else_body = parse_block_semantics(c->scope, c->else_body, 0);
+            c->else_body = parse_block_semantics(c->else_scope, c->else_body, 0);
         }
 
         ast->var_type = base_type(VOID_T);

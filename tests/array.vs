@@ -29,11 +29,14 @@ fn test_array_of_strings() {
     x[2] = "two";
 
     fn (a:[]string) {
-        i:int;
-        while i < a.length {
-            println(a[i]); 
-            i = i + 1;
+        for s in a {
+            println(s);
         }
+        /*i:int;*/
+        /*while i < a.length {*/
+            /*println(a[i]); */
+            /*i = i + 1;*/
+        /*}*/
     }(x[:3]);
 }
 

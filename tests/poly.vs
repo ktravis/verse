@@ -29,6 +29,10 @@ fn var(x:$T...):T {
     return x[1];
 }
 
+fn eh(x:$T, f:fn(T):T):T {
+    return f(x);
+}
+
 fn main():int {
     (fn(x:$T){
         println("anyony");
@@ -61,6 +65,9 @@ fn main():int {
     anys[1] = "test, please";
     a := var(anys[0], anys[1]);
     println(*(a.value_pointer as &string));
+
+    // TODO: bug
+    /*eh(2, fn(a: int):int { return a; });*/
 
     return 0;
 }
