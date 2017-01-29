@@ -1,13 +1,29 @@
 #ifndef TYPES_H
 #define TYPES_H
 
-#include <assert.h>
-#include <limits.h>
-#include <float.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "common.h"
+
+typedef enum PrimitiveType {
+    INT_T = 1,
+    UINT_T,
+    FLOAT_T,
+    BOOL_T,
+    STRING_T,
+    VOID_T,
+    BASEPTR_T
+} PrimitiveType;
+
+typedef struct TypeData {
+    int base;
+    int size;
+    long length;
+} TypeData;
+
+typedef struct TypeList {
+    struct Type *item;
+    struct TypeList *next;
+    struct TypeList *prev;
+} TypeList;
 
 void init_types();
 
@@ -41,7 +57,7 @@ int match_polymorph(Scope *scope, Type *expected, Type *got);
 int get_any_type_id();
 Type *get_any_type();
 int get_typeinfo_type_id();
-Type *base_type(int t);
+Type *base_type(PrimitiveType t);
 Type *base_numeric_type(int t, int size);
 
 int check_type(Type *a, Type *b);

@@ -1,3 +1,10 @@
+#include <assert.h>
+#include <limits.h>
+#include <float.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
 #include "types.h"
 #include "util.h"
 
@@ -763,7 +770,7 @@ char *type_to_string(Type *t) {
 
 
 // TODO inline?
-Type *base_type(int t) {
+Type *base_type(PrimitiveType t) {
     if (!types_initialized) {
         error (-1, "internal", "Must first initialize types before calling base_type(...)");
     }

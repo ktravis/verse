@@ -1,19 +1,9 @@
 #ifndef CODEGEN_H
 #define CODEGEN_H
 
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <strings.h>
-#include <assert.h>
-
 #include "ast.h"
 #include "var.h"
-#include "parse.h"
-#include "semantics.h"
 #include "types.h"
-
-#include "codegen.h"
 
 void indent();
 void change_indent(int n);

@@ -1,4 +1,10 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "ast.h"
+#include "token.h"
+#include "util.h"
 
 static int next_ast_id = 0;
 
@@ -50,9 +56,6 @@ Ast *ast_alloc(AstType type) {
     case AST_CONDITIONAL:
         ast->cond = calloc(sizeof(AstConditional), 1);
         break;
-    /*case AST_SCOPE:*/
-        /*ast->scope = calloc(sizeof(AstScope), 1);*/
-        /*break;*/
     case AST_RETURN:
         ast->ret = calloc(sizeof(AstReturn), 1);
         break;
@@ -69,6 +72,9 @@ Ast *ast_alloc(AstType type) {
         break;
     case AST_FOR:
         ast->for_loop = calloc(sizeof(AstFor), 1);
+        break;
+    case AST_ANON_SCOPE:
+        ast->anon_scope = calloc(sizeof(AstAnonScope), 1);
         break;
     case AST_BREAK:
     case AST_CONTINUE:
@@ -220,6 +226,9 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         cp->for_loop->iterable = copy_ast(scope, ast->for_loop->iterable);
         cp->for_loop->body = copy_ast_block(scope, ast->for_loop->body);
         break;
+    case AST_ANON_SCOPE:
+        cp->anon_scope->body = copy_ast_block(scope, ast->anon_scope->body);
+        break;
     case AST_BREAK:
     case AST_CONTINUE:
         break;
@@ -270,6 +279,19 @@ Ast *make_ast_copy(Ast *ast) {
     cp->copy->expr = ast;
     cp->var_type = ast->var_type;
     return cp;
+}
+
+int needs_temp_var(Ast *ast) {
+    switch (ast->type) {
+    case AST_BINOP:
+    case AST_UOP:
+    case AST_CALL:
+    case AST_LITERAL:
+        return is_dynamic(ast->var_type);
+    default:
+        break;
+    }
+    return 0;
 }
 
 int is_lvalue(Ast *ast) {
@@ -348,7 +370,7 @@ Ast *make_ast_slice(Ast *object, Ast *offset, Ast *length) {
 int can_coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
     if (is_any(to)) {
         if (!is_any(from->var_type) && !is_lvalue(from)) {
-            allocate_temp_var(scope, from);
+            allocate_ast_temp_var(scope, from);
         }
         return 1;
     }
@@ -401,7 +423,7 @@ int can_coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
 int can_coerce_type(Scope *scope, Type *to, Ast *from) {
     if (is_any(to)) {
         if (!is_any(from->var_type) && !is_lvalue(from)) {
-            allocate_temp_var(scope, from);
+            allocate_ast_temp_var(scope, from);
         }
         return 1;
     }

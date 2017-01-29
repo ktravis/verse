@@ -1,3 +1,7 @@
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "util.h"
 
 void print_quoted_string(char *val) {

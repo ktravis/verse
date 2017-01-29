@@ -1,42 +1,6 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-enum {
-    INT_T = 1,
-    UINT_T,
-    FLOAT_T,
-    BOOL_T,
-    STRING_T,
-    VOID_T,
-    BASEPTR_T
-    //ANY_T
-};
-
-typedef struct TypeData {
-    int base;
-    int size;
-    long length;
-} TypeData;
-
-// Structs, enums, and other base types are "primitives"
-// (Any is a 'special' struct)
-// all others (functions, refs, arrays, aliases) are not primitives, they use
-// Type and not TypeData directly
-// Structs can have parameters, the bare type is primitive, but the parametrized
-// type is not -- it is expressed as
-// a Type<PARAMS>(Type<BASIC>(TypeData<STRUCT_T>), ...)
-// i.e. Box is a primitive type -- Box<u16> is parametrized, and so is not
-// primitive
-// Maybe a better definition -> If ANY resolution can potentially happen to make
-// a type concrete, it is not considered primitive
-// TODO: does this mean structs are not primitive though? what about a struct
-
-typedef struct TypeList {
-    struct Type *item;
-    struct TypeList *next;
-    struct TypeList *prev;
-} TypeList;
-
 typedef enum TypeComp {
     BASIC,
     ALIAS,
@@ -75,9 +39,9 @@ typedef struct Type {
     TypeComp comp;
     struct Scope *scope;
     union {
-        TypeData *data; // basic
+        struct TypeData *data; // basic
         char *name; // alias
-        TypeList *params;
+        struct TypeList *params;
         struct {
             long length;
             struct Type *inner;
@@ -104,17 +68,20 @@ typedef struct Var {
     int initialized;
     unsigned char constant;
     unsigned char use;
-    //int held;
     int ext;
     struct Var *proxy;
     struct Var **members;
     struct AstFnDecl *fn_decl;
 } Var;
 
-typedef struct VarList {
-    Var *item;
-    struct VarList *next;
-} VarList;
+typedef struct Polymorph {
+    int               id;
+    struct TypeList         *args;
+    TypeDef          *defs;
+    struct Polymorph *next;
+    struct Scope     *scope;
+    struct AstBlock  *body;
+} Polymorph;
 
 typedef enum {
     Root,
@@ -123,28 +90,13 @@ typedef enum {
     Loop
 } ScopeType;
 
-typedef struct TempVarList {
-    int id;
-    Var *var;
-    struct TempVarList *next;
-} TempVarList;
-
-typedef struct Polymorph {
-    int               id;
-    TypeList         *args;
-    TypeDef          *defs;
-    struct Polymorph *next;
-    struct Scope     *scope;
-    struct AstBlock  *body;
-} Polymorph;
-
 typedef struct Scope {
     struct Scope *parent;
     ScopeType type;
-    VarList *vars;
+    struct VarList *vars;
     struct TempVarList *temp_vars;
     TypeDef *types;
-    TypeList *used_types;
+    struct TypeList *used_types;
     unsigned char has_return;
     Var *fn_var;
     Polymorph *polymorph;
@@ -171,6 +123,7 @@ typedef enum AstType {
     AST_BLOCK,
     AST_WHILE,
     AST_FOR,
+    AST_ANON_SCOPE,
     AST_BREAK,
     AST_CONTINUE,
     AST_CAST,
@@ -211,24 +164,10 @@ typedef struct Ast {
         struct AstRelease       *release;
         struct AstWhile         *while_loop;
         struct AstFor           *for_loop;
+        struct AstAnonScope     *anon_scope;
         struct AstDirective     *directive;
         struct AstUse           *use;
     };
 } Ast;
-
-typedef struct AstList {
-    Ast *item;
-    struct AstList *next;
-} AstList;
-
-typedef enum {
-    INTEGER,
-    CHAR,
-    STRING,
-    FLOAT,
-    BOOL,
-    STRUCT_LIT,
-    ENUM_LIT,
-} LiteralType;
 
 #endif

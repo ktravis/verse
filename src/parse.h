@@ -1,23 +1,9 @@
 #ifndef PARSE_H
 #define PARSE_H
 
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <strings.h>
-
 #include "ast.h"
-#include "eval.h"
 #include "token.h"
-#include "util.h"
 #include "types.h"
-#include "var.h"
-#include "semantics.h"
-
-enum {
-    PARSE_MAIN,
-    PARSE_FUNC
-};
 
 AstList *get_global_funcs();
 TypeList *get_global_structs();

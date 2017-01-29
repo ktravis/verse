@@ -1,14 +1,16 @@
 #ifndef VAR_H
 #define VAR_H
 
-#include <stdio.h>
-
 #include "common.h"
 #include "types.h"
 
-int new_var_id();
+typedef struct VarList {
+    Var *item;
+    struct VarList *next;
+} VarList;
+
 Var *make_var(char *name, Type *type);
-Var *copy_var(Scope *scope, Var *v);
+Var *copy_var(struct Scope *scope, Var *v);
 void init_struct_var(Var *var);
 
 VarList *varlist_append(VarList *list, Var *v);

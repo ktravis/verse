@@ -1,4 +1,13 @@
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "eval.h"
 #include "parse.h"
+#include "semantics.h"
+#include "var.h"
+#include "util.h"
 
 static int last_tmp_fn_id = 0;
 
@@ -557,6 +566,8 @@ Type *parse_struct_type(int poly_ok) {
     return make_struct_type(nmembers, member_names, member_types);
 }
 
+Ast *parse_anon_scope();
+
 Ast *parse_statement(Tok *t) {
     Ast *ast = NULL;
 
@@ -604,8 +615,7 @@ Ast *parse_statement(Tok *t) {
         ast = parse_extern_func_decl();
         break;
     case TOK_LBRACE:
-        unget_token(t);
-        return parse_block(1);
+        return parse_anon_scope();
     case TOK_WHILE:
         ast = ast_alloc(AST_WHILE);
         ast->while_loop->condition = parse_expression(next_token(), 0);
@@ -926,6 +936,12 @@ AstBlock *parse_astblock(int bracketed) {
 
     block->endline = lineno();
     return block;
+}
+
+Ast *parse_anon_scope() {
+    Ast *b = ast_alloc(AST_ANON_SCOPE);
+    b->anon_scope->body = parse_astblock(1);
+    return b;
 }
 
 Ast *parse_block(int bracketed) {

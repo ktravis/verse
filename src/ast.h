@@ -1,16 +1,25 @@
 #ifndef AST_H
 #define AST_H
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <strings.h>
-
-#include "common.h"
 #include "var.h"
-#include "token.h"
-#include "util.h"
+//#include "token.h"
 #include "scope.h"
 #include "types.h"
+
+typedef struct AstList {
+    Ast *item;
+    struct AstList *next;
+} AstList;
+
+typedef enum {
+    INTEGER,
+    CHAR,
+    STRING,
+    FLOAT,
+    BOOL,
+    STRUCT_LIT,
+    ENUM_LIT,
+} LiteralType;
 
 typedef struct AstLiteral {
     LiteralType lit_type;
@@ -153,6 +162,11 @@ typedef struct AstFor {
     AstBlock *body;
 } AstFor;
 
+typedef struct AstAnonScope {
+    Scope *scope;
+    AstBlock *body;
+} AstAnonScope;
+
 typedef struct AstDirective {
     char *name;
     Ast *object;
@@ -184,7 +198,6 @@ Ast *make_ast_assign(Ast *left, Ast *right);
 Ast *make_ast_binop(int op, Ast *left, Ast *right);
 Ast *make_ast_slice(Ast *inner, Ast *offset, Ast *length);
 
-//Type *var_type(Ast *ast);
 char *get_varname(Ast *ast);
 
 int can_coerce_type_no_error(Scope *scope, Type *to, Ast *from);
@@ -193,8 +206,10 @@ int can_coerce_type(Scope *scope, Type *to, Ast *from);
 AstList *astlist_append(AstList *list, Ast *ast);
 AstList *reverse_astlist();
 
+int needs_temp_var(Ast *ast);
 int is_lvalue(Ast *ast);
 //int is_literal(Ast *ast);
+// TODO: clarify the purpose of these 
 Ast *coerce_literal(Ast *ast, Type *t);
 Ast *cast_literal(Type *t, Ast *ast);
 Ast *try_implicit_cast(Type *t, Ast *ast);

@@ -1,4 +1,9 @@
+#include <stdlib.h>
+#include <string.h>
+
 #include "eval.h"
+#include "token.h"
+#include "types.h"
 
 Ast *wrap_bool(Ast *ast, int b) {
     Ast *ret = make_ast_bool(b);

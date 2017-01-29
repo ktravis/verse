@@ -3,5 +3,6 @@ fn main():int {
     for m in t.members {
         println("Test: " + m);
     }
+    assert(t.members[5] == "STRING");
     return 0;
 }

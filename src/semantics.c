@@ -1,42 +1,12 @@
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "semantics.h"
-
-static VarList *global_vars = NULL;
-static VarList *builtin_vars = NULL;
-
-Var *find_var(Scope *scope, char *name) {
-    Var *v = lookup_var(scope, name);
-    if (v != NULL) {
-        return v;
-    }
-    // TODO: needed?
-    v = varlist_find(global_vars, name);
-    if (v != NULL) {
-        return v;
-    }
-    v = varlist_find(builtin_vars, name);
-    return v;
-}
-
-VarList *get_global_vars() {
-    return global_vars;
-}
-
-void define_builtin(Var *v) {
-    builtin_vars = varlist_append(builtin_vars, v);
-}
-
-int needs_temp_var(Ast *ast) {
-    switch (ast->type) {
-    case AST_BINOP:
-    case AST_UOP:
-    case AST_CALL:
-    case AST_LITERAL:
-        return is_dynamic(ast->var_type);
-    default:
-        break;
-    }
-    return 0;
-}
+#include "eval.h"
+#include "parse.h"
+#include "polymorph.h"
+#include "types.h"
 
 Ast *parse_uop_semantics(Scope *scope, Ast *ast) {
     ast->unary->object = parse_semantics(scope, ast->unary->object);
@@ -182,7 +152,7 @@ Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
     }
 
     if (is_dynamic(ast->binary->left->var_type)) {
-        allocate_temp_var(scope, ast->binary->right);
+        allocate_ast_temp_var(scope, ast->binary->right);
     }
     ast->var_type = base_type(VOID_T);
     return ast;
@@ -449,9 +419,10 @@ Ast *first_pass(Scope *scope, Ast *ast) {
             first_pass_type(scope, ast->for_loop->itervar->type);
         }
         break;
+    case AST_ANON_SCOPE:
+        ast->anon_scope->scope = new_scope(scope);
+        break;
     case AST_BLOCK:
-        // XXX: eh?
-        /*ast->block->scope = new_scope(scope);*/
         break;
     case AST_RETURN:
         if (ast->ret->expr) {
@@ -498,7 +469,7 @@ AstBlock *parse_block_semantics(Scope *scope, AstBlock *block, int fn_body) {
         }
         list->item = parse_semantics(scope, list->item);
         if (needs_temp_var(list->item)) {
-            allocate_temp_var(scope, list->item);
+            allocate_ast_temp_var(scope, list->item);
         }
         if (list->item->type == AST_RETURN) {
             mainline_return_reached = 1;
@@ -606,7 +577,7 @@ Ast *parse_use_semantics(Scope *scope, Ast *ast) {
                     error(ast->use->object->line, ast->file, "'use' statement on enum '%s' conflicts with local variable named '%s'.", type_to_string(t), name);
                 }
 
-                if (varlist_find(builtin_vars, name) != NULL) {
+                if (find_builtin_var(name) != NULL) {
                     error(ast->use->object->line, ast->file, "'use' statement on enum '%s' conflicts with builtin variable named '%s'.", type_to_string(t), name);
                 }
 
@@ -646,7 +617,7 @@ Ast *parse_use_semantics(Scope *scope, Ast *ast) {
                 "'use' statement on struct type '%s' conflicts with local variable named '%s'.",
                 type_to_string(t), member_name);
         }
-        if (varlist_find(builtin_vars, member_name) != NULL) {
+        if (find_builtin_var(member_name) != NULL) {
             error(ast->use->object->line, ast->file,
                 "'use' statement on struct type '%s' conflicts with builtin type named '%s'.",
                 type_to_string(t), member_name);
@@ -677,7 +648,7 @@ Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
 
     slice->object = parse_semantics(scope, slice->object);
     if (needs_temp_var(slice->object)) {
-        allocate_temp_var(scope, slice->object);
+        allocate_ast_temp_var(scope, slice->object);
     }
 
     Type *a = slice->object->var_type;
@@ -800,7 +771,7 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     ast->var_type = base_type(VOID_T);
 
     if (scope->parent == NULL) {
-        global_vars = varlist_append(global_vars, decl->var);
+        define_global(decl->var);
         ast->decl->global = 1;
 
         if (decl->init != NULL) {
@@ -824,49 +795,6 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-Polymorph *create_polymorph(AstFnDecl *decl, TypeList *arg_types) {
-    Polymorph *p = malloc(sizeof(Polymorph));
-    p->id = decl->polymorphs == NULL ? 0 : decl->polymorphs->id + 1;
-    p->args = arg_types;
-    p->next = decl->polymorphs;
-    p->scope = new_scope(decl->scope);
-    p->body = copy_ast_block(p->scope, decl->body); // p->scope or scope?
-    decl->polymorphs = p;
-    return p;
-}
-
-Polymorph *check_for_existing_polymorph(AstFnDecl *decl, TypeList *arg_types) {
-    Polymorph *match = NULL;
-    for (Polymorph *p = decl->polymorphs; p != NULL; p = p->next) {
-        TypeList *types = arg_types;
-
-        for (TypeList *list = p->args; list != NULL; list = list->next) {
-            match = p;
-            // if variadic and list->next == NULL
-            if (decl->var->type->fn.variadic && list->next == NULL) {
-                // for remaining call args
-                for (TypeList *rem = types; rem->next != NULL; rem = rem->next) {
-                    // if !check_type(arg, list->item->inner) || ...
-                    if (!check_type(rem->item, list->item->inner)) {
-                        match = NULL;
-                        break;
-                    }
-                }
-                break;
-            }
-            if (!check_type(list->item, types->item)) {
-                match = NULL;
-                break;
-            }
-            types = types->next;
-        }
-        if (match != NULL) {
-            return match;
-        }
-    }
-    return NULL;
-}
-
 void verify_arg_types(Scope *scope, Ast *call, TypeList *expected_types, AstList *arg_vals, int variadic) {
     for (int i = 0; arg_vals != NULL; i++) {
         Ast *arg = arg_vals->item;
@@ -880,7 +808,7 @@ void verify_arg_types(Scope *scope, Ast *call, TypeList *expected_types, AstList
         if (is_any(expected)) {
             if (!is_any(arg->var_type) && !is_lvalue(arg)) {
                 if (needs_temp_var(arg)) {
-                    allocate_temp_var(scope, arg);
+                    allocate_ast_temp_var(scope, arg);
                 }
             }
         }
@@ -934,15 +862,7 @@ Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
             a = make_static_array_type(a, ast->call->nargs - (resolved->fn.nargs - 1));
 
             // TODO: this should do something else
-            Var *v = make_var("", a);
-            v->temp = 1;
-            TempVarList *tvlist = malloc(sizeof(TempVarList));
-            tvlist->id = ast->id;
-            tvlist->var = v;
-            tvlist->next = scope->temp_vars;
-            scope->temp_vars = tvlist;
-            attach_var(scope, v);
-            ast->call->variadic_tempvar = v;
+            ast->call->variadic_tempvar = make_temp_var(scope, a, ast->id);
         }
     } else if (ast->call->nargs != resolved->fn.nargs) {
         error(ast->line, ast->file, "Incorrect argument count to function (expected %d, got %d)", resolved->fn.nargs, ast->call->nargs);
@@ -1033,15 +953,7 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
             a = make_static_array_type(a, ast->call->nargs - (resolved->fn.nargs - 1));
 
             // TODO: this should do something else
-            Var *v = make_var("", a);
-            v->temp = 1;
-            TempVarList *tvlist = malloc(sizeof(TempVarList));
-            tvlist->id = ast->id;
-            tvlist->var = v;
-            tvlist->next = scope->temp_vars;
-            scope->temp_vars = tvlist;
-            attach_var(scope, v);
-            ast->call->variadic_tempvar = v;
+            ast->call->variadic_tempvar = make_temp_var(scope, a, ast->id);
         }
     } else if (ast->call->nargs != resolved->fn.nargs) {
         error(ast->line, ast->file, "Incorrect argument count to function (expected %d, got %d)", resolved->fn.nargs, ast->call->nargs);
@@ -1248,7 +1160,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
 
         if (is_any(cast->cast_type) && !is_any(cast->object->var_type)) {
             if (!is_lvalue(cast->object)) {
-                allocate_temp_var(scope, cast->object);
+                allocate_ast_temp_var(scope, cast->object);
             }
         }
 
@@ -1279,7 +1191,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         }
 
         attach_var(scope, ast->fn_decl->var);
-        global_vars = varlist_append(global_vars, ast->fn_decl->var);
+        define_global(ast->fn_decl->var);
         break;
     case AST_ANON_FUNC_DECL:
     case AST_FUNC_DECL:
@@ -1290,10 +1202,10 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         ast->index->object = parse_semantics(scope, ast->index->object);
         ast->index->index = parse_semantics(scope, ast->index->index);
         if (needs_temp_var(ast->index->object)) {
-            allocate_temp_var(scope, ast->index->object);
+            allocate_ast_temp_var(scope, ast->index->object);
         }
         if (needs_temp_var(ast->index->index)) {
-            allocate_temp_var(scope, ast->index->index);
+            allocate_ast_temp_var(scope, ast->index->index);
         }
 
         Type *obj_type = ast->index->object->var_type;
@@ -1345,6 +1257,9 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
                 type_to_string(c->condition->var_type));
         }
         
+        /*if (c->condition->type == AST_LITERAL) {*/
+
+        /*}*/
         c->if_body = parse_block_semantics(c->scope, c->if_body, 0);
 
         if (c->else_body != NULL) {
@@ -1392,6 +1307,9 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         ast->var_type = base_type(VOID_T);
         break;
     }
+    case AST_ANON_SCOPE:
+        ast->anon_scope->body = parse_block_semantics(ast->anon_scope->scope, ast->anon_scope->body, 0);
+        break;
     case AST_RETURN: {
         // TODO don't need to copy string being returned?
         Scope *fn_scope = closest_fn_scope(scope);

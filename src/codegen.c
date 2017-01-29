@@ -1,4 +1,13 @@
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+
 #include "codegen.h"
+#include "parse.h"
+#include "scope.h"
+/*#include "semantics.h"*/
 
 static int _indent = 0;
 static int _static_array_copy_depth = 0;
@@ -14,6 +23,31 @@ void change_indent(int n) {
     if (_indent < 0) {
         _indent = 0;
     }
+}
+
+static TypeList *struct_types = NULL;
+
+int get_struct_type_id(Type *type) {
+    for (TypeList *list = struct_types; list != NULL; list = list->next) {
+        if (list->item->st.nmembers != type->st.nmembers) {
+            continue;
+        }
+        if (list->item->id == type->id) {
+            return type->id;
+        }
+        int match = 1;
+        for (int i = 0; i < type->st.nmembers; i++) {
+            if (strcmp(list->item->st.member_names[i], type->st.member_names[i]) ||
+               !check_type(list->item->st.member_types[i], type->st.member_types[i])) {
+                match = 0;
+                break;
+            }
+        }
+        if (match) {
+            return list->item->id;
+        }
+    }
+    return type->id;
 }
 
 void emit_temp_var(Scope *scope, Ast *ast, int ref) {
@@ -268,30 +302,6 @@ void emit_copy(Scope *scope, Ast *ast) {
     } else {
         error(-1, "internal", "wut even");
     }
-}
-
-static TypeList *struct_types = NULL;
-int get_struct_type_id(Type *type) {
-    for (TypeList *list = struct_types; list != NULL; list = list->next) {
-        if (list->item->st.nmembers != type->st.nmembers) {
-            continue;
-        }
-        if (list->item->id == type->id) {
-            return type->id;
-        }
-        int match = 1;
-        for (int i = 0; i < type->st.nmembers; i++) {
-            if (strcmp(list->item->st.member_names[i], type->st.member_names[i]) ||
-               !check_type(list->item->st.member_types[i], type->st.member_types[i])) {
-                match = 0;
-                break;
-            }
-        }
-        if (match) {
-            return list->item->id;
-        }
-    }
-    return type->id;
 }
 
 void emit_type(Type *type) {
@@ -733,6 +743,7 @@ void compile_block(Scope *scope, AstBlock *block) {
 
         if (st->item->type != AST_CONDITIONAL && st->item->type != AST_WHILE &&
             st->item->type != AST_FOR && st->item->type != AST_BLOCK &&
+            st->item->type != AST_ANON_SCOPE &&
             st->item->type != AST_TYPE_DECL && st->item->type != AST_ENUM_DECL) {
             printf(";\n");
         }
@@ -1085,6 +1096,11 @@ void compile(Scope *scope, Ast *ast) {
         }
         break;
     }
+    case AST_ANON_SCOPE:
+        emit_scope_start(ast->anon_scope->scope);
+        compile_block(ast->anon_scope->scope, ast->anon_scope->body);
+        emit_scope_end(ast->anon_scope->scope);
+        break;
     case AST_BLOCK: // If this is used on root, does emit_scope_start need to happen?
         compile_block(scope, ast->block);
         break;

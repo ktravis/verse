@@ -1,4 +1,28 @@
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "scope.h"
+
+static VarList *global_vars = NULL;
+
+void define_global(Var *v) {
+    global_vars = varlist_append(global_vars, v);
+}
+
+VarList *get_global_vars() {
+    return global_vars;
+}
+
+static VarList *builtin_vars = NULL;
+
+void define_builtin(Var *v) {
+    builtin_vars = varlist_append(builtin_vars, v);
+}
+
+Var *find_builtin_var(char *name) {
+    return varlist_find(builtin_vars, name);
+}
 
 // --- Scope ---
 
@@ -176,9 +200,11 @@ Type *define_type(Scope *s, char *name, Type *type) {
     register_type(s, type);
     return type;
 }
+
 int local_type_name_conflict(Scope *scope, char *name) {
     return lookup_local_type(scope, name) != NULL;
 }
+
 TypeDef *find_type_definition(Type *t) {
     assert(t->comp == ALIAS || t->comp == POLYDEF);
     Scope *scope = t->scope;
@@ -209,6 +235,20 @@ void detach_var(Scope *scope, Var *var) {
     scope->vars = varlist_remove(scope->vars, var->name);
 }
 
+Var *find_var(Scope *scope, char *name) {
+    Var *v = lookup_var(scope, name);
+    if (v != NULL) {
+        return v;
+    }
+    // TODO: needed?
+    v = varlist_find(global_vars, name);
+    if (v != NULL) {
+        return v;
+    }
+    v = varlist_find(builtin_vars, name);
+    return v;
+}
+
 Var *lookup_var(Scope *scope, char *name) {
     Var *v = lookup_local_var(scope, name);
     int in_function = scope->type == Function;
@@ -230,11 +270,15 @@ Var *lookup_local_var(Scope *scope, char *name) {
     return varlist_find(scope->vars, name);
 }
 
-Var *allocate_temp_var(Scope *scope, struct Ast *ast) {
-    Var *v = make_var("", ast->var_type);
+Var *allocate_ast_temp_var(Scope *scope, struct Ast *ast) {
+    return make_temp_var(scope, ast->var_type, ast->id);
+}
+
+Var *make_temp_var(Scope *scope, Type *t, int id) {
+    Var *v = make_var("", t);
     v->temp = 1;
     TempVarList *list = malloc(sizeof(TempVarList));
-    list->id = ast->id;
+    list->id = id;
     list->var = v;
     list->next = scope->temp_vars;
     scope->temp_vars = list;

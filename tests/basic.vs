@@ -76,6 +76,17 @@ fn main():int {
         assert(false);
     }
 
+    // "anonymous" scope
+    a := 1;
+    {
+        a := "test";
+        assert(true);
+        {
+            println(a);
+            a := 2.3;
+        }
+    }
+
     println("Tests passed.");
 
     return 0;
