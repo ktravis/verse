@@ -1,9 +1,14 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
 
 #include "scope.h"
+#include "parse.h"
+#include "semantics.h"
 
+// TODO: put these guys in a "compiler" section
+//
 static VarList *global_vars = NULL;
 
 void define_global(Var *v) {
@@ -24,7 +29,111 @@ Var *find_builtin_var(char *name) {
     return varlist_find(builtin_vars, name);
 }
 
-// --- Scope ---
+static Scope *builtin_types_scope = NULL;
+void init_builtin_types() {
+    builtin_types_scope = new_scope(NULL);
+    init_types(builtin_types_scope);
+}
+TypeList *builtin_types() {
+    assert(builtin_types_scope != NULL);
+    return builtin_types_scope->used_types;
+}
+
+static PkgList *all_packages = NULL;
+
+// TODO: change this
+PkgList *all_loaded_packages() {
+    while (all_packages != NULL) {
+        PkgList *tmp = all_packages->next;
+        all_packages->next = all_packages->prev;
+        all_packages->prev = tmp;
+        if (tmp == NULL) {
+            return all_packages;
+        }
+        all_packages = tmp;
+    }
+    return all_packages;
+}
+
+static Package *pkglist_find(PkgList *list, char *path);
+
+static Package *package_previously_loaded(char *path) {
+    return pkglist_find(all_packages, path);
+}
+
+static Package *pkglist_find(PkgList *list, char *path) {
+    for (; list != NULL; list = list->next) {
+        if (!strcmp(list->item->path, path)) {
+            return list->item;
+        }
+    }
+    return NULL;
+}
+
+static PkgList *pkglist_append(PkgList *list, Package *p) {
+    PkgList *l = malloc(sizeof(PkgList));
+    l->item = p;
+    l->next = list;
+    if (list != NULL) {
+        list->prev = l;
+    }
+    list = l;
+    return list;
+}
+
+Package *load_package(Scope *scope, char *path) {
+    Package *p = package_previously_loaded(path);
+    if (p != NULL) {
+        if (pkglist_find(scope->packages, path) == NULL) {
+            scope->packages = pkglist_append(scope->packages, p);
+        }
+        return p;
+    }
+
+    p = malloc(sizeof(Package));
+    p->path = path;
+    p->scope = new_scope(NULL);
+    p->semantics_checked = 0;
+
+    p->files = NULL;
+
+    DIR *d = opendir(path);
+    // TODO: better error
+    if (d == NULL) {
+        error(lineno(), current_file_name(), "Could not load package with path: '%s'", path);
+    }
+    struct dirent *ent = NULL;
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_type != DT_REG) {
+            continue;
+        }
+        // TODO: check that file ends with supported extension?
+        int len = strlen(path) + strlen(ent->d_name);
+        char *filepath = malloc(sizeof(char) * (len + 2));
+        snprintf(filepath, len + 2, "%s/%s", path, ent->d_name);
+
+        // list directories and do this for each
+        Ast *file_ast = parse_source_file(filepath);
+        pop_file_source();
+        file_ast = first_pass(p->scope, file_ast);
+        PkgFile *f = malloc(sizeof(PkgFile));
+        f->name = filepath;
+        f->root = file_ast;
+        PkgFileList *list = malloc(sizeof(PkgFileList));
+        list->item = f;
+        if (p->files != NULL) {
+            p->files->prev = list;
+        }
+        list->next = p->files;
+        p->files = list;
+    }
+    closedir(d);
+
+    all_packages = pkglist_append(all_packages, p);
+    scope->packages = pkglist_append(scope->packages, p);
+    return p;
+}
+// --
 
 Scope *new_scope(Scope *parent) {
     Scope *s = calloc(sizeof(Scope), 1);
@@ -32,28 +141,33 @@ Scope *new_scope(Scope *parent) {
     s->type = parent != NULL ? Simple : Root;
     return s;
 }
+
 Scope *new_fn_scope(Scope *parent) {
     Scope *s = new_scope(parent);
     s->type = Function;
     return s;
 }
+
 Scope *new_loop_scope(Scope *parent) {
     Scope *s = new_scope(parent);
     s->type = Loop;
     return s;
 }
+
 Scope *closest_loop_scope(Scope *scope) {
     while (scope->parent != NULL && scope->type != Loop) {
         scope = scope->parent;
     }
     return scope;
 }
+
 Scope *closest_fn_scope(Scope *scope) {
     while (scope->parent != NULL && scope->type != Function) {
         scope = scope->parent;
     }
     return scope;
 }
+
 Type *fn_scope_return_type(Scope *scope) {
     scope = closest_fn_scope(scope);
     if (scope == NULL) {
@@ -78,6 +192,7 @@ Type *lookup_local_type(Scope *s, char *name) {
     }
     return NULL;
 }
+
 Type *lookup_type(Scope *s, char *name) {
     for (; s != NULL; s = s->parent) {
         Type *t = lookup_local_type(s, name);
@@ -85,14 +200,20 @@ Type *lookup_type(Scope *s, char *name) {
             return t;
         }
     }
-    return NULL;
+    return lookup_local_type(builtin_types_scope, name);
 }
+
 void _register_type(Scope *s, Type *t) {
     t = resolve_alias(t); // eh?
     if (t == NULL) {
         return;
     }
     for (TypeList *list = s->used_types; list != NULL; list = list->next) {
+        if (list->item->id == t->id) {
+            return;
+        }
+    }
+    for (TypeList *list = builtin_types_scope->used_types; list != NULL; list = list->next) {
         if (list->item->id == t->id) {
             return;
         }
@@ -124,12 +245,14 @@ void _register_type(Scope *s, Type *t) {
         break;
     }
 }
+
 void register_type(Scope *s, Type *t) {
     while (s->parent != NULL) {
         s = s->parent;
     }
     _register_type(s, t);
 }
+
 Type *define_polymorph(Scope *s, Type *poly, Type *type) {
     assert(poly->comp == POLYDEF);
     assert(s->polymorph != NULL);
@@ -183,6 +306,7 @@ int define_polydef_alias(Scope *scope, Type *t) {
     }
     return count;
 }
+
 Type *define_type(Scope *s, char *name, Type *type) {
     if (lookup_local_type(s, name) != NULL) {
         error(-1, "internal", "Type '%s' already declared within this scope.", name);
@@ -224,6 +348,11 @@ TypeDef *find_type_definition(Type *t) {
         }
         scope = scope->parent;
     }
+    for (TypeDef *td = builtin_types_scope->types; td != NULL; td = td->next) {
+        if (!strcmp(td->name, t->name)) {
+            return td;
+        }
+    }
     return NULL;
 }
 
@@ -231,25 +360,11 @@ void attach_var(Scope *scope, Var *var) {
     scope->vars = varlist_append(scope->vars, var);
 }
 
-void detach_var(Scope *scope, Var *var) {
-    scope->vars = varlist_remove(scope->vars, var->name);
+Var *lookup_local_var(Scope *scope, char *name) {
+    return varlist_find(scope->vars, name);
 }
 
-Var *find_var(Scope *scope, char *name) {
-    Var *v = lookup_var(scope, name);
-    if (v != NULL) {
-        return v;
-    }
-    // TODO: needed?
-    v = varlist_find(global_vars, name);
-    if (v != NULL) {
-        return v;
-    }
-    v = varlist_find(builtin_vars, name);
-    return v;
-}
-
-Var *lookup_var(Scope *scope, char *name) {
+static Var *_lookup_var(Scope *scope, char *name) {
     Var *v = lookup_local_var(scope, name);
     int in_function = scope->type == Function;
     while (v == NULL && scope->parent != NULL) {
@@ -266,8 +381,18 @@ Var *lookup_var(Scope *scope, char *name) {
     return v;
 }
 
-Var *lookup_local_var(Scope *scope, char *name) {
-    return varlist_find(scope->vars, name);
+Var *lookup_var(Scope *scope, char *name) {
+    Var *v = _lookup_var(scope, name);
+    if (v != NULL) {
+        return v;
+    }
+    // TODO: needed?
+    v = varlist_find(global_vars, name);
+    if (v != NULL) {
+        return v;
+    }
+    v = varlist_find(builtin_vars, name);
+    return v;
 }
 
 Var *allocate_ast_temp_var(Scope *scope, struct Ast *ast) {

@@ -27,10 +27,16 @@ int main(int argc, char **argv) {
     }
     
     Scope *root_scope = new_scope(NULL);
-    init_types(root_scope);
+    init_builtin_types();
     init_builtins();
 
     Ast *root = parse_block(0);
+    // Should this go somewhere else?
+    for (PkgList *list = all_loaded_packages(); list != NULL; list = list->next) {
+        for (PkgFileList *files = list->item->files; files != NULL; files = files->next) {
+            files->item->root = parse_semantics(list->item->scope, files->item->root);
+        }
+    }
     root = parse_semantics(root_scope, root);
 
     Var *main_var = NULL;
@@ -38,8 +44,15 @@ int main(int argc, char **argv) {
     printf("%.*s\n", prelude_length, prelude);
 
     TypeList *used_types = reverse_typelist(root_scope->used_types);
+    TypeList *builtins = reverse_typelist(builtin_types());
 
     // declare structs
+    for (TypeList *list = builtins; list != NULL; list = list->next) {
+        Type *t = resolve_alias(list->item);
+        if (t->comp == STRUCT) {
+            emit_struct_decl(root_scope, t);
+        }
+    }
     for (TypeList *list = used_types; list != NULL; list = list->next) {
         Type *t = resolve_alias(list->item);
         if (t->comp == STRUCT) {
@@ -47,6 +60,9 @@ int main(int argc, char **argv) {
         }
     }
     // declare other types
+    for (TypeList *list = builtins; list != NULL; list = list->next) {
+        emit_typeinfo_decl(root_scope, list->item);
+    }
     for (TypeList *list = used_types; list != NULL; list = list->next) {
         emit_typeinfo_decl(root_scope, list->item);
     }
@@ -59,13 +75,15 @@ int main(int argc, char **argv) {
     // init types
     printf("void _verse_init_typeinfo() {\n");
     change_indent(1);
+    for (TypeList *list = builtins; list != NULL; list = list->next) {
+        emit_typeinfo_init(root_scope, list->item);
+    }
     for (TypeList *list = used_types; list != NULL; list = list->next) {
         emit_typeinfo_init(root_scope, list->item);
     }
     change_indent(-1);
     printf("}\n");
 
-    // TODO: factor these into global vars
     AstList *fnlist = get_global_funcs();
     while (fnlist != NULL) {
         Var *v = fnlist->item->fn_decl->var;
@@ -82,11 +100,23 @@ int main(int argc, char **argv) {
         fnlist = fnlist->next;
     }
 
-    printf("void _verse_init() ");
+    printf("void _verse_init() {\n");
+    change_indent(1);
+
+    for (PkgList *list = all_loaded_packages(); list != NULL; list = list->next) {
+        emit_scope_start(list->item->scope);
+        for (PkgFileList *files = list->item->files; files != NULL; files = files->next) {
+            compile(list->item->scope, files->item->root);
+        }
+        emit_scope_end(list->item->scope);
+    }
 
     emit_scope_start(root_scope);
     compile(root_scope, root);
     emit_scope_end(root_scope);
+
+    change_indent(-1);
+    printf("}\n");
 
     printf("int main(int argc, char** argv) {\n"
            "    _verse_init_typeinfo();\n"

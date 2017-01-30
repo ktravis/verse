@@ -41,3 +41,29 @@ int escaped_strlen(const char *str) {
     }
     return n;
 }
+
+// TODO: handle this better, this is sloppy
+char *package_name(char *path) {
+    int last = 0;
+    int i = 0;
+    char c;
+    int n = 0;
+    while ((c = path[i]) != '\0') {
+        if (c == '/') {
+            if (path[i+1] == '\0') {
+                break;
+            }
+            n = 0;
+            last = i + 1;
+        } else {
+            n++;
+        }
+        i++;
+    }
+    char *out = malloc(sizeof(char) * (n + 1));
+    for (int i = 0; i < n; i++) {
+        out[i] = path[last + i];
+    }
+    out[n] = '\0';
+    return out;
+}

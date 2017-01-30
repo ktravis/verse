@@ -7,8 +7,9 @@
 #include "parse.h"
 #include "polymorph.h"
 #include "types.h"
+#include "typechecking.h"
 
-Ast *parse_uop_semantics(Scope *scope, Ast *ast) {
+static Ast *parse_uop_semantics(Scope *scope, Ast *ast) {
     ast->unary->object = parse_semantics(scope, ast->unary->object);
     Ast *o = ast->unary->object;
     switch (ast->unary->op) {
@@ -49,7 +50,7 @@ Ast *parse_uop_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
+static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
     if (ast->dot->object->type == AST_IDENTIFIER) {
         Type *t = make_type(scope, ast->dot->object->ident->varname);
         Type *resolved = resolve_alias(t);
@@ -124,7 +125,7 @@ Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
+static Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
     ast->binary->left = parse_semantics(scope, ast->binary->left);
     ast->binary->right = parse_semantics(scope, ast->binary->right);
 
@@ -158,7 +159,7 @@ Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
+static Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
     ast->binary->left = parse_semantics(scope, ast->binary->left);
     ast->binary->right = parse_semantics(scope, ast->binary->right);
 
@@ -226,7 +227,7 @@ Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-Ast *parse_enum_decl_semantics(Scope *scope, Ast *ast) {
+static Ast *parse_enum_decl_semantics(Scope *scope, Ast *ast) {
     Type *et = ast->enum_decl->enum_type; 
     et = resolve_alias(et);
     assert(et->comp == ENUM);
@@ -304,6 +305,13 @@ void first_pass_type(Scope *scope, Type *t) {
 
 Ast *first_pass(Scope *scope, Ast *ast) {
     switch (ast->type) {
+    case AST_IMPORT:
+        // error here or elsewhere?
+        if (scope->parent != NULL) {
+            error(ast->line, ast->file, "All imports must be done at root scope.");
+        }
+        ast->import->package = load_package(scope, ast->import->path);
+        break;
     case AST_LITERAL:
         if (ast->lit->lit_type == STRUCT_LIT) {
             first_pass_type(scope, ast->lit->struct_val.type);
@@ -321,7 +329,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         break;
     case AST_EXTERN_FUNC_DECL:
         if (lookup_local_var(scope, ast->fn_decl->var->name) != NULL) {
-            error(lineno(), current_file_name(), "Declared extern function name '%s' already exists in this scope.", ast->fn_decl->var->name);
+            error(ast->line, ast->file, "Declared extern function name '%s' already exists in this scope.", ast->fn_decl->var->name);
         }
 
         first_pass_type(scope, ast->fn_decl->var->type);
@@ -334,7 +342,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
 
         if (!ast->fn_decl->anon) {
             if (lookup_local_var(scope, ast->fn_decl->var->name) != NULL) {
-                error(lineno(), current_file_name(), "Declared function name '%s' already exists in this scope.", ast->fn_decl->var->name);
+                error(ast->line, ast->file, "Declared function name '%s' already exists in this scope.", ast->fn_decl->var->name);
             }
 
             attach_var(scope, ast->fn_decl->var);
@@ -352,8 +360,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         break;
     case AST_ENUM_DECL:
         if (local_type_name_conflict(scope, ast->enum_decl->enum_name)) {
-            error(lineno(), current_file_name(),
-                "Type named '%s' already exists in local scope.", ast->enum_decl->enum_name);
+            error(ast->line, ast->file, "Type named '%s' already exists in local scope.", ast->enum_decl->enum_name);
         }
         // TODO: need to do the epxrs here or not?
         first_pass_type(scope, ast->enum_decl->enum_type);
@@ -443,7 +450,6 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         break;
     case AST_TYPEINFO:
         first_pass_type(scope, ast->typeinfo->typeinfo_target);
-        /*register_type(scope, ast->typeinfo->typeinfo_target);*/
         break;
     case AST_USE:
         ast->use->object = first_pass(scope, ast->use->object);
@@ -490,7 +496,7 @@ AstBlock *parse_block_semantics(Scope *scope, AstBlock *block, int fn_body) {
     return block;
 }
 
-Ast *parse_directive_semantics(Scope *scope, Ast *ast) {
+static Ast *parse_directive_semantics(Scope *scope, Ast *ast) {
     // TODO does this checking need to happen in the first pass? may be a
     // reason to do this later!
     char *n = ast->directive->name;
@@ -522,7 +528,7 @@ Ast *parse_directive_semantics(Scope *scope, Ast *ast) {
     return NULL;
 }
 
-Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
+static Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
     AstLiteral *lit = ast->lit;
     Type *type = lit->struct_val.type;
 
@@ -558,7 +564,7 @@ Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-Ast *parse_use_semantics(Scope *scope, Ast *ast) {
+static Ast *parse_use_semantics(Scope *scope, Ast *ast) {
     if (ast->use->object->type == AST_IDENTIFIER) {
         Type *t = make_type(scope, ast->dot->object->ident->varname);
         Type *resolved = resolve_alias(t);
@@ -643,7 +649,7 @@ Ast *parse_use_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
+static Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
     AstSlice *slice = ast->slice;
 
     slice->object = parse_semantics(scope, slice->object);
@@ -694,7 +700,7 @@ Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
+static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     AstDecl *decl = ast->decl;
     Ast *init = decl->init;
 
@@ -795,7 +801,7 @@ Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-void verify_arg_types(Scope *scope, Ast *call, TypeList *expected_types, AstList *arg_vals, int variadic) {
+static void verify_arg_types(Scope *scope, Ast *call, TypeList *expected_types, AstList *arg_vals, int variadic) {
     for (int i = 0; arg_vals != NULL; i++) {
         Ast *arg = arg_vals->item;
         Type *expected = expected_types->item;
@@ -820,7 +826,7 @@ void verify_arg_types(Scope *scope, Ast *call, TypeList *expected_types, AstList
     }
 }
 
-Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
+static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
     AstList *call_args = ast->call->args;
     TypeList *call_arg_types = NULL;
 
@@ -925,7 +931,7 @@ Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
     return ast;
 }
 
-Ast *parse_call_semantics(Scope *scope, Ast *ast) {
+static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
     ast->call->fn = parse_semantics(scope, ast->call->fn);
 
     Type *orig = ast->call->fn->var_type;
@@ -975,7 +981,7 @@ Ast *parse_call_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
+static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
     int poly = 0;
     Scope *type_check_scope = scope;
     if (is_polydef(ast->fn_decl->var->type)) {
@@ -1025,6 +1031,7 @@ Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
                         "'use' statement on struct type '%s' conflicts with builtin type named '%s'.",
                         type_to_string(orig), name);
                 }
+
                 Var *v = make_var(name, t->st.member_types[i]);
                 if (ref) {
                     int proxy_name_len = strlen(args->item->name) + strlen(name) + 2;
@@ -1042,19 +1049,10 @@ Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
                 attach_var(ast->fn_decl->scope, v);
             }
         }
-        /*} else {*/
-            // may not want this to happen here for polydef
-            /*attach_var(ast->fn_decl->scope, args->item);*/
-            /*if (is_polydef(args->item->type)) {*/
-                /*poly = 1;*/
-            /*}*/
-        /*}*/
     }
 
     if (!poly) {
         ast->fn_decl->body = parse_block_semantics(ast->fn_decl->scope, ast->fn_decl->body, 1);
-
-        detach_var(ast->fn_decl->scope, ast->fn_decl->var);
     }
 
     Scope *tmp = ast->fn_decl->var->type->fn.ret->scope;
@@ -1068,6 +1066,55 @@ Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
 
     if (ast->type == AST_ANON_FUNC_DECL) {
         ast->var_type = ast->fn_decl->var->type;
+    }
+    return ast;
+}
+static Ast *parse_index_semantics(Scope *scope, Ast *ast) {
+    ast->index->object = parse_semantics(scope, ast->index->object);
+    ast->index->index = parse_semantics(scope, ast->index->index);
+    if (needs_temp_var(ast->index->object)) {
+        allocate_ast_temp_var(scope, ast->index->object);
+    }
+    if (needs_temp_var(ast->index->index)) {
+        allocate_ast_temp_var(scope, ast->index->index);
+    }
+
+    Type *obj_type = ast->index->object->var_type;
+    Type *ind_type = ast->index->index->var_type;
+
+    int size = -1;
+
+    if (is_string(obj_type)) {
+        ast->var_type = base_numeric_type(UINT_T, 8);
+        if (ast->index->object->type == AST_LITERAL) {
+            size = strlen(ast->index->object->lit->string_val);
+        }
+    } else if (obj_type->comp == STATIC_ARRAY) {
+        size = obj_type->array.length;
+        ast->var_type = obj_type->array.inner; // need to call something different?
+    } else if (obj_type->comp == ARRAY) {
+        ast->var_type = obj_type->inner; // need to call something different?
+    } else {
+        error(ast->index->object->line, ast->index->object->file,
+            "Cannot perform index/subscript operation on non-array type (type is '%s').",
+            type_to_string(obj_type));
+    }
+
+    Type *resolved = resolve_alias(ind_type);
+    if (resolved->comp != BASIC ||
+       (resolved->data->base != INT_T &&
+        resolved->data->base != UINT_T)) {
+        error(ast->line, ast->file, "Cannot index array with non-integer type '%s'.",
+                type_to_string(ind_type));
+    }
+
+    if (ast->index->index->type == AST_LITERAL) {
+        int i = ast->index->index->lit->int_val;
+        if (i < 0) {
+            error(ast->line, ast->file, "Negative index is not allowed.");
+        } else if (size != -1 && i >= size) {
+            error(ast->line, ast->file, "Array index is larger than object length (%ld vs length %ld).", i, size);
+        }
     }
     return ast;
 }
@@ -1100,7 +1147,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         break;
     }
     case AST_IDENTIFIER: {
-        Var *v = find_var(scope, ast->ident->varname);
+        Var *v = lookup_var(scope, ast->ident->varname);
         if (v == NULL) {
             error(ast->line, ast->file, "Undefined identifier '%s' encountered.", ast->ident->varname);
             // TODO better error for an enum here
@@ -1114,7 +1161,6 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
                         Ast *a = ast_alloc(AST_LITERAL);
                         a->lit->lit_type = ENUM_LIT;
                         a->lit->enum_val.enum_index = i;
-                        // TODO: should this be the resolved type instead?
                         a->lit->enum_val.enum_type = resolved;
                         a->var_type = v->type;
                         return a;
@@ -1198,55 +1244,8 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         return check_func_decl_semantics(scope, ast);
     case AST_CALL:
         return parse_call_semantics(scope, ast);
-    case AST_INDEX: {
-        ast->index->object = parse_semantics(scope, ast->index->object);
-        ast->index->index = parse_semantics(scope, ast->index->index);
-        if (needs_temp_var(ast->index->object)) {
-            allocate_ast_temp_var(scope, ast->index->object);
-        }
-        if (needs_temp_var(ast->index->index)) {
-            allocate_ast_temp_var(scope, ast->index->index);
-        }
-
-        Type *obj_type = ast->index->object->var_type;
-        Type *ind_type = ast->index->index->var_type;
-
-        int size = -1;
-
-        if (is_string(obj_type)) {
-            ast->var_type = base_numeric_type(UINT_T, 8);
-            if (ast->index->object->type == AST_LITERAL) {
-                size = strlen(ast->index->object->lit->string_val);
-            }
-        } else if (obj_type->comp == STATIC_ARRAY) {
-            size = obj_type->array.length;
-            ast->var_type = obj_type->array.inner; // need to call something different?
-        } else if (obj_type->comp == ARRAY) {
-            ast->var_type = obj_type->inner; // need to call something different?
-        } else {
-            error(ast->index->object->line, ast->index->object->file,
-                "Cannot perform index/subscript operation on non-array type (type is '%s').",
-                type_to_string(obj_type));
-        }
-
-        Type *resolved = resolve_alias(ind_type);
-        if (resolved->comp != BASIC ||
-           (resolved->data->base != INT_T &&
-            resolved->data->base != UINT_T)) {
-            error(ast->line, ast->file, "Cannot index array with non-integer type '%s'.",
-                    type_to_string(ind_type));
-        }
-
-        if (ast->index->index->type == AST_LITERAL) {
-            int i = ast->index->index->lit->int_val;
-            if (i < 0) {
-                error(ast->line, ast->file, "Negative index is not allowed.");
-            } else if (size != -1 && i >= size) {
-                error(ast->line, ast->file, "Array index is larger than object length (%ld vs length %ld).", i, size);
-            }
-        }
-        break;
-    }
+    case AST_INDEX: 
+        return parse_index_semantics(scope, ast);
     case AST_CONDITIONAL: {
         AstConditional *c = ast->cond;
         c->condition = parse_semantics(scope, c->condition);
@@ -1360,6 +1359,16 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
     case AST_ENUM_DECL:
         return parse_enum_decl_semantics(scope, ast);
     case AST_TYPEINFO:
+        break;
+    case AST_IMPORT:
+        if (!ast->import->package->semantics_checked) {
+            Package *p = ast->import->package;
+            p->semantics_checked = 1;
+            /*p->pkg_name = package_name(p->path);*/
+            for (PkgFileList *list = p->files; list != NULL; list = list->next) {
+                list->item->root = parse_semantics(p->scope, list->item->root);
+            }
+        }
         break;
     default:
         error(-1, "internal", "idk parse semantics %d", ast->type);

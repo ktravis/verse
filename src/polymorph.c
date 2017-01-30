@@ -1,6 +1,7 @@
 #include <stdlib.h>
 
 #include "polymorph.h"
+#include "typechecking.h"
 
 Polymorph *create_polymorph(AstFnDecl *decl, TypeList *arg_types) {
     Polymorph *p = malloc(sizeof(Polymorph));

@@ -52,7 +52,6 @@ Type *make_struct_type(int nmembers, char **member_names, Type **member_types);
 Type *resolve_polymorph(Type *type);
 Type *resolve_alias(Type *type);
 TypeData *resolve_type_data(Type *t);
-int match_polymorph(Scope *scope, Type *expected, Type *got);
 
 int get_any_type_id();
 Type *get_any_type();
@@ -60,19 +59,14 @@ int get_typeinfo_type_id();
 Type *base_type(PrimitiveType t);
 Type *base_numeric_type(int t, int size);
 
-int check_type(Type *a, Type *b);
-int can_cast(Type *from, Type *to);
-
 int precision_loss_uint(Type *t, unsigned long ival);
 int precision_loss_int(Type *t, long ival);
 int precision_loss_float(Type *t, double ival);
 
-Type *promote_number_type(Type *a, int left_lit, Type *b, int right_lit);
+void emit_typeinfo_decl(Scope *scope, Type *t);
+void emit_typeinfo_init(Scope *scope, Type *t);
 
 TypeList *reverse_typelist(TypeList *list);
 TypeList *typelist_append(TypeList *list, Type *t);
-
-void emit_typeinfo_decl(Scope *scope, Type *t);
-void emit_typeinfo_init(Scope *scope, Type *t);
 
 #endif

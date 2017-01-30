@@ -29,10 +29,8 @@ int local_type_name_conflict(Scope *scope, char *name);
 void register_type(Scope *s, Type *t);
 
 void attach_var(Scope *scope, Var *var);
-void detach_var(Scope *scope, Var *var);
-Var *lookup_var(Scope *scope, char *name);
 Var *lookup_local_var(Scope *scope, char *name);
-Var *find_var(Scope *scope, char *name);
+Var *lookup_var(Scope *scope, char *name);
 
 Var *allocate_ast_temp_var(Scope *scope, Ast *ast);
 Var *make_temp_var(Scope *scope, Type *t, int id);
@@ -40,7 +38,14 @@ Var *find_temp_var(Scope *scope, Ast *ast);
 
 VarList *get_global_vars();
 void define_global(Var *v);
+
 void define_builtin(Var *v);
 Var *find_builtin_var(char *name);
+
+void init_builtin_types();
+TypeList *builtin_types();
+
+PkgList *all_loaded_packages();
+Package *load_package(Scope *scope, char *path);
 
 #endif

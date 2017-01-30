@@ -21,6 +21,12 @@ typedef enum {
     ENUM_LIT,
 } LiteralType;
 
+typedef struct AstImport {
+    char *path;
+    char *pkg_name;
+    Package *package;
+} AstImport;
+
 typedef struct AstLiteral {
     LiteralType lit_type;
     union {
@@ -199,9 +205,6 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right);
 Ast *make_ast_slice(Ast *inner, Ast *offset, Ast *length);
 
 char *get_varname(Ast *ast);
-
-int can_coerce_type_no_error(Scope *scope, Type *to, Ast *from);
-int can_coerce_type(Scope *scope, Type *to, Ast *from);
 
 AstList *astlist_append(AstList *list, Ast *ast);
 AstList *reverse_astlist();

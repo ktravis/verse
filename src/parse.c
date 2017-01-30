@@ -591,7 +591,7 @@ Ast *parse_statement(Tok *t) {
         ast->use->object = parse_expression(next_token(), 0);
         break;
     case TOK_DIRECTIVE:
-        if (!strcmp(t->sval, "import")) {
+        if (!strcmp(t->sval, "include")) {
             t = next_token();
             if (t->type != TOK_STR || !expect_line_break_or_semicolon()) {
                 error(lineno(), current_file_name(),
@@ -600,6 +600,18 @@ Ast *parse_statement(Tok *t) {
             }
             Ast *ast = parse_source_file(t->sval);
             pop_file_source();
+            return ast;
+        }
+        if (!strcmp(t->sval, "import")) {
+            t = next_token();
+            if (t->type != TOK_STR || !expect_line_break_or_semicolon()) {
+                error(lineno(), current_file_name(),
+                    "Unexpected token '%s' while parsing load directive.",
+                    tok_to_string(t));
+            }
+            // TODO: pass more context for error 
+            Ast *ast = ast_alloc(AST_IMPORT);
+            ast->import->path = t->sval;
             return ast;
         }
         // If not #import, default to normal behavior

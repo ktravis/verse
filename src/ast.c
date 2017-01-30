@@ -95,6 +95,9 @@ Ast *ast_alloc(AstType type) {
     case AST_USE:
         ast->use = calloc(sizeof(AstUse), 1);
         break;
+    case AST_IMPORT:
+        ast->import = calloc(sizeof(AstImport), 1);
+        break;
     }
     return ast;
 }
@@ -258,6 +261,9 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         cp->use = calloc(sizeof(AstUse), 1);
         cp->use->object = copy_ast(scope, ast->use->object);
         break;
+    case AST_IMPORT:
+        cp->import = ast->import;
+        break;
     }
     return cp;
 }
@@ -365,122 +371,6 @@ Ast *make_ast_slice(Ast *object, Ast *offset, Ast *length) {
     s->slice->offset = offset;
     s->slice->length = length;
     return s;
-}
-
-int can_coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
-    if (is_any(to)) {
-        if (!is_any(from->var_type) && !is_lvalue(from)) {
-            allocate_ast_temp_var(scope, from);
-        }
-        return 1;
-    }
-    
-    // (TODO: why was this comment here?)
-    // resolve polymorphs
-    Type *t = resolve_alias(to);
-    if (t->comp == ARRAY) {
-        if (from->var_type->comp == ARRAY) {
-            return check_type(t->inner, from->var_type->inner);
-        } else if (from->var_type->comp == STATIC_ARRAY) {
-            t = t->inner;
-            Type *from_type = from->var_type->array.inner;
-            while (from_type->comp == STATIC_ARRAY && t->comp == ARRAY) {
-                t = t->inner;
-                from_type = from_type->array.inner;
-            }
-            return check_type(t, from_type);
-        }
-    }
-    if (from->type == AST_LITERAL) {
-        if (is_numeric(t) && is_numeric(from->var_type)) {
-            int loss = 0;
-            if (from->lit->lit_type == INTEGER) {
-                if (t->data->base == UINT_T) {
-                    if (from->lit->int_val < 0) {
-                        return 0;
-                    }
-                    loss = precision_loss_uint(t, from->lit->int_val);
-                } else {
-                    loss = precision_loss_int(t, from->lit->int_val);
-                }
-            } else if (from->lit->lit_type == FLOAT) {
-                if (t->data->base != FLOAT_T) {
-                    return 0;
-                }
-                loss = precision_loss_float(t, from->lit->float_val);
-            }
-            if (!loss) {
-                return 1;
-            }
-        } else {
-            if (can_cast(from->var_type, t)) {
-                return 1;
-            }
-        }
-    }
-    return 0;
-}
-int can_coerce_type(Scope *scope, Type *to, Ast *from) {
-    if (is_any(to)) {
-        if (!is_any(from->var_type) && !is_lvalue(from)) {
-            allocate_ast_temp_var(scope, from);
-        }
-        return 1;
-    }
-    
-    Type *t = resolve_alias(to);
-    if (t->comp == ARRAY) {
-        if (from->var_type->comp == ARRAY) {
-            return check_type(t->inner, from->var_type->inner);
-        } else if (from->var_type->comp == STATIC_ARRAY) {
-            t = t->inner;
-            Type *from_type = from->var_type->array.inner;
-            while (from_type->comp == STATIC_ARRAY && t->comp == ARRAY) {
-                t = t->inner;
-                from_type = from_type->array.inner;
-            }
-            return check_type(t, from_type);
-        }
-    }
-    if (from->type == AST_LITERAL) {
-        if (is_numeric(t) && is_numeric(from->var_type)) {
-            int loss = 0;
-            if (from->lit->lit_type == INTEGER) {
-                if (t->data->base == UINT_T) {
-                    if (from->lit->int_val < 0) {
-                        error(from->line, from->file, 
-                            "Cannot coerce negative literal value into integer type '%s'.",
-                            type_to_string(to));
-                    }
-                    loss = precision_loss_uint(t, from->lit->int_val);
-                } else {
-                    loss = precision_loss_int(t, from->lit->int_val);
-                }
-            } else if (from->lit->lit_type == FLOAT) {
-                if (t->data->base != FLOAT_T) {
-                    error(from->line, from->file,
-                        "Cannot coerce floating point literal into integer type '%s'.",
-                        type_to_string(to));
-                }
-                loss = precision_loss_float(t, from->lit->float_val);
-            }
-            if (loss) {
-                error(from->line, from->file,
-                    "Cannot coerce literal value of type '%s' into type '%s' due to precision loss.",
-                    type_to_string(from->var_type), type_to_string(to));
-            }
-            return 1;
-        } else {
-            if (can_cast(from->var_type, t)) {
-                return 1;
-            }
-
-            error(from->line, from->file,
-                "Cannot coerce literal value of type '%s' into type '%s'.",
-                type_to_string(from->var_type), type_to_string(to));
-        }
-    }
-    return 0;
 }
 
 char *get_varname(Ast *ast) {

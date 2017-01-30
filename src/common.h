@@ -1,6 +1,30 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+typedef struct Package {
+    char *path;
+    struct Scope *scope;
+    struct PkgFileList *files;
+    int semantics_checked;
+} Package;
+
+typedef struct PkgList {
+    Package *item;
+    struct PkgList *next;
+    struct PkgList *prev;
+} PkgList;
+
+typedef struct PkgFile {
+    char *name;
+    struct Ast *root;
+} PkgFile;
+
+typedef struct PkgFileList {
+    PkgFile *item;
+    struct PkgFileList *next;
+    struct PkgFileList *prev;
+} PkgFileList;
+
 typedef enum TypeComp {
     BASIC,
     ALIAS,
@@ -76,7 +100,7 @@ typedef struct Var {
 
 typedef struct Polymorph {
     int               id;
-    struct TypeList         *args;
+    struct TypeList  *args;
     TypeDef          *defs;
     struct Polymorph *next;
     struct Scope     *scope;
@@ -100,6 +124,7 @@ typedef struct Scope {
     unsigned char has_return;
     Var *fn_var;
     Polymorph *polymorph;
+    struct PkgList *packages;
 } Scope;
 
 typedef enum AstType {
@@ -131,6 +156,7 @@ typedef enum AstType {
     AST_TYPEINFO,
     AST_ENUM_DECL,
     AST_USE,
+    AST_IMPORT,
 } AstType;
 
 typedef struct Ast {
@@ -167,6 +193,7 @@ typedef struct Ast {
         struct AstAnonScope     *anon_scope;
         struct AstDirective     *directive;
         struct AstUse           *use;
+        struct AstImport        *import;
     };
 } Ast;
 

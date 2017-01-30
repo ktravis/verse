@@ -4,6 +4,7 @@
 #include <string.h>
 #include <assert.h>
 
+#include "typechecking.h"
 #include "codegen.h"
 #include "parse.h"
 #include "scope.h"
@@ -27,6 +28,7 @@ void change_indent(int n) {
 
 static TypeList *struct_types = NULL;
 
+// TODO: make this not be like it is
 int get_struct_type_id(Type *type) {
     for (TypeList *list = struct_types; list != NULL; list = list->next) {
         if (list->item->st.nmembers != type->st.nmembers) {
@@ -743,7 +745,7 @@ void compile_block(Scope *scope, AstBlock *block) {
 
         if (st->item->type != AST_CONDITIONAL && st->item->type != AST_WHILE &&
             st->item->type != AST_FOR && st->item->type != AST_BLOCK &&
-            st->item->type != AST_ANON_SCOPE &&
+            st->item->type != AST_ANON_SCOPE && st->item->type != AST_IMPORT &&
             st->item->type != AST_TYPE_DECL && st->item->type != AST_ENUM_DECL) {
             printf(";\n");
         }
@@ -1169,6 +1171,8 @@ void compile(Scope *scope, Ast *ast) {
     case AST_TYPE_DECL:
         break;
     case AST_ENUM_DECL:
+        break;
+    case AST_IMPORT:
         break;
     default:
         error(ast->line, ast->file, "No idea how to deal with this.");
