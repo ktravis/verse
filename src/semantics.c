@@ -310,7 +310,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         if (scope->parent != NULL) {
             error(ast->line, ast->file, "All imports must be done at root scope.");
         }
-        ast->import->package = load_package(scope, ast->import->path);
+        ast->import->package = load_package(ast->file, scope, ast->import->path);
         break;
     case AST_LITERAL:
         if (ast->lit->lit_type == STRUCT_LIT) {
@@ -457,6 +457,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
     case AST_BREAK:
     case AST_CONTINUE:
     case AST_IDENTIFIER:
+    case AST_LOOKUP:
         break;
     }
     return ast;
@@ -565,6 +566,7 @@ static Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
 }
 
 static Ast *parse_use_semantics(Scope *scope, Ast *ast) {
+    // TODO: use on package?
     if (ast->use->object->type == AST_IDENTIFIER) {
         Type *t = make_type(scope, ast->dot->object->ident->varname);
         Type *resolved = resolve_alias(t);
@@ -1144,6 +1146,47 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         case ENUM_LIT: // eh?
             break;
         }
+        break;
+    }
+    // TODO: duplicate of AST_IDENTIFIER with minor changes
+    case AST_LOOKUP: {
+        Package *p = lookup_imported_package(scope, ast->lookup->left->ident->varname);
+        if (p == NULL) {
+            error(ast->line, ast->file, "Unknown package '%s'", ast->lookup->left->ident->varname);
+        }
+
+        Var *v = lookup_var(p->scope, ast->lookup->right);
+        if (v == NULL) {
+            error(ast->line, ast->file, "No declared identifier '%s' in package '%s'.", ast->lookup->right, p->name);
+            // TODO better error for an enum here
+        }
+
+        if (v->proxy != NULL) { // USE-proxy
+            Type *resolved = resolve_alias(v->type);
+            if (resolved->comp == ENUM) { // proxy for enum
+                for (int i = 0; i < resolved->en.nmembers; i++) {
+                    if (!strcmp(resolved->en.member_names[i], v->name)) {
+                        Ast *a = ast_alloc(AST_LITERAL);
+                        a->lit->lit_type = ENUM_LIT;
+                        a->lit->enum_val.enum_index = i;
+                        a->lit->enum_val.enum_type = resolved;
+                        a->var_type = v->type;
+                        return a;
+                    }
+                }
+                error(-1, "<internal>", "How'd this happen");
+            } else { // proxy for normal var
+                int i = 0;
+                assert(v->proxy != v);
+                while (v->proxy) {
+                    assert(i++ < 666); // lol
+                    v = v->proxy; // this better not loop!
+                }
+            }
+        }
+        ast = ast_alloc(AST_IDENTIFIER);
+        ast->ident->var = v;
+        ast->var_type = v->type;
         break;
     }
     case AST_IDENTIFIER: {

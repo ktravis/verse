@@ -3,6 +3,7 @@
 
 typedef struct Package {
     char *path;
+    char *name;
     struct Scope *scope;
     struct PkgFileList *files;
     int semantics_checked;
@@ -157,6 +158,7 @@ typedef enum AstType {
     AST_ENUM_DECL,
     AST_USE,
     AST_IMPORT,
+    AST_LOOKUP,
 } AstType;
 
 typedef struct Ast {
@@ -194,6 +196,7 @@ typedef struct Ast {
         struct AstDirective     *directive;
         struct AstUse           *use;
         struct AstImport        *import;
+        struct AstLookup        *lookup;
     };
 } Ast;
 

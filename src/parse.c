@@ -798,8 +798,14 @@ Ast *parse_primary(Tok *t) {
             next = next_token();
             if (next->type == TOK_LBRACE) {
                 return parse_struct_literal(t->sval);
+            } else if (next->type == TOK_ID) {
+                Ast *id = ast_alloc(AST_IDENTIFIER);
+                id->ident->varname = t->sval;
+                Ast *l = ast_alloc(AST_LOOKUP);
+                l->lookup->left = id;
+                l->lookup->right = next->sval;
+                return l;
             } else {
-                // TODO: namespace, enum?
                 error(lineno(), current_file_name(), "Unexpected token '%s' following '::'.", tok_to_string(next));
             }
         } else {

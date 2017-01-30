@@ -46,6 +46,7 @@ void init_builtin_types();
 TypeList *builtin_types();
 
 PkgList *all_loaded_packages();
-Package *load_package(Scope *scope, char *path);
+Package *load_package(char *current_file, Scope *scope, char *path);
+Package *lookup_imported_package(Scope *scope, char *name);
 
 #endif

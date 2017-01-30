@@ -2,13 +2,12 @@ TODO
 ====
 
 - Reorganize files, factor out type-checking functions
+  - Sort-of done
 - Better error message for checking polymorphic function arg types
 - Parameterized struct types
 - Packages
-  - Create namespace/package structures
   - Add behavior for :: to do lookups in namespaces
-  - Change #import behavior
-    - Import should create an identifier as a package "alias", i.e.:
-      #import "pkg/a/b" would bind the identifier "b" to refer to the package
-      "pkg/a/b" in the current scope (just make sure that the packages are uniquely
-      identified by the path to them within a compiler run)
+    - Sort-of done, semantics not final at all
+  - Global vars in different packages may be referred to prior to initialization!
+    Decide whether this is okay, and possibly change the order that init code is
+    generated in (i.e. most nested import first?)

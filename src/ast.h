@@ -27,6 +27,14 @@ typedef struct AstImport {
     Package *package;
 } AstImport;
 
+// TODO: are we allowing nested here? if not, change this
+// also consider just using dot op and resolving to AstPackage or something like
+// that
+typedef struct AstLookup {
+    Ast *left;
+    char *right;
+} AstLookup;
+
 typedef struct AstLiteral {
     LiteralType lit_type;
     union {

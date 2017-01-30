@@ -70,6 +70,14 @@ static Package *pkglist_find(PkgList *list, char *path) {
     return NULL;
 }
 
+static Package *pkglist_find_by_name(PkgList *list, char *name) {
+    for (; list != NULL; list = list->next) {
+        if (!strcmp(list->item->name, name)) {
+            return list->item;
+        }
+    }
+    return NULL;
+}
 static PkgList *pkglist_append(PkgList *list, Package *p) {
     PkgList *l = malloc(sizeof(PkgList));
     l->item = p;
@@ -81,7 +89,16 @@ static PkgList *pkglist_append(PkgList *list, Package *p) {
     return list;
 }
 
-Package *load_package(Scope *scope, char *path) {
+// TODO: error when path is NULL
+Package *load_package(char *current_file, Scope *scope, char *path) {
+    if (path[0] != '/') {
+        char *dir = dir_name(current_file);
+        int dirlen = strlen(dir);
+        int pathlen = strlen(path);
+        char *tmp = malloc(sizeof(char) * (dirlen + pathlen + 1));
+        snprintf(tmp, dirlen + pathlen + 1, "%s%s", dir, path);
+        path = tmp;
+    }
     Package *p = package_previously_loaded(path);
     if (p != NULL) {
         if (pkglist_find(scope->packages, path) == NULL) {
@@ -94,13 +111,14 @@ Package *load_package(Scope *scope, char *path) {
     p->path = path;
     p->scope = new_scope(NULL);
     p->semantics_checked = 0;
+    p->name = package_name(path);
 
     p->files = NULL;
 
     DIR *d = opendir(path);
     // TODO: better error
     if (d == NULL) {
-        error(lineno(), current_file_name(), "Could not load package with path: '%s'", path);
+        error(lineno(), current_file, "Could not load package with path: '%s'", path);
     }
     struct dirent *ent = NULL;
     while ((ent = readdir(d)) != NULL) {
@@ -132,6 +150,14 @@ Package *load_package(Scope *scope, char *path) {
     all_packages = pkglist_append(all_packages, p);
     scope->packages = pkglist_append(scope->packages, p);
     return p;
+}
+
+Package *lookup_imported_package(Scope *scope, char *name) {
+    // go to root
+    while (scope->parent != NULL) {
+        scope = scope->parent;
+    }
+    return pkglist_find_by_name(scope->packages, name);
 }
 // --
 

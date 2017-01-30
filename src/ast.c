@@ -98,6 +98,9 @@ Ast *ast_alloc(AstType type) {
     case AST_IMPORT:
         ast->import = calloc(sizeof(AstImport), 1);
         break;
+    case AST_LOOKUP:
+        ast->lookup = calloc(sizeof(AstLookup), 1);
+        break;
     }
     return ast;
 }
@@ -263,6 +266,10 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         break;
     case AST_IMPORT:
         cp->import = ast->import;
+        break;
+    case AST_LOOKUP:
+        cp->lookup->left = ast->lookup->left;
+        cp->lookup->right = ast->lookup->right;
         break;
     }
     return cp;

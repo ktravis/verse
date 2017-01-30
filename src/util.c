@@ -67,3 +67,26 @@ char *package_name(char *path) {
     out[n] = '\0';
     return out;
 }
+
+// TODO: make this better
+// Return including slash?
+char *dir_name(char *fname) {
+    int last = 0;
+    int i = 0;
+    char c;
+    while ((c = fname[i]) != '\0') {
+        if (c == '/') {
+            if (fname[i+1] == '\0') {
+                return fname;
+            }
+            last = i + 1;
+        }
+        i++;
+    }
+    char *out = malloc(sizeof(char) * (last + 1));
+    for (int i = 0; i < last; i++) {
+        out[i] = fname[i];
+    }
+    out[last] = '\0';
+    return out;
+}
