@@ -1,13 +1,9 @@
 TODO
 ====
 
-- Reorganize files, factor out type-checking functions
-  - Sort-of done
 - Better error message for checking polymorphic function arg types
 - Parameterized struct types
 - Packages
-  - Add behavior for :: to do lookups in namespaces
-    - Sort-of done, semantics not final at all
   - Global vars in different packages may be referred to prior to initialization!
     Decide whether this is okay, and possibly change the order that init code is
     generated in (i.e. most nested import first?)
