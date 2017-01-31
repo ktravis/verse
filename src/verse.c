@@ -4,13 +4,13 @@
 #include <string.h>
 #include <assert.h>
 
-#include "src/ast.h"
-#include "src/codegen.h"
-#include "src/parse.h"
-#include "src/semantics.h"
-#include "src/types.h"
-#include "src/util.h"
-#include "src/var.h"
+#include "compiler/ast.h"
+#include "compiler/codegen.h"
+#include "compiler/parse.h"
+#include "compiler/semantics.h"
+#include "compiler/types.h"
+#include "compiler/util.h"
+#include "compiler/var.h"
 
 #include "prelude.h"
 

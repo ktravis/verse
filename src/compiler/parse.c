@@ -636,7 +636,16 @@ Ast *parse_statement(Tok *t) {
                     "Unexpected token '%s' while parsing import directive.",
                     tok_to_string(t));
             }
-            Ast *ast = parse_source_file(t->sval);
+            char *path = t->sval;
+            if (path[0] != '/') {
+                char *dir = dir_name(current_file_name());
+                int dirlen = strlen(dir);
+                int pathlen = strlen(path);
+                char *tmp = malloc(sizeof(char) * (dirlen + pathlen + 1));
+                snprintf(tmp, dirlen + pathlen + 1, "%s%s", dir, path);
+                path = tmp;
+            }
+            Ast *ast = parse_source_file(path);
             pop_file_source();
             return ast;
         }

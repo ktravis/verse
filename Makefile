@@ -1,25 +1,41 @@
-.PHONY=compiler
-CFLAGS=-Wall -std=gnu99 -g -Werror -Wno-error=unused-variable -Wfatal-errors
-OBJS=main.o src/ast.o src/codegen.o src/eval.o src/parse.o src/scope.o src/semantics.o src/token.o src/types.o src/util.o src/var.o src/polymorph.o src/typechecking.o
+.PHONY: all clean test
 
-compiler: bin/compiler
+BIN_DIR   = bin
+SRC_DIR   = src
+BUILD_DIR = $(BIN_DIR)
 
-bin/compiler: prelude.bin $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS)
+CFLAGS  = -Wall -std=gnu99 -g -Werror -Wno-error=unused-variable
+OBJECTS = $(SRC_DIR)/verse.o $(patsubst %.c, %.o, $(wildcard $(SRC_DIR)/*/*.c))
+HEADERS = $(wildcard $(SRC_DIR)/*.h)
 
-main.o: main.c prelude.bin
-	$(CC) $(CFLAGS) -c $< -o $@
+ALL: build
+
+build: default $(BIN_DIR)/includer $(BIN_DIR)/compiler
+
+default:
+	@mkdir -p $(BUILD_DIR)
+	@mkdir -p $(BIN_DIR)
+
+%.o: %.c $(HEADERS)
+	$(CC) $(CFLAGS) $(INC) $(LIB) -c $< -o $@
+
+$(SRC_DIR)/prelude.bin: $(SRC_DIR)/prelude.c $(BIN_DIR)/includer
+	mkdir -p bin
+	$(BIN_DIR)/includer $<
+
+$(BIN_DIR)/compiler: $(OBJECTS) $(SRC_DIR)/prelude.bin
+	$(CC) $(OBJECTS) $(INC) $(LIB) -o $@
+
+$(BIN_DIR)/includer: $(SRC_DIR)/binpack.c
+	mkdir -p $(BUILD_DIR)
+	$(CC) $^ -o $@
+	$(BIN_DIR)/includer $(SRC_DIR)/prelude.c
 
 clean:
-	@rm -rf bin prelude.bin prelude.h $(OBJS) 2>/dev/null
+	-rm -f src/*.o src/*/*.o
+	-rm -rf $(BUILD_DIR)
+	-rm -rf $(BIN_DIR)
+	-rm -f $(SRC_DIR)/prelude.bin $(SRC_DIR)/prelude.h
 
-test: compiler
+test: build
 	@for f in tests/*.vs; do echo "Testing $$f..."; ./verse $$f >/dev/null; done;
-
-bin/includer: binpack.c
-	mkdir -p bin
-	$(CC) $^ -o $@
-
-prelude.bin: prelude.c bin/includer
-	mkdir -p bin
-	bin/includer $<
