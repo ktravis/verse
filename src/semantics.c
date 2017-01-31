@@ -52,6 +52,7 @@ static Ast *parse_uop_semantics(Scope *scope, Ast *ast) {
 
 static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
     if (ast->dot->object->type == AST_IDENTIFIER) {
+        // Enum case
         Type *t = make_type(scope, ast->dot->object->ident->varname);
         Type *resolved = resolve_alias(t);
         if (resolved != NULL) {
@@ -76,6 +77,48 @@ static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
                 error(ast->line, ast->file, "Can't get member '%s' from non-enum type '%s'.",
                         ast->dot->member_name, ast->dot->object->ident->varname);
             }
+        }
+
+        // Package case
+        // maybe change this to have parse_semantics on the object return an
+        // "AST_PACKAGE" type? That way more can be done with it, more
+        // versatile?
+        Package *p = lookup_imported_package(scope, ast->dot->object->ident->varname);
+        Var *v = lookup_var(scope, ast->dot->object->ident->varname);
+        if (v == NULL && p != NULL) {
+            Var *v = lookup_var(p->scope, ast->dot->member_name);
+            if (v == NULL) {
+                error(ast->line, ast->file, "No declared identifier '%s' in package '%s'.", ast->dot->member_name, p->name);
+                // TODO better error for an enum here
+            }
+
+            if (v->proxy != NULL) { // USE-proxy
+                Type *resolved = resolve_alias(v->type);
+                if (resolved->comp == ENUM) { // proxy for enum
+                    for (int i = 0; i < resolved->en.nmembers; i++) {
+                        if (!strcmp(resolved->en.member_names[i], v->name)) {
+                            Ast *a = ast_alloc(AST_LITERAL);
+                            a->lit->lit_type = ENUM_LIT;
+                            a->lit->enum_val.enum_index = i;
+                            a->lit->enum_val.enum_type = resolved;
+                            a->var_type = v->type;
+                            return a;
+                        }
+                    }
+                    error(-1, "<internal>", "How'd this happen");
+                } else { // proxy for normal var
+                    int i = 0;
+                    assert(v->proxy != v);
+                    while (v->proxy) {
+                        assert(i++ < 666); // lol
+                        v = v->proxy; // this better not loop!
+                    }
+                }
+            }
+            ast = ast_alloc(AST_IDENTIFIER);
+            ast->ident->var = v;
+            ast->var_type = v->type;
+            return ast;
         }
     } 
     ast->dot->object = parse_semantics(scope, ast->dot->object);
@@ -273,6 +316,7 @@ void first_pass_type(Scope *scope, Type *t) {
     /*case POLY:*/
     case POLYDEF:
     case ALIAS:
+    case EXTERNAL:
         t->scope = scope;
         break;
     case FUNC:
@@ -374,6 +418,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         break;
     case AST_DOT:
         ast->dot->object = first_pass(scope, ast->dot->object);
+        // TODO: what about when LHS is a package and RHS is a type?
         break;
     case AST_ASSIGN:
     case AST_BINOP:
@@ -510,18 +555,12 @@ static Ast *parse_directive_semantics(Scope *scope, Ast *ast) {
         t->line = ast->line;
         t->typeinfo->typeinfo_target = ast->directive->object->var_type;
         t->var_type = typeinfo_ref();
-        /*register_type(scope, t->var_type);*/
-        /*errlog("registering: %s", t->var_type);*/
-        /*register_type(scope, ast->var_type);*/
         return t;
     } else if (!strcmp(n, "type")) {
         Ast *t = ast_alloc(AST_TYPEINFO);
         t->line = ast->line;
         t->typeinfo->typeinfo_target = ast->var_type;
         t->var_type = typeinfo_ref();
-        /*register_type(scope, t->var_type);*/
-        /*errlog("registering: %s", type_to_string(ast->var_type));*/
-        /*register_type(scope, ast->var_type);*/
         return t;
     }
 
@@ -535,7 +574,7 @@ static Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
 
     Type *resolved = resolve_alias(type);
     if (resolved->comp != STRUCT) {
-        error(ast->line, ast->file, "Type '%s' is not a struct.", lit->struct_val.name);
+        error(ast->line, ast->file, "Type '%s' is not a struct.", type_to_string(type));
     }
 
     ast->var_type = type;
@@ -1149,46 +1188,46 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         break;
     }
     // TODO: duplicate of AST_IDENTIFIER with minor changes
-    case AST_LOOKUP: {
-        Package *p = lookup_imported_package(scope, ast->lookup->left->ident->varname);
-        if (p == NULL) {
-            error(ast->line, ast->file, "Unknown package '%s'", ast->lookup->left->ident->varname);
-        }
+    case AST_LOOKUP:
+        /*Package *p = lookup_imported_package(scope, ast->lookup->left->ident->varname);*/
+        /*if (p == NULL) {*/
+            /*error(ast->line, ast->file, "Unknown package '%s'", ast->lookup->left->ident->varname);*/
+        /*}*/
 
-        Var *v = lookup_var(p->scope, ast->lookup->right);
-        if (v == NULL) {
-            error(ast->line, ast->file, "No declared identifier '%s' in package '%s'.", ast->lookup->right, p->name);
-            // TODO better error for an enum here
-        }
+        /*Var *v = lookup_var(p->scope, ast->lookup->right);*/
+        /*if (v == NULL) {*/
+            /*error(ast->line, ast->file, "No declared identifier '%s' in package '%s'.", ast->lookup->right, p->name);*/
+            /*// TODO better error for an enum here*/
+        /*}*/
 
-        if (v->proxy != NULL) { // USE-proxy
-            Type *resolved = resolve_alias(v->type);
-            if (resolved->comp == ENUM) { // proxy for enum
-                for (int i = 0; i < resolved->en.nmembers; i++) {
-                    if (!strcmp(resolved->en.member_names[i], v->name)) {
-                        Ast *a = ast_alloc(AST_LITERAL);
-                        a->lit->lit_type = ENUM_LIT;
-                        a->lit->enum_val.enum_index = i;
-                        a->lit->enum_val.enum_type = resolved;
-                        a->var_type = v->type;
-                        return a;
-                    }
-                }
-                error(-1, "<internal>", "How'd this happen");
-            } else { // proxy for normal var
-                int i = 0;
-                assert(v->proxy != v);
-                while (v->proxy) {
-                    assert(i++ < 666); // lol
-                    v = v->proxy; // this better not loop!
-                }
-            }
-        }
-        ast = ast_alloc(AST_IDENTIFIER);
-        ast->ident->var = v;
-        ast->var_type = v->type;
-        break;
-    }
+        /*if (v->proxy != NULL) { // USE-proxy*/
+            /*Type *resolved = resolve_alias(v->type);*/
+            /*if (resolved->comp == ENUM) { // proxy for enum*/
+                /*for (int i = 0; i < resolved->en.nmembers; i++) {*/
+                    /*if (!strcmp(resolved->en.member_names[i], v->name)) {*/
+                        /*Ast *a = ast_alloc(AST_LITERAL);*/
+                        /*a->lit->lit_type = ENUM_LIT;*/
+                        /*a->lit->enum_val.enum_index = i;*/
+                        /*a->lit->enum_val.enum_type = resolved;*/
+                        /*a->var_type = v->type;*/
+                        /*return a;*/
+                    /*}*/
+                /*}*/
+                /*error(-1, "<internal>", "How'd this happen");*/
+            /*} else { // proxy for normal var*/
+                /*int i = 0;*/
+                /*assert(v->proxy != v);*/
+                /*while (v->proxy) {*/
+                    /*assert(i++ < 666); // lol*/
+                    /*v = v->proxy; // this better not loop!*/
+                /*}*/
+            /*}*/
+        /*}*/
+        /*ast = ast_alloc(AST_IDENTIFIER);*/
+        /*ast->ident->var = v;*/
+        /*ast->var_type = v->type;*/
+        /*break;*/
+    /*}*/
     case AST_IDENTIFIER: {
         Var *v = lookup_var(scope, ast->ident->varname);
         if (v == NULL) {

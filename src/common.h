@@ -36,6 +36,7 @@ typedef enum TypeComp {
     REF,
     FUNC,
     STRUCT,
+    EXTERNAL,
     ENUM
 } TypeComp;
 
@@ -71,6 +72,11 @@ typedef struct Type {
             long length;
             struct Type *inner;
         } array;
+        // is this good, or do we need additional levels?
+        struct {
+            char *pkg_name;
+            char *type_name;
+        } ext;
         struct Type *inner; // slice / ref
         FnType fn;
         StructType st;

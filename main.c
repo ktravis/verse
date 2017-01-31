@@ -32,7 +32,8 @@ int main(int argc, char **argv) {
 
     Ast *root = parse_block(0);
     // Should this go somewhere else?
-    for (PkgList *list = all_loaded_packages(); list != NULL; list = list->next) {
+    PkgList *packages = all_loaded_packages();
+    for (PkgList *list = packages; list != NULL; list = list->next) {
         for (PkgFileList *files = list->item->files; files != NULL; files = files->next) {
             files->item->root = parse_semantics(list->item->scope, files->item->root);
         }
@@ -43,7 +44,8 @@ int main(int argc, char **argv) {
 
     printf("%.*s\n", prelude_length, prelude);
 
-    TypeList *used_types = reverse_typelist(root_scope->used_types);
+    /*TypeList *used_types = reverse_typelist(root_scope->used_types);*/
+    TypeList *used_types = reverse_typelist(all_used_types());
     TypeList *builtins = reverse_typelist(builtin_types());
 
     // declare structs

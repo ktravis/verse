@@ -159,6 +159,12 @@ Package *lookup_imported_package(Scope *scope, char *name) {
     }
     return pkglist_find_by_name(scope->packages, name);
 }
+
+static TypeList *used_types = NULL;
+
+TypeList *all_used_types() {
+    return used_types;
+}
 // --
 
 Scope *new_scope(Scope *parent) {
@@ -234,17 +240,20 @@ void _register_type(Scope *s, Type *t) {
     if (t == NULL) {
         return;
     }
-    for (TypeList *list = s->used_types; list != NULL; list = list->next) {
+    /*for (TypeList *list = s->used_types; list != NULL; list = list->next) {*/
+    for (TypeList *list = used_types; list != NULL; list = list->next) {
         if (list->item->id == t->id) {
             return;
         }
     }
     for (TypeList *list = builtin_types_scope->used_types; list != NULL; list = list->next) {
+    /*for (TypeList *list = used_types; list != NULL; list = list->next) {*/
         if (list->item->id == t->id) {
             return;
         }
     }
-    s->used_types = typelist_append(s->used_types, t);
+    /*s->used_types = typelist_append(s->used_types, t);*/
+    used_types = typelist_append(used_types, t);
     switch (t->comp) {
     case STRUCT:
         for (int i = 0; i < t->st.nmembers; i++) {

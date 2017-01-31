@@ -48,9 +48,11 @@ Type *make_static_array_type(Type *inner, long length);
 Type *make_array_type(Type *inner);
 Type *make_enum_type(Type *inner, int nmembers, char **member_names, long *member_values);
 Type *make_struct_type(int nmembers, char **member_names, Type **member_types);
+Type *make_external_type(char *pkg, char *name);
 
 Type *resolve_polymorph(Type *type);
 Type *resolve_alias(Type *type);
+Type *resolve_external(Type *type);
 TypeData *resolve_type_data(Type *t);
 
 int get_any_type_id();

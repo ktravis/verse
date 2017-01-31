@@ -103,6 +103,8 @@ Ast *parse_declaration(Tok *t) {
     return lhs; 
 }
 
+Ast *parse_struct_literal(Type *type);
+
 Ast *parse_expression(Tok *t, int priority) {
     Ast *ast = parse_primary(t);
 
@@ -125,6 +127,29 @@ Ast *parse_expression(Tok *t, int priority) {
             Ast *rhs = parse_expression(next_token(), 0);
             rhs = make_ast_binop(t->op, ast, rhs);
             ast = make_ast_assign(ast, rhs);
+        } else if (t->type == TOK_DCOLON) {
+            if (!(ast->type == AST_IDENTIFIER || ast->type == AST_DOT)) {
+                error(lineno(), current_file_name(), "Unexpected token '%s'.", tok_to_string(t));
+            }
+
+            t = next_token();
+            if (t->type == TOK_LBRACE) {
+                // TODO: if this can be refactored it should be
+                if (ast->type == AST_IDENTIFIER) {
+                    Type *t = make_type(NULL, ast->ident->varname);
+                    return parse_struct_literal(t);
+                } else if (ast->type == AST_DOT) {
+                    if (ast->dot->object->type != AST_IDENTIFIER) {
+                        error(lineno(), current_file_name(), "Struct literals can only be created on type names.");
+                    }
+                    Type *t = make_external_type(ast->dot->object->ident->varname, ast->dot->member_name);
+                    return parse_struct_literal(t);
+                } else {
+                    error(lineno(), current_file_name(), "Unexpected token '%s'.", tok_to_string(t));
+                }
+            } else {
+                error(lineno(), current_file_name(), "Unexpected token '%s' following '::'.", tok_to_string(t));
+            }
         } else if (t->type == TOK_OP) {
             if (t->op == OP_ASSIGN) {
                 ast = make_ast_assign(ast, parse_expression(next_token(), 0));
@@ -223,8 +248,21 @@ Type *parse_type(Tok *t, int poly_ok) {
         t = next_token();
     }
 
+    // is single dot sufficient?
     if (t->type == TOK_ID) {
-        type = make_type(NULL, t->sval);
+        char *n = t->sval;
+        t = next_token();
+        if (t->type == TOK_OP && t->op == OP_DOT) {
+            t = next_token();
+            if (t->type != TOK_ID) {
+                error(lineno(), current_file_name(), "Unexpected token '%s' while parsing package type.", tok_to_string(t));
+            }
+
+            type = make_external_type(n, t->sval);
+        } else {
+            unget_token(t);
+            type = make_type(NULL, n);
+        }
     } else if (t->type == TOK_POLY) {
         if (!poly_ok) {
             error(lineno(), current_file_name(), "Polymorph type definitions are not allowed outside of function arguments.");
@@ -678,14 +716,12 @@ Ast *parse_statement(Tok *t) {
     return ast;
 }
 
-// TODO: make this take a type instead
-Ast *parse_struct_literal(char *name) {
+Ast *parse_struct_literal(Type *type) {
     Ast *ast = ast_alloc(AST_LITERAL);
 
     ast->lit->lit_type = STRUCT_LIT;
-    ast->lit->struct_val.name = name;
+    ast->lit->struct_val.type = type;
     ast->lit->struct_val.nmembers = 0;
-    ast->lit->struct_val.type = make_type(NULL, name);
 
     if (peek_token()->type == TOK_RBRACE) {
         next_token();
@@ -789,28 +825,6 @@ Ast *parse_primary(Tok *t) {
     case TOK_STR:
         return make_ast_string(t->sval);
     case TOK_ID: {
-        Tok *next = next_token();
-        if (next == NULL) {
-            error(lineno(), current_file_name(), "Unexpected end of input.");
-        }
-        if (next->type == TOK_DCOLON) {
-            // either namespace or struct literal
-            next = next_token();
-            if (next->type == TOK_LBRACE) {
-                return parse_struct_literal(t->sval);
-            } else if (next->type == TOK_ID) {
-                Ast *id = ast_alloc(AST_IDENTIFIER);
-                id->ident->varname = t->sval;
-                Ast *l = ast_alloc(AST_LOOKUP);
-                l->lookup->left = id;
-                l->lookup->right = next->sval;
-                return l;
-            } else {
-                error(lineno(), current_file_name(), "Unexpected token '%s' following '::'.", tok_to_string(next));
-            }
-        } else {
-            unget_token(next);
-        }
         Ast *id = ast_alloc(AST_IDENTIFIER);
         id->ident->var = NULL;
         id->ident->varname = t->sval;

@@ -44,6 +44,7 @@ Var *find_builtin_var(char *name);
 
 void init_builtin_types();
 TypeList *builtin_types();
+TypeList *all_used_types();
 
 PkgList *all_loaded_packages();
 Package *load_package(char *current_file, Scope *scope, char *path);

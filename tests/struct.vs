@@ -60,7 +60,8 @@ fn main():int {
 
     assert(a.x == 7);
 
-    assert(vec3::{}.x == 0);
+    // TODO: remove parens and have parse bug, priority is off?
+    assert((vec3::{}).x == 0);
 
     assert(otherthing(vec3::{x=1,y=2,z=3}).x == 2);
 

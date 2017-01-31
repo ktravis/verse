@@ -35,6 +35,7 @@ Type *copy_type(Scope *scope, Type *t) {
     case ALIAS:
     case POLYDEF:
     case PARAMS:
+    case EXTERNAL:
         break;
     case STATIC_ARRAY:
         type->array.inner = copy_type(scope, t->array.inner);
@@ -147,6 +148,14 @@ Type *make_struct_type(int nmembers, char **member_names, Type **member_types) {
     return s;
 }
 
+Type *make_external_type(char *pkg, char *name) {
+    Type *t = malloc(sizeof(Type));
+    t->comp = EXTERNAL;
+    t->ext.pkg_name = pkg;
+    t->ext.type_name = name;
+    return t;
+}
+
 TypeList *typelist_append(TypeList *list, Type *t) {
     TypeList *tl = calloc(sizeof(TypeList), 1);
     tl->item = t;
@@ -210,6 +219,7 @@ int precision_loss_float(Type *t, double fval) {
 
 Type *lookup_type(Scope *s, char *name);
 Type *lookup_local_type(Scope *s, char *name);
+Package *lookup_imported_package(Scope *s, char *name);
 
 Type *resolve_polymorph(Type *type) {
     for (;;) {
@@ -239,6 +249,21 @@ Type *resolve_polymorph(Type *type) {
     return type;
 }
 
+Type *resolve_external(Type *type) {
+    assert(type->comp == EXTERNAL);
+    assert(type->scope != NULL);
+
+    Package *p = lookup_imported_package(type->scope, type->ext.pkg_name); 
+    if (p == NULL) {
+        // TODO: decide on how this error behavior should work, where is it
+        // caught, etc
+        return NULL;
+    }
+
+    type = make_type(p->scope, type->ext.type_name);
+    return type;
+}
+
 // TODO: this could be better
 Type *resolve_alias(Type *type) {
     if (type == NULL) {
@@ -246,14 +271,13 @@ Type *resolve_alias(Type *type) {
     }
     type = resolve_polymorph(type);
     Scope *s = type->scope;
+    if (type->comp == EXTERNAL) {
+        return resolve_alias(resolve_external(type));
+    }
     if (s == NULL || type->comp != ALIAS) {
         return type;
     }
-    /*Type *t = lookup_local_type(s, type->name);*/
-    /*while (t == NULL && s->parent != NULL) {*/
-        /*s = s->parent;*/
-        /*t = lookup_local_type(s, type->name);*/
-    /*}*/
+
     Type *t = lookup_type(s, type->name);
     if (t != NULL && t->comp == ALIAS) {
         return resolve_alias(t);
@@ -538,6 +562,12 @@ char *type_to_string(Type *t) {
         strcat(dest, "}");
         return dest;
     }
+    case EXTERNAL: {
+        int len = strlen(t->ext.pkg_name) + strlen(t->ext.type_name) + 2;
+        char *name = malloc(sizeof(char) * len);
+        snprintf(name, len, "%s.%s", t->ext.pkg_name, t->ext.type_name);
+        return name;
+    }
     case ENUM:
         return "enum";
     default:
@@ -730,7 +760,6 @@ void init_types(Scope *scope) {
     structmember_type_id = resolve_alias(structmember_type)->id;
 
     Type *structmember_array_type = make_array_type(structmember_type);
-    /*scope->used_types = typelist_append(scope->used_types, structmember_array_type);*/
 
     member_names = malloc(sizeof(char*)*4);
     member_names[0] = "id";
@@ -744,9 +773,7 @@ void init_types(Scope *scope) {
     structtype_type_id = resolve_alias(structtype_type)->id;
 
     Type *string_array_type = make_array_type(string_type);
-    /*scope->used_types = typelist_append(scope->used_types, string_array_type);*/
     Type *int64_array_type = make_array_type(int64_type);
-    /*scope->used_types = typelist_append(scope->used_types, int64_array_type);*/
 
     member_names = malloc(sizeof(char*)*6);
     member_names[0] = "id";
@@ -805,10 +832,6 @@ void init_types(Scope *scope) {
     member_types[1] = typeinfo_ref_type;
     any_type = define_type(scope, "Any", make_struct_type(2, member_names, member_types));
     any_type_id = resolve_alias(any_type)->id;
-
-    // TODO: do this better I suppose
-    /*scope->used_types = typelist_append(scope->used_types, typeinfo_ref_type);*/
-    /*scope->used_types = typelist_append(scope->used_types, typeinfo_array_type);*/
 
     types_initialized = 1;
 }

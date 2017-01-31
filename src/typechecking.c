@@ -8,6 +8,12 @@
 int check_type(Type *a, Type *b) {
     /*a = resolve_polymorph(a);*/
     /*b = resolve_polymorph(b);*/
+    if (a->comp == EXTERNAL) {
+        a = resolve_external(a);
+    }
+    if (b->comp == EXTERNAL) {
+        b = resolve_external(b);
+    }
     if (a->comp != b->comp) {
         if (!((a->comp == ALIAS && b->comp == POLYDEF) ||
               (a->comp == POLYDEF && b->comp == ALIAS))) {
@@ -174,6 +180,7 @@ int match_polymorph(Scope *scope, Type *expected, Type *got) {
     /*case POLY:*/
     case BASIC:
     case ENUM:
+    case EXTERNAL:
     case ALIAS:
         error(-1, "internal", "Cmon mang");
         return 0;

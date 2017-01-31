@@ -42,11 +42,9 @@ typedef struct AstLiteral {
         double  float_val;
         char    *string_val;
         struct {
-            char *name;
             Type *type;
             int  nmembers;
             char **member_names;
-
             Ast **member_exprs;
         } struct_val;
         struct {
