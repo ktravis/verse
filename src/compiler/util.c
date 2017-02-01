@@ -1,6 +1,8 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "util.h"
 
@@ -89,4 +91,29 @@ char *dir_name(char *fname) {
     }
     out[last] = '\0';
     return out;
+}
+
+char *executable_path() {
+    char buf[1024];
+    ssize_t n = readlink("/proc/self/exe", buf, 1024);
+    char *out = malloc(sizeof(char) * (n + 1));
+
+    for (int i = 0; i < n; i++) {
+        out[i] = buf[i];
+    }
+    out[n] = '\0';
+    return out;
+}
+
+char *root_from_binary() {
+    char *bin = executable_path();
+    char *bin_dir = dir_name(bin);
+    free(bin);
+    // remove trailing '/'
+    if (bin_dir[strlen(bin_dir) - 1] == '/') {
+        bin_dir[strlen(bin_dir) - 1] = '\0';
+    }
+    char *root_dir = dir_name(bin_dir);
+    free(bin_dir);
+    return root_dir;
 }

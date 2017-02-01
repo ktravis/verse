@@ -889,8 +889,8 @@ void compile(Scope *scope, Ast *ast) {
         case BOOL:
             printf("%d", (unsigned char)ast->lit->int_val);
             break;
-        // TODO strlen is wrong for escaped chars \t etc
         case STRING:
+            // TODO strlen is wrong for escaped chars \t etc
             printf("init_string(\"");
             print_quoted_string(ast->lit->string_val);
             printf("\", %d)", (int)strlen(ast->lit->string_val));
@@ -965,6 +965,25 @@ void compile(Scope *scope, Ast *ast) {
         break;
     }
     case AST_SLICE: {
+        Type *obj_type = resolve_alias(ast->slice->object->var_type);
+        if (obj_type->comp == BASIC && obj_type->data->base == STRING_T) {
+            printf("string_slice(");
+            compile(scope, ast->slice->object);
+            printf(",");
+            if (ast->slice->offset != NULL) {
+                compile(scope, ast->slice->offset);
+            } else {
+                printf("0");
+            }
+            printf(",");
+            if (ast->slice->length != NULL) {
+                compile(scope, ast->slice->length);
+            } else {
+                printf("-1");
+            }
+            printf(")");
+            break;
+        }
         printf("(struct array_type){.data=");
         if (needs_temp_var(ast->slice->object)) {
             emit_temp_var(scope, ast->slice->object, 0);
@@ -972,7 +991,6 @@ void compile(Scope *scope, Ast *ast) {
             compile_static_array(scope, ast->slice->object);
         }
 
-        Type *obj_type = resolve_alias(ast->slice->object->var_type);
         if (ast->slice->offset != NULL) {
             printf("+(");
             compile(scope, ast->slice->offset);
@@ -1083,7 +1101,10 @@ void compile(Scope *scope, Ast *ast) {
             if (needs_temp_var(ast->index->object)) {
                 emit_temp_var(scope, ast->index->object, 0);
             } else {
-                compile_static_array(scope, ast->index->object);
+                // TODO: need string_as_array here?
+                printf("string_as_array(");
+                compile(scope, ast->index->object);
+                printf(")");
             }
 
             printf(".bytes)[");

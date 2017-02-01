@@ -87,6 +87,15 @@ fn main():int {
         }
     }
 
+    s := "some kinda big ol' string";
+
+    s1 := s[2:1];
+    assert(s1 == "m");
+    s1 = s[:];
+    assert(s == s1);
+
+    assert("\r\n"[0] == 13);
+
     println("Tests passed.");
 
     return 0;

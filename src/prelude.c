@@ -84,6 +84,21 @@ int streq(struct string_type left, struct string_type right) {
     return 1;
 }
 
+struct string_type string_slice(struct string_type str, int offset, int len) {
+    if (len == -1) {
+        len = str.length - offset;
+    } else if (offset + len > str.length) {
+        len = str.length - offset;
+    }
+    if (len <= 0) {
+        return (struct string_type){.bytes=NULL, .length=0};
+    }
+
+    str.bytes += offset;
+    str.length = len;
+    return copy_string(str);
+}
+
 struct array_type string_as_array(struct string_type str) {
     struct array_type arr = {.data=str.bytes, .length=str.length};
     return arr;

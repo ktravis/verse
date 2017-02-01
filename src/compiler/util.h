@@ -7,5 +7,7 @@ int escaped_strlen(const char *str);
 void errlog(char *fmt, ...);
 char *package_name(char *path);
 char *dir_name(char *fname);
+char *executable_path();
+char *root_from_binary();
 
 #endif

@@ -217,8 +217,8 @@ static Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
         int numeric = is_numeric(lt) && is_numeric(rt);
         int strings = is_string(lt) && is_string(rt);
         if (!numeric && !strings) {
-            error(ast->line, ast->file, "Operator '%s' is valid only for numeric or string arguments, not for type '%s'.",
-                    op_to_str(ast->binary->op), type_to_string(lt));
+            error(ast->line, ast->file, "Operator '%s' is not valid between types '%s' and '%s'.",
+                    op_to_str(ast->binary->op), type_to_string(lt), type_to_string(rt));
         }
         break;
     }
@@ -705,6 +705,9 @@ static Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
         ast->var_type = make_array_type(resolved->inner);
     } else if (resolved->comp == STATIC_ARRAY) {
         ast->var_type = make_array_type(resolved->array.inner);
+    } else if (resolved->comp == BASIC && resolved->data->base == STRING_T) {
+        // TODO: is this right?
+        ast->var_type = a;
     } else {
         error(ast->line, ast->file, "Cannot slice non-array type '%s'.", type_to_string(a));
     }
@@ -712,6 +715,7 @@ static Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
     if (slice->offset != NULL) {
         slice->offset = parse_semantics(scope, slice->offset);
 
+        // TODO: checks here for string literal
         if (slice->offset->type == AST_LITERAL && resolved->comp == STATIC_ARRAY) {
             // TODO check that it's an int?
             long o = slice->offset->lit->int_val;

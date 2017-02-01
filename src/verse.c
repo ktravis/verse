@@ -25,6 +25,10 @@ int main(int argc, char **argv) {
         printf("Usage:\n\t%s [source.vs]\n", argv[0]);
         exit(1);
     }
+
+    // if env var is set, use that
+    // else:
+    char *verse_root = root_from_binary();
     
     Scope *root_scope = new_scope(NULL);
     init_builtin_types();
