@@ -3,6 +3,7 @@ TODO
 
 - Better error message for checking polymorphic function arg types
 - Parameterized struct types
+- "unwise" cast to silence compiler error
 - Packages
   - Global vars in different packages may be referred to prior to initialization!
     Decide whether this is okay, and possibly change the order that init code is
