@@ -1,7 +1,6 @@
-// made this an include for now
-#include "syscall_amd64.vs";
+#import "syscall";
 
 fn main():int {
-    write(1,  "Hello\n", 6);
+    syscall.write(1,  "Hello\n", 6);
     return 0;
 }

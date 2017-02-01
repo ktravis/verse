@@ -89,14 +89,21 @@ static PkgList *pkglist_append(PkgList *list, Package *p) {
     return list;
 }
 
+static char *verse_root = NULL;
+
 // TODO: error when path is NULL
 Package *load_package(char *current_file, Scope *scope, char *path) {
+    // TODO: hardcoded, this should also read env var if available
+    if (verse_root == NULL) {
+        // if env var is set, use that
+        // else:
+        verse_root = root_from_binary();
+    }
     if (path[0] != '/') {
-        char *dir = dir_name(current_file);
-        int dirlen = strlen(dir);
+        int dirlen = strlen(verse_root) + 4; // + "src/"
         int pathlen = strlen(path);
         char *tmp = malloc(sizeof(char) * (dirlen + pathlen + 1));
-        snprintf(tmp, dirlen + pathlen + 1, "%s%s", dir, path);
+        snprintf(tmp, dirlen + pathlen + 1, "%ssrc/%s", verse_root, path);
         path = tmp;
     }
     Package *p = package_previously_loaded(path);
@@ -125,8 +132,15 @@ Package *load_package(char *current_file, Scope *scope, char *path) {
         if (ent->d_type != DT_REG) {
             continue;
         }
+        int namelen = strlen(ent->d_name);
+        if (namelen < 4) {
+            continue;
+        }
+        if (strcmp(ent->d_name + namelen - 3, ".vs")) {
+            continue;
+        }
         // TODO: check that file ends with supported extension?
-        int len = strlen(path) + strlen(ent->d_name);
+        int len = strlen(path) + namelen;
         char *filepath = malloc(sizeof(char) * (len + 2));
         snprintf(filepath, len + 2, "%s/%s", path, ent->d_name);
 
@@ -144,6 +158,9 @@ Package *load_package(char *current_file, Scope *scope, char *path) {
         }
         list->next = p->files;
         p->files = list;
+    }
+    if (p->files == NULL) {
+        error(lineno(), current_file, "No verse source files found in package '%s' ('%s').", p->name, p->path);
     }
     closedir(d);
 

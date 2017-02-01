@@ -1,5 +1,4 @@
-// TODO: fix this (absolute package path from src root)
-#import "../src/fmt"
+#import "fmt"
 
 fn test1() {
     fmt.printf("%s", "Hello", "There");
