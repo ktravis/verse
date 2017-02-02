@@ -12,29 +12,8 @@ fn test2() {
     /*printf("%s", a, b);*/
 }
 
-fn test3() {
-    fmt.gprintf("%s", "Hello", "There");
-}
-
-fn test4() {
-    a:string = "Hello";
-    b:string = "There";
-    fmt.gprintf("%s", a, b);
-}
-
-fn test5() {
-    // causes free to be emitted for both 'scopes' of conditional
-    /*if 1 == 1 {
-        s:string = "Rolo";
-    } else {
-        printf("%s", "Polo");
-    }*/
-}
-
 fn main():int {
-    //test1();
+    test1();
     //test2();
-    test3();
-    //test4();
     return 0;
 }

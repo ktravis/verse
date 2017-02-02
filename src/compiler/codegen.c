@@ -54,6 +54,7 @@ int get_struct_type_id(Type *type) {
 
 void emit_temp_var(Scope *scope, Ast *ast, int ref) {
     Var *v = find_temp_var(scope, ast);
+    assert(v != NULL);
     v->initialized = 1;
     printf("(_tmp%d = ", v->id);
     compile(scope, ast);
@@ -720,7 +721,10 @@ void compile_ref(Scope *scope, Ast *ast) {
             printf("&");
             compile(scope, ast);
         } else {
-            emit_temp_var(scope, ast, 1);
+            // TODO: is this a leak? not sure why temp var was emitted here
+            /*emit_temp_var(scope, ast, 1);*/
+            printf("&");
+            compile(scope, ast);
         }
     } else {
         printf("&");
@@ -1030,6 +1034,8 @@ void compile(Scope *scope, Ast *ast) {
         if (ast->ret->expr != NULL) {
             emit_type(ast->ret->expr->var_type);
             printf("_ret = ");
+            /*if (is_any(ast->ret->expr->var_type) && !is_any(ast->ret->expr->var_type)) {*/
+                /*emit_any_wrapper(scope, ast->ret->expr);*/
             if (is_lvalue(ast->ret->expr)) {
                 emit_copy(scope, ast->ret->expr);
             } else {
@@ -1043,13 +1049,7 @@ void compile(Scope *scope, Ast *ast) {
         indent();
         printf("return");
         if (ast->ret->expr != NULL) {
-            // why was this here?
-            /*if (ast->ret->expr->type == AST_IDENTIFIER) {*/
-                /*printf(" ");*/
-                /*compile(scope, ast->ret->expr);*/
-            /*} else {*/
-                printf(" _ret");
-            /*}*/
+            printf(" _ret");
         }
         break;
     case AST_BREAK:

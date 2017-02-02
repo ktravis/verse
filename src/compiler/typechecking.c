@@ -72,6 +72,10 @@ int check_type(Type *a, Type *b) {
 }
 
 int can_cast(Type *from, Type *to) {
+    if (is_any(to)) {
+        return 1;
+    }
+
     if (resolve_alias(from)->comp == ENUM) {
         from = resolve_alias(from);
         return can_cast(from->en.inner, to);
@@ -98,13 +102,28 @@ int can_cast(Type *from, Type *to) {
         to = resolve_alias(to);
         switch (from->data->base) {
         case BASEPTR_T:
-            return (to->comp == BASIC && to->data->base == BASEPTR_T) || to->comp == REF;
+            if (to->comp == BASIC) {
+                switch (to->data->base) {
+                case BASEPTR_T:
+                    return 1;
+                case UINT_T:
+                case INT_T:
+                    return to->data->size == 8;
+                default:
+                    break;
+                }
+            } else if (to->comp == REF) {
+                return 1;
+            }
+            return 0;
         case UINT_T:
             if (to->comp != BASIC) {
                 return 0;
             }
-            if (to->data->base == INT_T && to->data->size > from->data->size) { // TODO should we allow this? i.e. uint8 -> int
+            if (to->data->base == INT_T && to->data->size > from->data->size) {
                 return 1;
+            } else if (to->data->base == BASEPTR_T) {
+                return from->data->size == 8;
             }
             return from->data->base == to->data->base;
         case INT_T:
@@ -112,12 +131,10 @@ int can_cast(Type *from, Type *to) {
                 return 1;
             }
             if (to->comp == BASIC) {
-
                 if (to->data->base == BASEPTR_T) {
                     return from->data->size == 8;
                 } else if (to->data->base == FLOAT_T) {
                     return to->data->size >= from->data->size;
-                /*} else if (to->data->base == UINT_T) {*/
                 } else if (to->data->base == INT_T) {
                     return from->data->size <= to->data->size;
                 }
@@ -230,37 +247,63 @@ int type_equality_comparable(Type *a, Type *b) {
     return check_type(a, b); // TODO: something different here
 }
 
-int can_coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
+Ast *any_cast(Scope *scope, Ast *a) {
+    assert(!is_any(a->var_type));
+
+    if (!is_lvalue(a)) {
+        allocate_ast_temp_var(scope, a);
+    }
+    Ast *c = ast_alloc(AST_CAST);
+    c->cast->cast_type = get_any_type();
+    c->cast->object = a;
+    c->line = a->line;
+    c->file = a->file;
+    c->var_type = c->cast->cast_type;
+    return c;
+}
+
+static Ast *number_cast(Scope *scope, Ast *a, Type *num_type) {
+    Ast *c = ast_alloc(AST_CAST);
+    c->cast->cast_type = num_type;
+    c->cast->object = a;
+    c->var_type = num_type;
+    return c;
+}
+
+Ast *coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
     if (is_any(to)) {
-        if (!is_any(from->var_type) && !is_lvalue(from)) {
-            allocate_ast_temp_var(scope, from);
+        if (is_any(from->var_type)) {
+            return from;
         }
-        return 1;
+        return any_cast(scope, from);
     }
     
     // (TODO: why was this comment here?)
     // resolve polymorphs
     Type *t = resolve_alias(to);
     if (t->comp == ARRAY) {
-        if (from->var_type->comp == ARRAY) {
-            return check_type(t->inner, from->var_type->inner);
-        } else if (from->var_type->comp == STATIC_ARRAY) {
+        if (from->var_type->comp == STATIC_ARRAY) {
             t = t->inner;
             Type *from_type = from->var_type->array.inner;
             while (from_type->comp == STATIC_ARRAY && t->comp == ARRAY) {
                 t = t->inner;
                 from_type = from_type->array.inner;
             }
-            return check_type(t, from_type);
+            if (!check_type(t, from_type)) {
+                return NULL;
+            }
+            // TODO: double check this is right
+            return from;
         }
     }
     if (from->type == AST_LITERAL) {
+        // TODO: string literal of length 1 -> u8
         if (is_numeric(t) && is_numeric(from->var_type)) {
             int loss = 0;
             if (from->lit->lit_type == INTEGER) {
                 if (t->data->base == UINT_T) {
                     if (from->lit->int_val < 0) {
-                        return 0;
+                        return NULL;
                     }
                     loss = precision_loss_uint(t, from->lit->int_val);
                 } else {
@@ -268,44 +311,59 @@ int can_coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
                 }
             } else if (from->lit->lit_type == FLOAT) {
                 if (t->data->base != FLOAT_T) {
-                    return 0;
+                    return NULL;
                 }
                 loss = precision_loss_float(t, from->lit->float_val);
             }
             if (!loss) {
-                return 1;
+                return number_cast(scope, from, to);
             }
         } else {
             if (can_cast(from->var_type, t)) {
-                return 1;
+                if (!is_lvalue(from)) {
+                    allocate_ast_temp_var(scope, from);
+                }
+                Ast *c = ast_alloc(AST_CAST);
+                c->cast->cast_type = to;
+                c->cast->object = from;
+                c->line = from->line;
+                c->file = from->file;
+                c->var_type = t;
+                return c;
             }
         }
     }
-    return 0;
+    return NULL;
 }
-int can_coerce_type(Scope *scope, Type *to, Ast *from) {
+
+Ast *coerce_type(Scope *scope, Type *to, Ast *from) {
     if (is_any(to)) {
-        if (!is_any(from->var_type) && !is_lvalue(from)) {
-            allocate_ast_temp_var(scope, from);
+        if (is_any(from->var_type)) {
+            return from;
         }
-        return 1;
+        return any_cast(scope, from);
     }
     
+    // (TODO: why was this comment here?)
+    // resolve polymorphs
     Type *t = resolve_alias(to);
     if (t->comp == ARRAY) {
-        if (from->var_type->comp == ARRAY) {
-            return check_type(t->inner, from->var_type->inner);
-        } else if (from->var_type->comp == STATIC_ARRAY) {
+        if (from->var_type->comp == STATIC_ARRAY) {
             t = t->inner;
             Type *from_type = from->var_type->array.inner;
             while (from_type->comp == STATIC_ARRAY && t->comp == ARRAY) {
                 t = t->inner;
                 from_type = from_type->array.inner;
             }
-            return check_type(t, from_type);
+            if (!check_type(t, from_type)) {
+                return NULL;
+            }
+            // TODO: double check this is right
+            return from;
         }
     }
     if (from->type == AST_LITERAL) {
+        // TODO: string literal of length 1 -> u8
         if (is_numeric(t) && is_numeric(from->var_type)) {
             int loss = 0;
             if (from->lit->lit_type == INTEGER) {
@@ -321,9 +379,7 @@ int can_coerce_type(Scope *scope, Type *to, Ast *from) {
                 }
             } else if (from->lit->lit_type == FLOAT) {
                 if (t->data->base != FLOAT_T) {
-                    error(from->line, from->file,
-                        "Cannot coerce floating point literal into integer type '%s'.",
-                        type_to_string(to));
+                    return NULL;
                 }
                 loss = precision_loss_float(t, from->lit->float_val);
             }
@@ -332,10 +388,19 @@ int can_coerce_type(Scope *scope, Type *to, Ast *from) {
                     "Cannot coerce literal value of type '%s' into type '%s' due to precision loss.",
                     type_to_string(from->var_type), type_to_string(to));
             }
-            return 1;
+            return number_cast(scope, from, to);
         } else {
             if (can_cast(from->var_type, t)) {
-                return 1;
+                if (!is_lvalue(from)) {
+                    allocate_ast_temp_var(scope, from);
+                }
+                Ast *c = ast_alloc(AST_CAST);
+                c->cast->cast_type = to;
+                c->cast->object = from;
+                c->line = from->line;
+                c->file = from->file;
+                c->var_type = t;
+                return c;
             }
 
             error(from->line, from->file,
@@ -343,5 +408,5 @@ int can_coerce_type(Scope *scope, Type *to, Ast *from) {
                 type_to_string(from->var_type), type_to_string(to));
         }
     }
-    return 0;
+    return NULL;
 }

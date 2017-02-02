@@ -6,8 +6,9 @@
 
 int check_type(Type *a, Type *b);
 int can_cast(Type *from, Type *to);
-int can_coerce_type_no_error(Scope *scope, Type *to, Ast *from);
-int can_coerce_type(Scope *scope, Type *to, Ast *from);
+Ast *any_cast(Scope *scope, Ast *ast);
+Ast *coerce_type_no_error(Scope *scope, Type *to, Ast *from);
+Ast *coerce_type(Scope *scope, Type *to, Ast *from);
 
 int match_polymorph(Scope *scope, Type *expected, Type *got);
 

@@ -189,15 +189,20 @@ static Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
     Type *lt = ast->binary->left->var_type;
     Type *rt = ast->binary->right->var_type;
 
-    if (!(check_type(lt, rt) || can_coerce_type(scope, lt, ast->binary->right))) {
-        error(ast->binary->left->line, ast->binary->left->file,
-            "LHS of assignment has type '%s', while RHS has type '%s'.",
-            type_to_string(lt), type_to_string(rt));
-    }
 
     if (is_dynamic(ast->binary->left->var_type)) {
         allocate_ast_temp_var(scope, ast->binary->right);
     }
+
+    if (!check_type(lt, rt)) {
+        ast->binary->right = coerce_type(scope, lt, ast->binary->right);
+        if (ast->binary->right == NULL) {
+            error(ast->binary->left->line, ast->binary->left->file,
+                "LHS of assignment has type '%s', while RHS has type '%s'.",
+                type_to_string(lt), type_to_string(rt));
+        }
+    }
+
     ast->var_type = base_type(VOID_T);
     return ast;
 }
@@ -249,14 +254,18 @@ static Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
         break;
     case OP_EQUALS:
     case OP_NEQUALS:
-        if (!(check_type(lt, rt) || can_coerce_type(scope, lt, ast->binary->right))) {
-            error(ast->line, ast->file, "Cannot compare equality of non-comparable types '%s' and '%s'.",
-                    type_to_string(lt), type_to_string(rt));
+        if (!check_type(lt, rt)) {
+            ast->binary->right = coerce_type(scope, lt, ast->binary->right);
+            if (ast->binary->right == NULL) {
+                error(ast->line, ast->file, "Cannot compare equality of non-comparable types '%s' and '%s'.",
+                        type_to_string(lt), type_to_string(rt));
+            }
         }
         break;
     }
 
     if (l->type == AST_LITERAL && r->type == AST_LITERAL) {
+        // TODO: this doesn't work for string slices
         return eval_const_binop(ast);
     }
 
@@ -288,8 +297,13 @@ static Ast *parse_enum_decl_semantics(Scope *scope, Ast *ast) {
                 error(exprs[i]->line, exprs[i]->file, "Cannot initialize enum '%s' member '%s' with non-integer expression.", et->name, et->en.member_names[i]);
             }
             Type *e = exprs[i]->var_type;
-            if (!(check_type(et->en.inner, e) || can_coerce_type(scope, et->en.inner, exprs[i]))) {
-                error(exprs[i]->line, exprs[i]->file, "Cannot initialize enum '%s' member '%s' with expression of type '%s' (base is '%s').", et->name, et->en.member_names[i], type_to_string(e), type_to_string(et->en.inner));
+
+            if (!check_type(et->en.inner, e)) {
+                if (coerce_type_no_error(scope, et->en.inner, exprs[i]) == NULL) {
+                    error(exprs[i]->line, exprs[i]->file,
+                        "Cannot initialize enum '%s' member '%s' with expression of type '%s' (base is '%s').",
+                        et->name, et->en.member_names[i], type_to_string(e), type_to_string(et->en.inner));
+                }
             }
             val = exprs[i]->lit->int_val;
         }
@@ -594,12 +608,16 @@ static Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
         }
 
         Ast *expr = parse_semantics(scope, lit->struct_val.member_exprs[i]);
-        lit->struct_val.member_exprs[i] = expr;
         Type *t = resolved->st.member_types[i];
-        if (!check_type(t, expr->var_type) && !can_coerce_type(scope, t, expr)) {
-            error(ast->line, ast->file, "Type mismatch in struct literal '%s' field '%s', expected %s but got %s.",
-                type_to_string(type), lit->struct_val.member_names[i], type_to_string(t), type_to_string(expr->var_type));
+
+        if (!check_type(t, expr->var_type)) {
+            expr = coerce_type(scope, t, expr);
+            if (expr == NULL) {
+                error(ast->line, ast->file, "Type mismatch in struct literal '%s' field '%s', expected %s but got %s.",
+                    type_to_string(type), lit->struct_val.member_names[i], type_to_string(t), type_to_string(expr->var_type));
+            }
         }
+        lit->struct_val.member_exprs[i] = expr;
     }
     return ast;
 }
@@ -802,10 +820,13 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
                 }
             }
 
-            // TODO: type-checking
-            if (!(check_type(lt, init->var_type) || can_coerce_type(scope, lt, init))) {
-                error(ast->line, ast->file, "Cannot assign value '%s' to type '%s'.",
-                        type_to_string(init->var_type), type_to_string(lt));
+            if (!check_type(lt, init->var_type)) {
+                init = coerce_type(scope, lt, init);
+                if (init == NULL) {
+                    error(ast->line, ast->file, "Cannot assign value '%s' to type '%s'.",
+                            type_to_string(decl->init->var_type), type_to_string(lt));
+                }
+                decl->init = init;
             }
         }
 
@@ -851,17 +872,13 @@ static void verify_arg_types(Scope *scope, Ast *call, TypeList *expected_types, 
         Ast *arg = arg_vals->item;
         Type *expected = expected_types->item;
 
-        if (!(check_type(arg->var_type, expected) || can_coerce_type(scope, expected, arg))) {
-            error(call->line, call->file, "Expected argument (%d) of type '%s', but got type '%s'.",
-                i, type_to_string(expected), type_to_string(arg->var_type));
-        }
-
-        if (is_any(expected)) {
-            if (!is_any(arg->var_type) && !is_lvalue(arg)) {
-                if (needs_temp_var(arg)) {
-                    allocate_ast_temp_var(scope, arg);
-                }
+        if (!check_type(arg->var_type, expected)) {
+            arg = coerce_type(scope, expected, arg);
+            if (arg == NULL) {
+                error(call->line, call->file, "Expected argument (%d) of type '%s', but got type '%s'.",
+                    i, type_to_string(expected), type_to_string(arg->var_type));
             }
+            arg_vals->item = arg;
         }
 
         arg_vals = arg_vals->next;
@@ -1285,14 +1302,17 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file, "Unknown cast result type '%s'", type_to_string(cast->cast_type));
         }
 
-        // TODO: might need to check for needing tempvar in codegen
-        if (!(can_coerce_type(scope, cast->cast_type, cast->object) || can_cast(cast->object->var_type, cast->cast_type))) {
-            error(ast->line, ast->file, "Cannot cast type '%s' to type '%s'.", type_to_string(cast->object->var_type), type_to_string(cast->cast_type));
-        }
 
-        if (is_any(cast->cast_type) && !is_any(cast->object->var_type)) {
-            if (!is_lvalue(cast->object)) {
-                allocate_ast_temp_var(scope, cast->object);
+        if (check_type(cast->object->var_type, cast->cast_type)) {
+            error(ast->line, ast->file, "Unnecessary cast, types are both '%s'.", type_to_string(cast->cast_type));
+        } else {
+            Ast *coerced = coerce_type(scope, cast->cast_type, cast->object);
+            if (coerced != NULL) {
+                // coerce_type does the cast for us 
+                cast = coerced->cast;
+                ast = coerced;
+            } else if (!can_cast(cast->object->var_type, cast->cast_type)) {
+                error(ast->line, ast->file, "Cannot cast type '%s' to type '%s'.", type_to_string(cast->object->var_type), type_to_string(cast->cast_type));
             }
         }
 
@@ -1342,9 +1362,6 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
                 type_to_string(c->condition->var_type));
         }
         
-        /*if (c->condition->type == AST_LITERAL) {*/
-
-        /*}*/
         c->if_body = parse_block_semantics(c->scope, c->if_body, 0);
 
         if (c->else_body != NULL) {
@@ -1416,10 +1433,13 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file, "Cannot return a static array from a function.");
         }
 
-        if (!(check_type(fn_ret_t, ret_t) || can_coerce_type(scope, fn_ret_t, ast->ret->expr))) {
-            error(ast->line, ast->file,
-                "Return statement type '%s' does not match enclosing function's return type '%s'.",
-                type_to_string(ret_t), type_to_string(fn_ret_t));
+        if (!check_type(fn_ret_t, ret_t)) {
+            ast->ret->expr = coerce_type(scope, fn_ret_t, ast->ret->expr);
+            if (ast->ret->expr == NULL) {
+                error(ast->line, ast->file,
+                    "Return statement type '%s' does not match enclosing function's return type '%s'.",
+                    type_to_string(ret_t), type_to_string(fn_ret_t));
+            }
         }
 
         ast->var_type = base_type(VOID_T);
