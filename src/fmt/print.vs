@@ -6,20 +6,16 @@ fn formatArgs(c:u8, val: Any) {
         syscall.write(1, s, s.length);
         
     } else if c == "d"[0] {
-        //syscall.write(1, "1\n", 2);
-        //s := itoa(*(val.value_pointer as &int));
-        //s := *(val.value_pointer as &string);
-        //syscall.write(1, "2\n", 2);
-        //syscall.write(1, s, s.length);
+        s := itoa(*(val.value_pointer as &int));
+        syscall.write(1, s, s.length+4);
         
     }
-        //switch (c) {
-            //case "s":
-                //return doThang(c);
-            //case "d":
-                //return doIntThang(c);
-        //}
-
+    //switch (c) {
+        //case "s":
+            //return doThang(c);
+        //case "d":
+            //return doIntThang(c);
+    //}
 }
 
 fn checkArgs(fmt:string, len:int):bool {

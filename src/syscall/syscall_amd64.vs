@@ -5,6 +5,8 @@ SYS_timer_gettime := 224;
 SYS_exit_group := 231;
 SYS_clock_gettime := 228;
 SYS_gettimeofday := 96;
+SYS_nano_sleep := 230;
+SYS_sleep := 35;
 
 // TODO: can't make declaration the same name as package gets error:
 // Cannot use dot operator on non-struct type 'fn(ptr)'.
