@@ -873,12 +873,12 @@ static void verify_arg_types(Scope *scope, Ast *call, TypeList *expected_types, 
         Type *expected = expected_types->item;
 
         if (!check_type(arg->var_type, expected)) {
-            arg = coerce_type(scope, expected, arg);
-            if (arg == NULL) {
+            Ast* a = coerce_type(scope, expected, arg);
+            if (a == NULL) {
                 error(call->line, call->file, "Expected argument (%d) of type '%s', but got type '%s'.",
                     i, type_to_string(expected), type_to_string(arg->var_type));
             }
-            arg_vals->item = arg;
+            arg_vals->item = a;
         }
 
         arg_vals = arg_vals->next;

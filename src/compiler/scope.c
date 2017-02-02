@@ -139,6 +139,9 @@ Package *load_package(char *current_file, Scope *scope, char *path) {
         if (strcmp(ent->d_name + namelen - 3, ".vs")) {
             continue;
         }
+        if (namelen > 9 && !strcmp(ent->d_name + namelen - 8, "_test.vs")) {
+            continue;
+        }
         // TODO: check that file ends with supported extension?
         int len = strlen(path) + namelen;
         char *filepath = malloc(sizeof(char) * (len + 2));

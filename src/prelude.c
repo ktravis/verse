@@ -126,8 +126,9 @@ void _vs_print_str(struct string_type str) {
 }
 struct string_type _vs_itoa(int x) {
     struct string_type v;
-    v.bytes = malloc(8);
-    snprintf(v.bytes, 7, "%d", x);
+    int l = snprintf(NULL, 0, "%d", x);
+    v.bytes = malloc(l+1);
+    snprintf(v.bytes, l+1, "%d", x);
     v.length = strlen(v.bytes);
     return v;
 }
