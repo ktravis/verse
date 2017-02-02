@@ -73,9 +73,18 @@ fn sleep(n:int) {
     rem:timespec;
     req.tv_sec = n as s64;
     req.tv_nsec = 0;
-    syscall.syscall2(syscall.SYS_sleep as ptr, &req as ptr, &rem as ptr);
+    syscall.syscall2(syscall.SYS_nanosleep as ptr, &req as ptr, &rem as ptr);
 }
 
+fn usleep(n:s64) {
+    req:timespec;
+    rem:timespec;
+    req.tv_sec = n / 1000000;
+    // TODO: no mods!
+    //req.tv_nsec = (n % 1000000) * 1000;
+    req.tv_nsec = 0;
+    syscall.syscall2(syscall.SYS_nanosleep as ptr, &req as ptr, &rem as ptr);
+}
 
 //fn time():float64 {
     //ts := clock_gettime(CLOCK_REALTIME);
