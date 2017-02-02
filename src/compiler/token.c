@@ -437,6 +437,21 @@ Tok *read_hex_number(char c) {
     return t;
 }
 
+Tok *read_octal_number(char c) {
+    long n = c - '0';
+    for (;;) {
+        char c = get_char();
+        if (c < '0' || c > '7') {
+            unget_char(c);
+            break;
+        }
+        n = n * 8 + (c - '0');
+    }
+    Tok *t = make_token(TOK_INT);
+    t->ival = n;
+    return t;
+}
+
 Tok *read_number(char c) {
     if (c == '0') {
         c = get_char();
@@ -446,11 +461,17 @@ Tok *read_number(char c) {
                 error(lineno(), current_file_name(), "Invalid hexadecimal literal '0x%c'", c);
             }
             return read_hex_number(c);
+        } else if (c == 'o') {
+            c = get_char();
+            if (c < '0' || c > '7') {
+                error(lineno(), current_file_name(), "Invalid octal literal '0o%c'", c);
+            }
+            return read_octal_number(c);
         }
         unget_char(c);
         c = '0';
     }
-    long n = c - '0';
+    long long n = c - '0';
     for (;;) {
         char c = get_char();
         if (!isdigit(c)) {
@@ -649,7 +670,7 @@ const char *tok_to_string(Tok *t) {
             n++;
         }
         char *c = malloc(n);
-        snprintf(c, n, "%d", t->ival);
+        snprintf(c, n, "%lld", t->ival);
         return c;
     }
     case TOK_SEMI:
