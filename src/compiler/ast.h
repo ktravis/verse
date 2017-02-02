@@ -38,9 +38,9 @@ typedef struct AstLookup {
 typedef struct AstLiteral {
     LiteralType lit_type;
     union {
-        long    int_val;
-        double  float_val;
-        char    *string_val;
+        long long int_val;
+        double    float_val;
+        char      *string_val;
         struct {
             Type *type;
             int  nmembers;

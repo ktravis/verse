@@ -882,7 +882,7 @@ void compile(Scope *scope, Ast *ast) {
     case AST_LITERAL:
         switch (ast->lit->lit_type) {
         case INTEGER:
-            printf("%ld", ast->lit->int_val);
+            printf("%lld", ast->lit->int_val);
             break;
         case FLOAT: // TODO this is truncated
             printf("%F", ast->lit->float_val);

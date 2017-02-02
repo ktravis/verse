@@ -74,7 +74,7 @@ enum {
 typedef struct Tok {
     TokType type;
     union {
-        int ival;
+        long long ival;
         double fval;
         char *sval;
         int op;
