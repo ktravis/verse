@@ -39,3 +39,7 @@ clean:
 
 test: build
 	@for f in tests/*.vs; do echo "Testing $$f..."; ./verse $$f >/dev/null; done;
+
+unit-test:
+	# Unit tests:
+	@for f in src/*/*.test; do echo "Testing $$f..."; ./verse $$f >/dev/null; done;

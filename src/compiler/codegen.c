@@ -1102,9 +1102,7 @@ void compile(Scope *scope, Ast *ast) {
                 emit_temp_var(scope, ast->index->object, 0);
             } else {
                 // TODO: need string_as_array here?
-                printf("string_as_array(");
                 compile(scope, ast->index->object);
-                printf(")");
             }
 
             printf(".bytes)[");
