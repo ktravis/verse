@@ -32,14 +32,14 @@ fn check_use_depth(use m:Marker) {
     assert(x == (m.pos.x + 2));
 }
 
-fn otherthing(use b:vec3):vec3 {
+fn otherthing(use b:vec3) -> vec3 {
     tmp:int = x;
     x = y;
     y = tmp;
     return b;
 }
 
-fn main():int {
+fn main() -> int {
     assert(v1.z == 2);
 
     a := vec3::{

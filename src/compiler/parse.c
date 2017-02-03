@@ -225,7 +225,7 @@ Type *parse_fn_type(int poly_ok) {
     Type *ret = base_type(VOID_T);
 
     t = next_token();
-    if (t->type == TOK_COLON) {
+    if (t->type == TOK_ARROW) {
         ret = parse_type(next_token(), 0);
     } else {
         unget_token(t);
@@ -348,7 +348,7 @@ Ast *parse_extern_func_decl() {
     Type *ret = base_type(VOID_T);
 
     t = next_token();
-    if (t->type == TOK_COLON) {
+    if (t->type == TOK_ARROW) {
         ret = parse_type(next_token(), 0);
     } else {
         unget_token(t);
@@ -449,7 +449,7 @@ Ast *parse_func_decl(int anonymous) {
     Type *ret = base_type(VOID_T);
 
     t = next_token();
-    if (t->type == TOK_COLON) {
+    if (t->type == TOK_ARROW) {
         ret = parse_type(next_token(), 0);
     } else if (t->type == TOK_LBRACE) {
         unget_token(t);

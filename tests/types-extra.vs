@@ -11,7 +11,7 @@ type blerg : struct {
     c:&blerg;
 };
 
-fn main():int {
+fn main() -> int {
     // even if a type resolves, if it is shadowed later in the same scope,
     // that definition will take precedence
     b:blerg;

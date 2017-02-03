@@ -282,6 +282,8 @@ Tok *_next_token(int nl_ok) {
         char n = get_char();
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
+        } else if (n == '>') {
+            t = make_token(TOK_ARROW);
         } else {
             t = make_token(TOK_OP);
             unget_char(n);
@@ -688,6 +690,8 @@ const char *tok_to_string(Tok *t) {
         return "\\n";
     case TOK_COLON:
         return ":";
+    case TOK_ARROW:
+        return "->";
     case TOK_DCOLON:
         return "::";
     case TOK_COMMA:
@@ -763,6 +767,8 @@ const char *token_type(int type) {
         return "NEWLINE";
     case TOK_COLON:
         return "COLON";
+    case TOK_ARROW:
+        return "ARROW";
     case TOK_DCOLON:
         return "DOUBLE COLON";
     case TOK_COMMA:
@@ -850,7 +856,7 @@ Tok *expect(int type) {
     }
     Tok *t = _next_token(nl_ok);
     if (t == NULL || t->type != type) {
-        error(lineno(), current_file_name(), "Expected token of type '%s', got '%s'.", token_type(type), tok_to_string(t));
+        error(lineno(), current_file_name(), "Expected token '%s', got '%s'.", token_type(type), tok_to_string(t));
     }
     return t;
 }

@@ -41,7 +41,7 @@ fn test_array_of_strings() {
 }
 
 fn test_array_with_struct() {
-    s := (fn ():struct{arr:[5]int;} {
+    s := (fn () -> struct{arr:[5]int;} {
         s:struct{
             arr:[5]int;
         };
@@ -65,7 +65,7 @@ fn test_array_with_struct() {
     }
 }
 
-fn do_stuff(a:[]int):[]int {
+fn do_stuff(a:[]int) -> []int {
     i:int;
     while i < a.length {
         a[i] = a[i] * 2;
@@ -73,7 +73,8 @@ fn do_stuff(a:[]int):[]int {
     }
     return a;
 }
-fn main():int {
+
+fn main() -> int {
     x:[3]int;
     i:int;
     while i < x.length {

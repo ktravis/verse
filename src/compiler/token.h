@@ -11,6 +11,7 @@ typedef enum {
     TOK_BOOL,
     TOK_COLON,
     TOK_DCOLON,
+    TOK_ARROW,
     TOK_SEMI,
     TOK_NL,
     TOK_REF,

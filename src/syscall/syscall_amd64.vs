@@ -16,7 +16,7 @@ SYS_clock_nanosleep    := 230;
 // extern fn syscall(ptr);
 extern fn syscall1(ptr, ptr);
 extern fn syscall2(ptr, ptr, ptr);
-extern fn syscall3(ptr, ptr, ptr, ptr):ptr;
+extern fn syscall3(ptr, ptr, ptr, ptr) -> ptr;
 
 fn exit(code:int) {
     syscall1(SYS_exit as ptr, code as ptr);

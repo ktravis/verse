@@ -18,7 +18,7 @@ fn test2() {
     // fmt.printf("%s", a, b);
 }
 
-fn main():int {
+fn main() -> int {
     test1();
     test6();
     //test2();

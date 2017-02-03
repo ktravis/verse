@@ -17,7 +17,7 @@ fn floop(x:thing) {
     }
 }
 
-fn main():int {
+fn main() -> int {
     // cast
     x:blah = "test" as blah;
     // implicit cast

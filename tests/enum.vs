@@ -9,7 +9,7 @@ fn go() {
     assert(ok == hi.ok);
 }
 
-fn main():int {
+fn main() -> int {
     a:[5]Any;
     a[0] = "string";
     a[1] = 1;
