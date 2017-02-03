@@ -431,8 +431,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
     case AST_TYPE_DECL:
         ast->type_decl->target_type->scope = scope;
         first_pass_type(scope, ast->type_decl->target_type);
-        ast->type_decl->target_type = define_type(scope, ast->type_decl->type_name, ast->type_decl->target_type);
-        register_type(scope, ast->type_decl->target_type);
+        register_type(scope, define_type(scope, ast->type_decl->type_name, ast->type_decl->target_type));
         break;
     case AST_DOT:
         ast->dot->object = first_pass(scope, ast->dot->object);
@@ -767,16 +766,52 @@ static Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
+void check_for_unresolved(Ast *ast, Type *t) {
+    assert(t != NULL);
+    switch (t->comp) {
+    case FUNC:
+        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
+            check_for_unresolved(ast, list->item);
+        }
+        if (t->fn.ret != NULL) {
+            check_for_unresolved(ast, t->fn.ret);
+        }
+        break;
+    case STRUCT: {
+        // line numbers can be weird on this...
+        for (int i = 0; i < t->st.nmembers; i++) {
+            check_for_unresolved(ast, t->st.member_types[i]);
+        }
+        break;
+    }
+    case ALIAS:
+        if (resolve_alias(t) == NULL) {
+            error(ast->line, ast->file, "Unknown type '%s'.", t->name);
+        }
+        break;
+    case REF:
+    case ARRAY:
+        check_for_unresolved(ast, t->inner);
+        break;
+    case STATIC_ARRAY:
+        check_for_unresolved(ast, t->array.inner);
+        break;
+    case BASIC:
+    case POLYDEF:
+    case PARAMS:
+    case EXTERNAL:
+    case ENUM:
+        break;
+    }
+}
+
 static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     AstDecl *decl = ast->decl;
     Ast *init = decl->init;
 
-    Type *t = resolve_alias(decl->var->type);
-
     if (init == NULL) {
-        if (t == NULL) {
-            error(ast->line, ast->file, "Unknown type '%s' in declaration of variable '%s'", type_to_string(decl->var->type), decl->var->name);
-        } else if (decl->var->type->comp == STATIC_ARRAY && decl->var->type->array.length == -1) {
+        check_for_unresolved(ast, decl->var->type);
+        if (decl->var->type->comp == STATIC_ARRAY && decl->var->type->array.length == -1) {
             error(ast->line, ast->file, "Cannot use unspecified array type for variable '%s' without initialization.", decl->var->name);
         }
     } else {
@@ -1212,47 +1247,6 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         }
         break;
     }
-    // TODO: duplicate of AST_IDENTIFIER with minor changes
-    case AST_LOOKUP:
-        /*Package *p = lookup_imported_package(scope, ast->lookup->left->ident->varname);*/
-        /*if (p == NULL) {*/
-            /*error(ast->line, ast->file, "Unknown package '%s'", ast->lookup->left->ident->varname);*/
-        /*}*/
-
-        /*Var *v = lookup_var(p->scope, ast->lookup->right);*/
-        /*if (v == NULL) {*/
-            /*error(ast->line, ast->file, "No declared identifier '%s' in package '%s'.", ast->lookup->right, p->name);*/
-            /*// TODO better error for an enum here*/
-        /*}*/
-
-        /*if (v->proxy != NULL) { // USE-proxy*/
-            /*Type *resolved = resolve_alias(v->type);*/
-            /*if (resolved->comp == ENUM) { // proxy for enum*/
-                /*for (int i = 0; i < resolved->en.nmembers; i++) {*/
-                    /*if (!strcmp(resolved->en.member_names[i], v->name)) {*/
-                        /*Ast *a = ast_alloc(AST_LITERAL);*/
-                        /*a->lit->lit_type = ENUM_LIT;*/
-                        /*a->lit->enum_val.enum_index = i;*/
-                        /*a->lit->enum_val.enum_type = resolved;*/
-                        /*a->var_type = v->type;*/
-                        /*return a;*/
-                    /*}*/
-                /*}*/
-                /*error(-1, "<internal>", "How'd this happen");*/
-            /*} else { // proxy for normal var*/
-                /*int i = 0;*/
-                /*assert(v->proxy != v);*/
-                /*while (v->proxy) {*/
-                    /*assert(i++ < 666); // lol*/
-                    /*v = v->proxy; // this better not loop!*/
-                /*}*/
-            /*}*/
-        /*}*/
-        /*ast = ast_alloc(AST_IDENTIFIER);*/
-        /*ast->ident->var = v;*/
-        /*ast->var_type = v->type;*/
-        /*break;*/
-    /*}*/
     case AST_IDENTIFIER: {
         Var *v = lookup_var(scope, ast->ident->varname);
         if (v == NULL) {
@@ -1329,6 +1323,8 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         if (lookup_local_var(scope, ast->type_decl->type_name) != NULL) {
             error(ast->line, ast->file, "Type name '%s' already exists as variable.", ast->type_decl->type_name);
         }
+        // TODO consider instead just having an "unresolved types" list
+        check_for_unresolved(ast, ast->type_decl->target_type);
         // TODO: error about unspecified length
         break;
     }
