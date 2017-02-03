@@ -509,7 +509,7 @@ char *type_to_string(Type *t) {
         char *ret = NULL;
         if (t->fn.ret != void_type) {
             ret = type_to_string(t->fn.ret);
-            len += 1 + strlen(ret);
+            len += 2 + strlen(ret);
         }
         char *dest = malloc(sizeof(char) * len);
         dest[0] = '\0';
@@ -527,7 +527,7 @@ char *type_to_string(Type *t) {
         free(args);
         strcat(dest, ")");
         if (ret != NULL) {
-            strcat(dest, ":");
+            strcat(dest, "->");
             strcat(dest, ret);
             free(ret);
         }
