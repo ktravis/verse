@@ -373,6 +373,10 @@ Ast *first_pass(Scope *scope, Ast *ast) {
     case AST_LITERAL:
         if (ast->lit->lit_type == STRUCT_LIT) {
             first_pass_type(scope, ast->lit->struct_val.type);
+            for (int i = 0; i < ast->lit->struct_val.nmembers; i++) {
+                ast->lit->struct_val.member_exprs[i] = first_pass(scope, ast->lit->struct_val.member_exprs[i]);
+            }
+
         } else if (ast->lit->lit_type == ENUM_LIT) {
             first_pass_type(scope, ast->lit->enum_val.enum_type);
         }

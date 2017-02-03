@@ -68,21 +68,17 @@ fn time():timespec {
 }
 
 fn sleep(n:int) {
-    //req := timespec::{tv_sec = 0, tv_nsec = 0};
-    req:timespec;
+    req := timespec::{tv_sec = n as s64};
     rem:timespec;
-    req.tv_sec = n as s64;
-    req.tv_nsec = 0;
     syscall.syscall2(syscall.SYS_nanosleep as ptr, &req as ptr, &rem as ptr);
 }
 
 fn usleep(n:s64) {
-    req:timespec;
+    req := timespec::{
+        tv_sec  = n/1000000,
+        tv_nsec = (n % 1000000) * 1000
+    };
     rem:timespec;
-    req.tv_sec = n / 1000000;
-    // TODO: no mods!
-    //req.tv_nsec = (n % 1000000) * 1000;
-    req.tv_nsec = 0;
     syscall.syscall2(syscall.SYS_nanosleep as ptr, &req as ptr, &rem as ptr);
 }
 

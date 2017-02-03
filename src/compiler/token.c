@@ -305,6 +305,15 @@ Tok *_next_token(int nl_ok) {
             unget_char(n);
         }
         t->op = OP_DIV;
+    } else if (c == '%') {
+        char n = get_char();
+        if (n == '=') {
+            t = make_token(TOK_OPASSIGN);
+        } else {
+            t = make_token(TOK_OP);
+            unget_char(n);
+        }
+        t->op = OP_MOD;
     } else if (c == '^') {
         char n = get_char();
         if (n == '=') {
@@ -633,7 +642,7 @@ int priority_of(Tok *t) {
             return 8;
         case OP_PLUS: case OP_MINUS:
             return 9;
-        case OP_MUL: case OP_DIV:
+        case OP_MUL: case OP_DIV: case OP_MOD:
             return 10;
         case OP_NOT:
             return 11;
@@ -713,8 +722,6 @@ const char *tok_to_string(Tok *t) {
         return "struct";
     case TOK_TYPE:
         return "type";
-    /*case TOK_TYPE:*/
-        /*return type_as_str(make_type(t->tval));*/
     case TOK_HOLD:
         return "hold";
     case TOK_RELEASE:
@@ -813,6 +820,7 @@ const char *op_to_str(int op) {
     case OP_MINUS: return "-";
     case OP_MUL: return "*";
     case OP_DIV: return "/";
+    case OP_MOD: return "%";
     case OP_XOR: return "^";
     case OP_BINAND: return "&";
     case OP_BINOR: return "|";

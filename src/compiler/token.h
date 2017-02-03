@@ -52,6 +52,7 @@ enum {
     OP_MINUS,
     OP_MUL,
     OP_DIV,
+    OP_MOD,
     OP_XOR,
     OP_BINAND,
     OP_BINOR,
