@@ -13,7 +13,7 @@ SYS_clock_nanosleep    := 230;
 
 // TODO: can't make declaration the same name as package gets error:
 // Cannot use dot operator on non-struct type 'fn(ptr)'.
-// extern fn syscall(ptr);
+extern fn syscall(ptr);
 extern fn syscall1(ptr, ptr);
 extern fn syscall2(ptr, ptr, ptr);
 extern fn syscall3(ptr, ptr, ptr, ptr) -> ptr;

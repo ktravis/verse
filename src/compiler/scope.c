@@ -9,14 +9,23 @@
 
 // TODO: put these guys in a "compiler" section
 //
-static VarList *global_vars = NULL;
 
-void define_global(Var *v) {
-    global_vars = varlist_append(global_vars, v);
+static Package *main_package = NULL;
+static Package *current_package = NULL;
+static PkgList *pkg_stack = NULL;
+
+Package *init_main_package(char *path) {
+    assert(main_package == NULL);
+    main_package = calloc(sizeof(Package), 1);
+    main_package->path = path;
+    main_package->name = "<main>";
+    main_package->scope = new_scope(NULL);
+    push_current_package(main_package);
+    return main_package;
 }
 
-VarList *get_global_vars() {
-    return global_vars;
+void define_global(Var *v) {
+    current_package->globals = varlist_append(current_package->globals, v);
 }
 
 static VarList *builtin_vars = NULL;
@@ -40,20 +49,6 @@ TypeList *builtin_types() {
 }
 
 static PkgList *all_packages = NULL;
-
-// TODO: change this
-PkgList *all_loaded_packages() {
-    while (all_packages != NULL) {
-        PkgList *tmp = all_packages->next;
-        all_packages->next = all_packages->prev;
-        all_packages->prev = tmp;
-        if (tmp == NULL) {
-            return all_packages;
-        }
-        all_packages = tmp;
-    }
-    return all_packages;
-}
 
 static Package *pkglist_find(PkgList *list, char *path);
 
@@ -89,6 +84,28 @@ static PkgList *pkglist_append(PkgList *list, Package *p) {
     return list;
 }
 
+// TODO: change this
+PkgList *all_loaded_packages() {
+    return all_packages;
+    /*PkgList *head = NULL;*/
+    /*while (all_packages != NULL) {*/
+        /*head = pkglist_append(head, all_packages->item);*/
+        /*all_packages = all_packages->next;*/
+    /*}*/
+    /*return head;*/
+}
+
+void push_current_package(Package *p) {
+    pkg_stack = pkglist_append(pkg_stack, p);
+    current_package = p;
+}
+
+Package *pop_current_package() {
+    pkg_stack = pkg_stack->next;
+    current_package = pkg_stack->item;
+    return current_package;
+}
+
 static char *verse_root = NULL;
 
 // TODO: error when path is NULL
@@ -115,6 +132,7 @@ Package *load_package(char *current_file, Scope *scope, char *path) {
     }
 
     p = malloc(sizeof(Package));
+    p->globals = NULL;
     p->path = path;
     p->scope = new_scope(NULL);
     p->semantics_checked = 0;
@@ -127,6 +145,10 @@ Package *load_package(char *current_file, Scope *scope, char *path) {
     if (d == NULL) {
         error(lineno(), current_file, "Could not load package with path: '%s'", path);
     }
+
+    // push package stack
+    push_current_package(p);
+
     struct dirent *ent = NULL;
     while ((ent = readdir(d)) != NULL) {
         if (ent->d_type != DT_REG) {
@@ -142,12 +164,11 @@ Package *load_package(char *current_file, Scope *scope, char *path) {
         if (namelen > 9 && !strcmp(ent->d_name + namelen - 8, "_test.vs")) {
             continue;
         }
-        // TODO: check that file ends with supported extension?
+
         int len = strlen(path) + namelen;
         char *filepath = malloc(sizeof(char) * (len + 2));
         snprintf(filepath, len + 2, "%s/%s", path, ent->d_name);
 
-        // list directories and do this for each
         Ast *file_ast = parse_source_file(filepath);
         pop_file_source();
         file_ast = first_pass(p->scope, file_ast);
@@ -166,6 +187,8 @@ Package *load_package(char *current_file, Scope *scope, char *path) {
         error(lineno(), current_file, "No verse source files found in package '%s' ('%s').", p->name, p->path);
     }
     closedir(d);
+
+    pop_current_package();
 
     all_packages = pkglist_append(all_packages, p);
     scope->packages = pkglist_append(scope->packages, p);
@@ -441,11 +464,16 @@ Var *lookup_var(Scope *scope, char *name) {
     if (v != NULL) {
         return v;
     }
-    // TODO: needed?
-    v = varlist_find(global_vars, name);
+
+    // package global
+    while (scope->parent != NULL) {
+        scope = scope->parent;
+    }
+    v = lookup_local_var(scope, name);
     if (v != NULL) {
         return v;
     }
+
     v = varlist_find(builtin_vars, name);
     return v;
 }

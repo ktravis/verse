@@ -337,7 +337,7 @@ Ast *make_ast_string(char *str) {
 
 Ast *make_ast_id(Var *var, char *name) {
     Ast *id = ast_alloc(AST_IDENTIFIER);
-    id->ident->var = NULL;
+    id->ident->var = var;
     id->ident->varname = name;
     return id;
 }

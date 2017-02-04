@@ -36,9 +36,6 @@ Var *allocate_ast_temp_var(Scope *scope, Ast *ast);
 Var *make_temp_var(Scope *scope, Type *t, int id);
 Var *find_temp_var(Scope *scope, Ast *ast);
 
-VarList *get_global_vars();
-void define_global(Var *v);
-
 void define_builtin(Var *v);
 Var *find_builtin_var(char *name);
 
@@ -49,5 +46,9 @@ TypeList *all_used_types();
 PkgList *all_loaded_packages();
 Package *load_package(char *current_file, Scope *scope, char *path);
 Package *lookup_imported_package(Scope *scope, char *name);
+void push_current_package(Package *p);
+Package *pop_current_package();
+Package *init_main_package(char *path);
+void define_global(Var *v);
 
 #endif

@@ -5,6 +5,7 @@ typedef struct Package {
     char *path;
     char *name;
     struct Scope *scope;
+    struct VarList *globals;
     struct PkgFileList *files;
     int semantics_checked;
 } Package;
@@ -100,7 +101,7 @@ typedef struct Var {
     unsigned char constant;
     unsigned char use;
     int ext;
-    struct Var *proxy;
+    struct Ast *proxy;
     struct Var **members;
     struct AstFnDecl *fn_decl;
 } Var;

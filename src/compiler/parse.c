@@ -165,7 +165,6 @@ Ast *parse_expression(Tok *t, int priority) {
                     }
                 }
                 ast = make_ast_dot_op(ast, next->sval);
-                ast->type = AST_DOT;
             } else if (t->op == OP_CAST) {
                 Ast *c = ast_alloc(AST_CAST);
                 c->cast->object = ast;
@@ -1000,6 +999,7 @@ AstList *get_global_funcs() {
     return global_fn_decls;
 }
 
+// TODO: why is this here
 void init_builtins() {
     Var *v = make_var("assert", make_fn_type(1, typelist_append(NULL, base_type(BOOL_T)), base_type(VOID_T), 0));
     v->ext = 1;

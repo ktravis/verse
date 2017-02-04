@@ -91,30 +91,34 @@ static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
                 error(ast->line, ast->file, "No declared identifier '%s' in package '%s'.", ast->dot->member_name, p->name);
                 // TODO better error for an enum here
             }
-
             if (v->proxy != NULL) { // USE-proxy
-                Type *resolved = resolve_alias(v->type);
-                if (resolved->comp == ENUM) { // proxy for enum
-                    for (int i = 0; i < resolved->en.nmembers; i++) {
-                        if (!strcmp(resolved->en.member_names[i], v->name)) {
-                            Ast *a = ast_alloc(AST_LITERAL);
-                            a->lit->lit_type = ENUM_LIT;
-                            a->lit->enum_val.enum_index = i;
-                            a->lit->enum_val.enum_type = resolved;
-                            a->var_type = v->type;
-                            return a;
-                        }
-                    }
-                    error(-1, "<internal>", "How'd this happen");
-                } else { // proxy for normal var
-                    int i = 0;
-                    assert(v->proxy != v);
-                    while (v->proxy) {
-                        assert(i++ < 666); // lol
-                        v = v->proxy; // this better not loop!
-                    }
-                }
+                error(ast->line, ast->file, "No declared identifier '%s' in package '%s' (*use* doesn't count).", ast->dot->member_name, p->name);
             }
+
+            // TODO: decide if we want to allow promotion of "exports" via USE
+            /*if (v->proxy != NULL) { // USE-proxy*/
+                /*Type *resolved = resolve_alias(v->type);*/
+                /*if (resolved->comp == ENUM) { // proxy for enum*/
+                    /*for (int i = 0; i < resolved->en.nmembers; i++) {*/
+                        /*if (!strcmp(resolved->en.member_names[i], v->name)) {*/
+                            /*Ast *a = ast_alloc(AST_LITERAL);*/
+                            /*a->lit->lit_type = ENUM_LIT;*/
+                            /*a->lit->enum_val.enum_index = i;*/
+                            /*a->lit->enum_val.enum_type = resolved;*/
+                            /*a->var_type = v->type;*/
+                            /*return a;*/
+                        /*}*/
+                    /*}*/
+                    /*error(-1, "<internal>", "How'd this happen");*/
+                /*} else { // proxy for normal var*/
+                    /*int i = 0;*/
+                    /*assert(v->proxy != v);*/
+                    /*while (v->proxy) {*/
+                        /*assert(i++ < 666); // lol*/
+                        /*v = v->proxy; // this better not loop!*/
+                    /*}*/
+                /*}*/
+            /*}*/
             ast = ast_alloc(AST_IDENTIFIER);
             ast->ident->var = v;
             ast->var_type = v->type;
@@ -635,23 +639,32 @@ static Ast *parse_use_semantics(Scope *scope, Ast *ast) {
             if (resolved->comp != ENUM) {
                 // TODO: show alias
                 error(ast->use->object->line, ast->file,
-                        "'use' is not valid on non-enum type '%s'.", type_to_string(t));
+                    "'use' is not valid on non-enum type '%s'.", type_to_string(t));
             }
 
             for (int i = 0; i < resolved->en.nmembers; i++) {
                 char *name = resolved->en.member_names[i];
 
                 if (lookup_local_var(scope, name) != NULL) {
-                    error(ast->use->object->line, ast->file, "'use' statement on enum '%s' conflicts with local variable named '%s'.", type_to_string(t), name);
+                    error(ast->use->object->line, ast->file,
+                        "'use' statement on enum '%s' conflicts with local variable named '%s'.", type_to_string(t), name);
                 }
 
                 if (find_builtin_var(name) != NULL) {
-                    error(ast->use->object->line, ast->file, "'use' statement on enum '%s' conflicts with builtin variable named '%s'.", type_to_string(t), name);
+                    error(ast->use->object->line, ast->file,
+                        "'use' statement on enum '%s' conflicts with builtin variable named '%s'.", type_to_string(t), name);
                 }
 
                 Var *v = make_var(name, t);
                 v->constant = 1;
-                v->proxy = v; // TODO don't do this!
+
+                // proxy to literal
+                Ast *a = ast_alloc(AST_LITERAL);
+                a->lit->lit_type = ENUM_LIT;
+                a->lit->enum_val.enum_index = i;
+                a->lit->enum_val.enum_type = resolved;
+                a->var_type = t;
+                v->proxy = a;
                 attach_var(scope, v);
             }
             return ast;
@@ -691,21 +704,11 @@ static Ast *parse_use_semantics(Scope *scope, Ast *ast) {
                 type_to_string(t), member_name);
         }
 
-        Var *v = make_var(member_name, resolved->st.member_types[i]); // should this be 't' or 't->st.member_types[i]'?
-        char *proxy_name;
-        int proxy_name_len;
-        // TODO: names shouldn't do this, this should be done in codegen
-        if (orig->comp == REF) {
-            proxy_name_len = strlen(name) + strlen(member_name) + 2 + 1;
-            proxy_name = malloc(sizeof(char) * proxy_name_len);
-            snprintf(proxy_name, proxy_name_len, "%s->%s", name, member_name);
-        } else {
-            proxy_name_len = strlen(name) + strlen(member_name) + 1 + 1;
-            proxy_name = malloc(sizeof(char) * proxy_name_len);
-            snprintf(proxy_name, proxy_name_len, "%s.%s", name, member_name);
-        }
-        Var *proxy = make_var(proxy_name, resolved->st.member_types[i]);
-        v->proxy = proxy;
+        Var *v = make_var(member_name, resolved->st.member_types[i]);
+        Ast *dot = make_ast_dot_op(ast->use->object, member_name);
+        dot->line = ast->line;
+        dot->file = ast->file;
+        v->proxy = parse_semantics(scope, dot);
         attach_var(scope, v);
     }
     return ast;
@@ -882,8 +885,9 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     ast->var_type = base_type(VOID_T);
 
     if (scope->parent == NULL) {
-        define_global(decl->var);
         ast->decl->global = 1;
+        define_global(decl->var);
+        attach_var(scope, ast->decl->var); // should this be after the init parsing?
 
         if (decl->init != NULL) {
             Ast *id = ast_alloc(AST_IDENTIFIER);
@@ -1109,18 +1113,20 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
 
         if (args->item->use) {
             // allow polydef here?
-            int ref = 0;
             Type *orig = args->item->type;
             Type *t = resolve_alias(orig);
             while (t->comp == REF) {
                 t = resolve_alias(t->inner);
-                ref = 1;
             }
             if (t->comp != STRUCT) {
                 error(lineno(), current_file_name(),
                     "'use' is not allowed on args of non-struct type '%s'.",
                     type_to_string(orig));
             }
+            Ast *lhs = make_ast_id(args->item, args->item->name);
+            lhs->line = ast->line;
+            lhs->file = ast->file;
+
             for (int i = 0; i < t->st.nmembers; i++) {
                 char *name = t->st.member_names[i];
                 if (lookup_local_var(ast->fn_decl->scope, name) != NULL) {
@@ -1134,19 +1140,10 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
                 }
 
                 Var *v = make_var(name, t->st.member_types[i]);
-                if (ref) {
-                    int proxy_name_len = strlen(args->item->name) + strlen(name) + 2;
-                    char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
-                    sprintf(proxy_name, "%s->%s", args->item->name, name);
-                    proxy_name[proxy_name_len] = 0;
-                    v->proxy = make_var(proxy_name, t->st.member_types[i]);
-                } else {
-                    int proxy_name_len = strlen(args->item->name) + strlen(name) + 1;
-                    char *proxy_name = malloc(sizeof(char) * (proxy_name_len + 1));
-                    sprintf(proxy_name, "%s.%s", args->item->name, name);
-                    proxy_name[proxy_name_len] = 0;
-                    v->proxy = make_var(proxy_name, t->st.member_types[i]);
-                }
+                Ast *dot = make_ast_dot_op(lhs, name);
+                dot->line = ast->line;
+                dot->file = ast->file;
+                v->proxy = parse_semantics(ast->fn_decl->scope, first_pass(ast->fn_decl->scope, dot));
                 attach_var(ast->fn_decl->scope, v);
             }
         }
@@ -1269,12 +1266,9 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
                 }
                 error(-1, "<internal>", "How'd this happen");
             } else { // proxy for normal var
-                int i = 0;
-                assert(v->proxy != v);
-                while (v->proxy) {
-                    assert(i++ < 666); // lol
-                    v = v->proxy; // this better not loop!
-                }
+                // TODO: this may not be needed again, semantics already
+                // checked?
+                return parse_semantics(scope, v->proxy);
             }
         }
         ast->ident->var = v;
@@ -1470,10 +1464,12 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         if (!ast->import->package->semantics_checked) {
             Package *p = ast->import->package;
             p->semantics_checked = 1;
+            push_current_package(p);
             /*p->pkg_name = package_name(p->path);*/
             for (PkgFileList *list = p->files; list != NULL; list = list->next) {
                 list->item->root = parse_semantics(p->scope, list->item->root);
             }
+            pop_current_package();
         }
         break;
     default:

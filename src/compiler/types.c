@@ -842,19 +842,19 @@ void emit_typeinfo_decl(Scope *scope, Type *t) {
 
     switch (t->comp) {
     case REF:
-        printf("struct _vs_%d _type_info%d;\n", reftype_type_id, id);
+        printf("struct _type_vs_%d _type_info%d;\n", reftype_type_id, id);
         break;
     case STRUCT:
-        printf("struct _vs_%d _type_info%d_members[%d];\n", structmember_type_id, id, t->st.nmembers);
-        printf("struct _vs_%d _type_info%d;\n", structtype_type_id, id);
+        printf("struct _type_vs_%d _type_info%d_members[%d];\n", structmember_type_id, id, t->st.nmembers);
+        printf("struct _type_vs_%d _type_info%d;\n", structtype_type_id, id);
         break;
     case STATIC_ARRAY:
     case ARRAY:
-        printf("struct _vs_%d _type_info%d;\n", arraytype_type_id, id);
+        printf("struct _type_vs_%d _type_info%d;\n", arraytype_type_id, id);
         break;
     case FUNC:
-        printf("struct _vs_%d *_type_info%d_args[%d];\n", typeinfo_type_id, id, t->fn.nargs);
-        printf("struct _vs_%d _type_info%d;\n", fntype_type_id, id);
+        printf("struct _type_vs_%d *_type_info%d_args[%d];\n", typeinfo_type_id, id, t->fn.nargs);
+        printf("struct _type_vs_%d _type_info%d;\n", fntype_type_id, id);
         break;
     case ENUM:
         printf("struct string_type _type_info%d_members[%d] = {\n", id, t->en.nmembers);
@@ -867,19 +867,19 @@ void emit_typeinfo_decl(Scope *scope, Type *t) {
             printf(" %ld,\n", t->en.member_values[i]);
         }
         printf("};\n");
-        printf("struct _vs_%d _type_info%d;\n", enumtype_type_id, id);
+        printf("struct _type_vs_%d _type_info%d;\n", enumtype_type_id, id);
         break;
     case BASIC:
         switch (t->data->base) {
         case INT_T:
         case UINT_T:
         case FLOAT_T:
-            printf("struct _vs_%d _type_info%d;\n", numtype_type_id, id);
+            printf("struct _type_vs_%d _type_info%d;\n", numtype_type_id, id);
             break;
         case BASEPTR_T:
         case STRING_T:
         case BOOL_T:
-            printf("struct _vs_%d _type_info%d;\n", typeinfo_type_id, id);
+            printf("struct _type_vs_%d _type_info%d;\n", typeinfo_type_id, id);
             break;
         }
     default:
@@ -896,62 +896,62 @@ void emit_typeinfo_init(Scope *scope, Type *t) {
     switch (t->comp) {
     case ENUM:
         indent();
-        printf("_type_info%d = (struct _vs_%d){%d, 9, "\
-               "(struct _vs_%d *)&_type_info%d, {%d, _type_info%d_members}, {%d, _type_info%d_values}};\n",
+        printf("_type_info%d = (struct _type_vs_%d){%d, 9, "\
+               "(struct _type_vs_%d *)&_type_info%d, {%d, _type_info%d_members}, {%d, _type_info%d_values}};\n",
                 id, enumtype_type_id, id, typeinfo_type_id,
                 resolve_alias(t->en.inner)->id, t->st.nmembers,
                 id, t->st.nmembers, id);
         break;
     case REF:
         indent();
-        printf("_type_info%d = (struct _vs_%d){%d, 10, "\
-               "(struct _vs_%d *)&_type_info%d};\n", id,
+        printf("_type_info%d = (struct _type_vs_%d){%d, 10, "\
+               "(struct _type_vs_%d *)&_type_info%d};\n", id,
                reftype_type_id, id, typeinfo_type_id, resolve_alias(t->inner)->id);
         break;
     case STRUCT:
         for (int i = 0; i < t->st.nmembers; i++) {
             indent();
-            printf("_type_info%d_members[%d] = (struct _vs_%d){{%ld, \"%s\"}, "\
-                   "(struct _vs_%d *)&_type_info%d};\n", id, i, structmember_type_id,
+            printf("_type_info%d_members[%d] = (struct _type_vs_%d){{%ld, \"%s\"}, "\
+                   "(struct _type_vs_%d *)&_type_info%d};\n", id, i, structmember_type_id,
                    strlen(t->st.member_names[i]), t->st.member_names[i], typeinfo_type_id, 
                    resolve_alias(t->st.member_types[i])->id);
         }
         indent();
-        printf("_type_info%d = (struct _vs_%d){%d, 11, "\
+        printf("_type_info%d = (struct _type_vs_%d){%d, 11, "\
                "{%d, _type_info%d_members}};\n", id, structtype_type_id, 
                id, t->st.nmembers, id);
         break;
     case STATIC_ARRAY:
         indent();
-        printf("_type_info%d = (struct _vs_%d){%d, 7, "\
-               "(struct _vs_%d *)&_type_info%d, %ld, %d};\n", id,
+        printf("_type_info%d = (struct _type_vs_%d){%d, 7, "\
+               "(struct _type_vs_%d *)&_type_info%d, %ld, %d};\n", id,
                arraytype_type_id, id, typeinfo_type_id, resolve_alias(t->array.inner)->id,
                t->array.length, 1);
         break;
     case ARRAY: // TODO make this not have a name? switch Type to have enum in name slot for base type
         indent();
-        printf("_type_info%d = (struct _vs_%d){%d, 7, "\
-               "(struct _vs_%d *)&_type_info%d, %ld, %d};\n", id, arraytype_type_id,
+        printf("_type_info%d = (struct _type_vs_%d){%d, 7, "\
+               "(struct _type_vs_%d *)&_type_info%d, %ld, %d};\n", id, arraytype_type_id,
                id, typeinfo_type_id, resolve_alias(t->inner)->id, (long)0, 0);
         break;
     case FUNC: {
         int i = 0;
         for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
             indent();
-            printf("_type_info%d_args[%d] = (struct _vs_%d *)&_type_info%d;\n",
+            printf("_type_info%d_args[%d] = (struct _type_vs_%d *)&_type_info%d;\n",
                 id, i, typeinfo_type_id, resolve_alias(list->item)->id);
             i++;
         }
         indent();
-        printf("_type_info%d = (struct _vs_%d){%d, 8, "\
-               "{%d, (struct _vs_%d **)_type_info%d_args}, ", id,
+        printf("_type_info%d = (struct _type_vs_%d){%d, 8, "\
+               "{%d, (struct _type_vs_%d **)_type_info%d_args}, ", id,
                fntype_type_id, id, t->fn.nargs, typeinfo_type_id, id); // TODO: named
 
         Type *ret = resolve_alias(t->fn.ret);
         if (ret->comp == BASIC && ret->data->base == VOID_T) {
             printf("NULL, ");
         } else {
-            printf("(struct _vs_%d *)&_type_info%d, ", typeinfo_type_id, ret->id);
+            printf("(struct _type_vs_%d *)&_type_info%d, ", typeinfo_type_id, ret->id);
         }
         // TODO: named?
         printf("0};\n");
@@ -962,22 +962,22 @@ void emit_typeinfo_init(Scope *scope, Type *t) {
         case INT_T:
         case UINT_T:
             indent();
-            printf("_type_info%d = (struct _vs_%d){%d, 1, %d, %d};\n",
+            printf("_type_info%d = (struct _type_vs_%d){%d, 1, %d, %d};\n",
                     id, numtype_type_id, id, t->data->size, t->data->base == INT_T);
             break;
         case FLOAT_T:
             indent();
-            printf("_type_info%d = (struct _vs_%d){%d, 3, %d, 1};\n",
+            printf("_type_info%d = (struct _type_vs_%d){%d, 3, %d, 1};\n",
                     id, numtype_type_id, id, t->data->size);
             break;
         case BASEPTR_T:
         case STRING_T:
             indent();
-            printf("_type_info%d = (struct _vs_%d){%d, 6};\n", id, typeinfo_type_id, id);
+            printf("_type_info%d = (struct _type_vs_%d){%d, 6};\n", id, typeinfo_type_id, id);
             break;
         case BOOL_T:
             indent();
-            printf("_type_info%d = (struct _vs_%d){%d, 2};\n", id, typeinfo_type_id, id);
+            printf("_type_info%d = (struct _type_vs_%d){%d, 2};\n", id, typeinfo_type_id, id);
             break;
         }
     }
