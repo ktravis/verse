@@ -278,57 +278,47 @@ Type *lookup_type(Scope *s, char *name) {
     return lookup_local_type(builtin_types_scope, name);
 }
 
-void _register_type(Scope *s, Type *t) {
-    t = resolve_alias(t); // eh?
+void register_type(Type *t) {
+    t = resolve_alias(t);
     if (t == NULL) {
         return;
     }
-    /*for (TypeList *list = s->used_types; list != NULL; list = list->next) {*/
     for (TypeList *list = used_types; list != NULL; list = list->next) {
         if (list->item->id == t->id) {
             return;
         }
     }
     for (TypeList *list = builtin_types_scope->used_types; list != NULL; list = list->next) {
-    /*for (TypeList *list = used_types; list != NULL; list = list->next) {*/
         if (list->item->id == t->id) {
             return;
         }
     }
-    /*s->used_types = typelist_append(s->used_types, t);*/
     used_types = typelist_append(used_types, t);
     switch (t->comp) {
     case STRUCT:
         for (int i = 0; i < t->st.nmembers; i++) {
-            _register_type(s, t->st.member_types[i]);
+            register_type(t->st.member_types[i]);
         }
         break;
     case ENUM:
-        _register_type(s, t->en.inner);
+        register_type(t->en.inner);
         break;
     case STATIC_ARRAY:
-        _register_type(s, t->array.inner);
+        register_type(t->array.inner);
         break;
     case ARRAY:
     case REF:
-        _register_type(s, t->inner);
+        register_type(t->inner);
         break;
     case FUNC:
         for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
-            _register_type(s, list->item);
+            register_type(list->item);
         }
-        _register_type(s, t->fn.ret);
+        register_type(t->fn.ret);
         break;
     default:
         break;
     }
-}
-
-void register_type(Scope *s, Type *t) {
-    while (s->parent != NULL) {
-        s = s->parent;
-    }
-    _register_type(s, t);
 }
 
 Type *define_polymorph(Scope *s, Type *poly, Type *type) {
@@ -399,7 +389,7 @@ Type *define_type(Scope *s, char *name, Type *type) {
 
     type = make_type(s, name);
 
-    register_type(s, type);
+    register_type(type);
     return type;
 }
 

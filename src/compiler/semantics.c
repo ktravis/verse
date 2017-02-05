@@ -348,17 +348,18 @@ void first_pass_type(Scope *scope, Type *t) {
         for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
             first_pass_type(scope, list->item);
         }
+        // register type?
         first_pass_type(scope, t->fn.ret);
         break;
     case STRUCT:
         for (int i = 0; i < t->st.nmembers; i++) {
             first_pass_type(scope, t->st.member_types[i]);
         }
-        register_type(scope, t);
+        register_type(t);
         break;
     case ENUM:
         first_pass_type(scope, t->en.inner);
-        register_type(scope, t);
+        register_type(t);
         break;
     case REF:
     case ARRAY:
@@ -442,7 +443,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
     case AST_TYPE_DECL:
         ast->type_decl->target_type->scope = scope;
         first_pass_type(scope, ast->type_decl->target_type);
-        register_type(scope, define_type(scope, ast->type_decl->type_name, ast->type_decl->target_type));
+        ast->type_decl->target_type = define_type(scope, ast->type_decl->type_name, ast->type_decl->target_type);
         break;
     case AST_DOT:
         ast->dot->object = first_pass(scope, ast->dot->object);
