@@ -1,4 +1,3 @@
-//.intel_syntax noprefix
 .text
    .globl a_cas, a_swap, a_store, a_incr, a_decr, a_spin, a_fetch_add, a_and, a_and64, a_or, a_or64, a_barrier, a_crash, a_bsf
 
@@ -144,16 +143,3 @@
         movq	-8(%rbp), %rax
         popq	%rbp
         ret
-
-
-//    a_cas:
-//        mov rax,rsi
-//        lock cmpxchg [rdi],rdx
-//        ret
-//    a_swap:
-//        mov rax, [rdi]
-//        lock xchg [rdi], rsi 
-//        ret
-//    a_store:
-//        mov [rdi], rsi
-//        ret
