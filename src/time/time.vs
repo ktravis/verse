@@ -52,17 +52,13 @@ type itimerspec: struct {
 
 fn timer_gettime(t:timer_t) -> itimerspec {
     ts:itimerspec;
-    syscall.syscall2(syscall.SYS_timer_gettime, t, &ts);
+    syscall.syscall2(syscall.sys_timer_gettime, t, &ts);
     return ts;
 }
 
 fn clock_gettime(clk:ClockTypes) -> timespec {
     ts:timespec;
-<<<<<<< HEAD
-    syscall.syscall2(syscall.sys_clock_gettime as ptr, clk as ptr, &ts as ptr);
-=======
-    syscall.syscall2(syscall.SYS_clock_gettime, clk, &ts);
->>>>>>> upstream/master
+    syscall.syscall2(syscall.sys_clock_gettime, clk, &ts);
     return ts;
 }
 
@@ -75,13 +71,7 @@ fn time() -> timespec {
 fn sleep(n:int) {
     req := timespec::{tv_sec = n as s64};
     rem:timespec;
-<<<<<<< HEAD
-    req.tv_sec = n as s64;
-    req.tv_nsec = 0;
-    syscall.syscall2(syscall.sys_nanosleep as ptr, &req as ptr, &rem as ptr);
-=======
-    syscall.syscall2(syscall.SYS_nanosleep, &req, &rem);
->>>>>>> upstream/master
+    syscall.syscall2(syscall.sys_nanosleep, &req, &rem);
 }
 
 fn usleep(n:s64) {
@@ -90,15 +80,7 @@ fn usleep(n:s64) {
         tv_nsec = (n % 1000000) * 1000
     };
     rem:timespec;
-<<<<<<< HEAD
-    req.tv_sec = n / 1000000;
-    // TODO: no mods!
-    //req.tv_nsec = (n % 1000000) * 1000;
-    req.tv_nsec = 0;
-    syscall.syscall2(syscall.sys_nanosleep as ptr, &req as ptr, &rem as ptr);
-=======
-    syscall.syscall2(syscall.SYS_nanosleep, &req, &rem);
->>>>>>> upstream/master
+    syscall.syscall2(syscall.sys_nanosleep, &req, &rem);
 }
 
 //fn time() -> float64 {
