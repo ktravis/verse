@@ -4,7 +4,7 @@ f=$1
 shift
 
 C_FLAGS="-g -std=c99"
-CMD="gcc src/syscall/*.S tmp.c -o tmp.out $C_FLAGS"
+CMD="gcc src/*/*.S tmp.c -o tmp.out $C_FLAGS"
 
 for i in "$@"; do
     shift
