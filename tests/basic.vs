@@ -96,6 +96,8 @@ fn main() -> int {
 
     assert("\r\n"[0] == 13);
 
+    assert((10 as u8) == "\n");
+
     println("Tests passed.");
 
     return 0;

@@ -50,9 +50,9 @@ F_GETOWNER_UIDS := 17;
 
 
 fn open(filename:string, flags:int, mode:int) -> int {
-    fd := syscall.syscall3(syscall.SYS_open as ptr, filename.bytes as ptr, (flags|os.O_CLOEXEC) as ptr, mode as ptr) as int; 
+    fd := syscall.syscall3(syscall.SYS_open, filename.bytes, (flags|os.O_CLOEXEC), mode) as int; 
     if (fd < 0 || flags & os.O_CLOEXEC) {
-        syscall.syscall3(syscall.SYS_fcntl as ptr, fd as ptr, os.F_SETFD as ptr, os.FD_CLOEXEC as ptr);
+        syscall.syscall3(syscall.SYS_fcntl, fd, os.F_SETFD, os.FD_CLOEXEC);
     }
     return fd;
 }
@@ -62,5 +62,5 @@ fn write(fd:int, s:string) {
 }
 
 fn close(fd:int) {
-    syscall.syscall1(syscall.SYS_close as ptr, fd as ptr);
+    syscall.syscall1(syscall.SYS_close, fd);
 }

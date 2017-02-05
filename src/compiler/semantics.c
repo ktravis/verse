@@ -259,6 +259,13 @@ static Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
     case OP_EQUALS:
     case OP_NEQUALS:
         if (!check_type(lt, rt)) {
+            /*errlog("type on left %s", type_to_string(lt));*/
+            /*errlog("type on right %s", type_to_string(ast->binary->right->var_type));*/
+            /*errlog("right is string lit %d", ast->binary->right->type == AST_LITERAL && ast->binary->right->lit->lit_type == STRING);*/
+            /*if (ast->binary->right->type == AST_LITERAL && ast->binary->right->lit->lit_type == STRING) {*/
+                /*errlog("right lit value %s", ast->binary->right->lit->string_val);*/
+                /*errlog("right lit len %d", strlen(ast->binary->right->lit->string_val));*/
+            /*}*/
             ast->binary->right = coerce_type(scope, lt, ast->binary->right);
             if (ast->binary->right == NULL) {
                 error(ast->line, ast->file, "Cannot compare equality of non-comparable types '%s' and '%s'.",
@@ -911,11 +918,30 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
 }
 
 static void verify_arg_types(Scope *scope, Ast *call, TypeList *expected_types, AstList *arg_vals, int variadic) {
+    AstFnDecl *decl = NULL;
+    int ext = 0;
+    if (call->call->fn->type == AST_IDENTIFIER) {
+        decl = call->call->fn->ident->var->fn_decl;
+        if (decl != NULL) {
+            ext = decl->var->ext;
+        }
+    }
+
     for (int i = 0; arg_vals != NULL; i++) {
         Ast *arg = arg_vals->item;
         Type *expected = expected_types->item;
 
-        if (!check_type(arg->var_type, expected)) {
+        if (ext && (decl->ext_autocast & (1 << i))) {
+            // TODO: should this check that the cast is still valid? or is total
+            // freedom acceptable in this case?
+            Ast *c = ast_alloc(AST_CAST);
+            c->cast->cast_type = expected;
+            c->cast->object = arg;
+            c->line = arg->line;
+            c->file = arg->file;
+            c->var_type = expected;
+            arg_vals->item = c;
+        } else if (!check_type(arg->var_type, expected)) {
             Ast* a = coerce_type(scope, expected, arg);
             if (a == NULL) {
                 error(call->line, call->file, "Expected argument (%d) of type '%s', but got type '%s'.",
@@ -1167,6 +1193,7 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
     }
     return ast;
 }
+
 static Ast *parse_index_semantics(Scope *scope, Ast *ast) {
     ast->index->object = parse_semantics(scope, ast->index->object);
     ast->index->index = parse_semantics(scope, ast->index->index);

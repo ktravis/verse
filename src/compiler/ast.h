@@ -123,6 +123,8 @@ typedef struct AstFnDecl {
     Scope     *scope;
     AstBlock  *body;
     Polymorph *polymorphs;
+    // TODO: sloppy, clean this up
+    int        ext_autocast;
 } AstFnDecl;
 
 typedef struct AstConditional {

@@ -7,7 +7,6 @@ fn test1() {
 
 fn test6() {
     fmt.printf("%s, %s %d\n", "Hi", "Planet!");
-    a := ENOENT;
 }
 
 fn test2() {

@@ -327,6 +327,17 @@ Ast *parse_extern_func_decl() {
     TypeList* arg_types = NULL;
     for (;;) {
         t = next_token();
+        if (t->type == TOK_DIRECTIVE) {
+            if (!strcmp(t->sval, "autocast")) {
+                func->fn_decl->ext_autocast |= 1 << n;
+                t = next_token();
+                if (t->type == TOK_RPAREN) {
+                    error(lineno(), current_file_name(), "Directive #autocast in extern function declaration without argument type.");
+                }
+            } else {
+                error(lineno(), current_file_name(), "Unexpected directive '#%s' in argument list.", t->sval);
+            }
+        }
         if (t->type == TOK_RPAREN) {
             break;
         }
@@ -357,6 +368,7 @@ Ast *parse_extern_func_decl() {
     Var *fn_decl_var = make_var(fname, fn_type);
     fn_decl_var->ext = 1;
     fn_decl_var->constant = 1;
+    fn_decl_var->fn_decl = func->fn_decl;
     func->fn_decl->var = fn_decl_var;
     return func; 
 }
@@ -396,15 +408,19 @@ Ast *parse_func_decl(int anonymous) {
         }
 
         if (t->type != TOK_ID) {
+            if (t->type == TOK_DIRECTIVE) {
+                error(lineno(), current_file_name(),
+                      "Directive '#autocast' not allowed outside extern function declaration.");
+            }
             error(lineno(), current_file_name(),
-                "Unexpected token (type '%s') in argument list of function declaration '%s'.",
-                token_type(t->type), fname);
+                  "Unexpected token (type '%s') in argument list of function declaration '%s'.",
+                  token_type(t->type), fname);
         }
 
         for (VarList *a = args; a != NULL; a = a->next) {
             if (!strcmp(a->item->name, t->sval)) {
                 error(lineno(), current_file_name(), 
-                    "Duplicate argument '%s' in function declaration.", t->sval);
+                      "Duplicate argument '%s' in function declaration.", t->sval);
             }
         }
 
@@ -660,6 +676,10 @@ Ast *parse_statement(Tok *t) {
             ast->import->path = t->sval;
             return ast;
         }
+
+        if (!strcmp(t->sval, "autocast")) {
+            // TODO: expect an extern fn definition, set all args to autocast
+        }
         // If not #import, default to normal behavior
         ast = parse_expression(t, 0);
         break;
@@ -780,11 +800,17 @@ Ast *parse_directive(Tok *t) {
 
     dir->directive->name = t->sval;
 
+    // autocast
+    if (!strcmp(t->sval, "autocast")) {
+        return dir;
+    }
+
     Tok *next = next_token();
     if (next == NULL) {
         error(lineno(), current_file_name(), "Unexpected end of input.");
     }
 
+    // type
     if (!strcmp(t->sval, "type")) {
         dir->directive->object = NULL;
         dir->var_type = parse_type(next, 0);
@@ -793,6 +819,7 @@ Ast *parse_directive(Tok *t) {
         error(lineno(), current_file_name(), "#import directive must be a statement.");
     }
 
+    // typeof
     if (next->type != TOK_LPAREN) {
         error(lineno(), current_file_name(),
             "Unexpected token '%s' while parsing directive '%s'",

@@ -516,10 +516,57 @@ char *read_string() {
     int len = 0;
     char c;
     int start = source_stack->line;
+    int escape = 0;
     while ((c = get_char()) != EOF) {
-        if (c == '\"' && (len == 0 || buf[len-1] != '\\')) {
+        if (c == '\"' && !escape) {
             buf[len] = 0;
             return buf;
+        }
+        if (escape) {
+            // are these right?
+            switch (c) {
+            case '\'':
+                c = 0x27;
+                break;
+            case '"':
+                c = 0x22;
+                break;
+            case '?':
+                c = 0x3f;
+                break;
+            case '\\':
+                c = 0x5c;
+                break;
+            case 'a':
+                c = 0x07;
+                break;
+            case 'b':
+                c = 0x08;
+                break;
+            case 'f':
+                c = 0x0c;
+                break;
+            case 'n':
+                c = 0x0a;
+                break;
+            case 'r':
+                c = 0x0d;
+                break;
+            case 't':
+                c = 0x09;
+                break;
+            case 'v':
+                c = 0x0b;
+                break;
+            case 'x':
+                error(lineno(), current_file_name(), "Oops! I haven't done hex escape sequences in strings yet. Nag me pls.");
+            default:
+                error(lineno(), current_file_name(), "Unknown escape sequence '\\%c' in string literal.", c);
+            }
+            escape = 0;
+        } else if (c == '\\') {
+            escape = 1;
+            continue;
         }
         buf[len++] = c;
         if (len == alloc - 1) {

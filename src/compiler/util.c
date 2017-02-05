@@ -8,10 +8,43 @@
 
 void print_quoted_string(char *val) {
     for (char *c = val; *c; c++) {
-        if (*c == '\"') {// || *c == '\\') {
-            printf("\\");
+        switch (*c) {
+        case 0x27:
+            printf("\\\'");
+            break;
+        case 0x22:
+            printf("\\\"");
+            break;
+        case 0x3f:
+            printf("\\?");
+            break;
+        case 0x5c:
+            printf("\\\\");
+            break;
+        case 0x07:
+            printf("\\a");
+            break;
+        case 0x08:
+            printf("\\b");
+            break;
+        case 0x0c:
+            printf("\\f");
+            break;
+        case 0x0a:
+            printf("\\n");
+            break;
+        case 0x0d:
+            printf("\\r");
+            break;
+        case 0x09:
+            printf("\\t");
+            break;
+        case 0x0b:
+            printf("\\v");
+            break;
+        default:
+            printf("%c", *c);
         }
-        printf("%c", *c);
     }
 }
 

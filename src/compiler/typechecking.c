@@ -318,8 +318,10 @@ Ast *coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
             if (!loss) {
                 return number_cast(scope, from, to);
             }
-        } else if (is_string(from->var_type)) {
-            if (t->data->base == UINT_T && t->data->size == 1 && strlen(from->lit->string_val) == 1) {
+        } else {
+            if (is_string(from->var_type) &&
+              t->data->base == UINT_T && t->data->size == 1 &&
+              strlen(from->lit->string_val) == 1) {
                 Ast *c = ast_alloc(AST_LITERAL);
                 c->lit->int_val = from->lit->string_val[0];
                 c->lit->lit_type = INTEGER;
@@ -328,7 +330,6 @@ Ast *coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
                 c->var_type = t;
                 return c;
             }
-        } else {
             if (can_cast(from->var_type, t)) {
                 if (!is_lvalue(from)) {
                     allocate_ast_temp_var(scope, from);
@@ -399,8 +400,10 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from) {
                     type_to_string(from->var_type), type_to_string(to));
             }
             return number_cast(scope, from, to);
-        } else if (is_string(from->var_type)) {
-            if (t->data->base == UINT_T && t->data->size == 1 && strlen(from->lit->string_val) == 1) {
+        } else {
+            if (is_string(from->var_type) &&
+              t->data->base == UINT_T && t->data->size == 1 &&
+              strlen(from->lit->string_val) == 1) {
                 Ast *c = ast_alloc(AST_LITERAL);
                 c->lit->int_val = from->lit->string_val[0];
                 c->lit->lit_type = INTEGER;
@@ -409,7 +412,6 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from) {
                 c->var_type = t;
                 return c;
             }
-        } else {
             if (can_cast(from->var_type, t)) {
                 if (!is_lvalue(from)) {
                     allocate_ast_temp_var(scope, from);
