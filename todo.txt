@@ -1,8 +1,13 @@
 TODO
 ====
 
-- Allow coersion of single-character string literal to u8 (comparison between indexed string and literal, primarily)
 - Better error message for checking polymorphic function arg types
+- Improve TypeInfo and related types -- allow types (int, u8, string) to be used
+  as identifiers? i.e.:
+    t := #typeof(x);
+    if t == int {
+        // ...
+    }
 - Parameterized struct types
 - "unwise" cast to silence compiler error
 - Packages

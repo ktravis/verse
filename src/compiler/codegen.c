@@ -895,7 +895,6 @@ void compile(Scope *scope, Ast *ast) {
             printf("%d", (unsigned char)ast->lit->int_val);
             break;
         case STRING:
-            // TODO strlen is wrong for escaped chars \t etc
             printf("init_string(\"");
             print_quoted_string(ast->lit->string_val);
             printf("\", %d)", (int)strlen(ast->lit->string_val));
