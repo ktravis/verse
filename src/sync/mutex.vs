@@ -68,11 +68,11 @@ fn futex_wait(addr:&s64, waiters:&s64, val:s64, priv:s64) {
         atomic.incr(waiters as &int);
     }
     while (*addr == val) {
-        r := syscall.syscall4(syscall.sys_futex as ptr, addr as ptr, (FutexState.FUTEX_WAIT as int|priv) as ptr, val as ptr, 0 as ptr);
+        r := syscall.syscall4(syscall.sys_futex, addr, FutexState.FUTEX_WAIT as int|priv, val, 0);
         if (r as int != -syscall.ENOSYS) {
             continue;
         }
-        syscall.syscall4(syscall.sys_futex as ptr, addr as ptr, FutexState.FUTEX_WAIT as ptr, val as ptr, 0 as ptr);
+        syscall.syscall4(syscall.sys_futex, addr, FutexState.FUTEX_WAIT, val, 0);
     }
     if (validptr(waiters as ptr)) {
         atomic.decr(waiters as &int);
@@ -86,9 +86,9 @@ fn futex_wakeup(addr:&s64, cnt:s64, priv:s64) {
     if cnt < 0 {
         cnt = INT_MAX as s64;
     }
-    r := syscall.syscall3(syscall.sys_futex as ptr, addr as ptr, (FutexState.FUTEX_WAKE as int|priv) as ptr, cnt as ptr);
+    r := syscall.syscall3(syscall.sys_futex, addr, FutexState.FUTEX_WAKE as int|priv, cnt);
     if (r as int != -syscall.ENOSYS) {
         return;
     }
-    syscall.syscall3(syscall.sys_futex as ptr, addr as ptr, FutexState.FUTEX_WAKE as ptr, cnt as ptr);
+    syscall.syscall3(syscall.sys_futex, addr, FutexState.FUTEX_WAKE, cnt);
 }
