@@ -88,16 +88,21 @@ type Thread: struct {
     args:[]Any;
 };
 
-extern fn __clone(fn(), ptr, ptr, ptr);
+extern fn __clone(fn(), #autocast ptr, #autocast ptr, #autocast ptr);
 
 STACK_SIZE := 4096;
 
-fn threadCreate(start:fn()):&Thread {
+fn threadCreate(start:fn()) -> &Thread {
     t:Thread;
+    // TODO: using MAP_GROWSDOWN causes a segfault ONLY when using `make`
+    //t.stack = syscall.mmap(0, STACK_SIZE, PROT_READ | PROT_WRITE,
+        //MAP_PRIVATE | MAP_ANON | MAP_GROWSDOWN, -1, 0);
     t.stack = syscall.mmap(0, STACK_SIZE, PROT_READ | PROT_WRITE,
-        MAP_PRIVATE | MAP_ANON | MAP_GROWSDOWN, -1, 0);
+        MAP_PRIVATE | MAP_ANON, -1, 0);
     flags := CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_PARENT|CLONE_THREAD|CLONE_IO;
+    // TODO: is this necessary? or does the presence of certain flags return the
+    // top of the stack already from mmap?
     s := t.stack as int + STACK_SIZE;
-    __clone(start, s as ptr, flags as ptr, 0 as ptr);
+    __clone(start, s, flags, 0);
     return &t;
 }

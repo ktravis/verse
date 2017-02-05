@@ -17,7 +17,7 @@ fn testSwap64() {
     fmt.printf("Swapped %d with %d. Variable passed in by reference is now %d\n", r, 3, p);
 }
 
-fn main():int {
+fn main() -> int {
     testCompareAndSwap();
     testSwap64();
     return 0;

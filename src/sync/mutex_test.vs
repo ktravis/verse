@@ -9,7 +9,7 @@ fn testLock() {
     fmt.printf("Unlocked successfully\n");
 }
 
-fn main():int {
+fn main() -> int {
     testLock();
     return 0;
 }
