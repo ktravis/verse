@@ -52,18 +52,19 @@ type itimerspec: struct {
 
 fn timer_gettime(t:timer_t):itimerspec {
     ts:itimerspec;
-    syscall.syscall2(syscall.SYS_timer_gettime as ptr, t as ptr, &ts as ptr);
+    syscall.syscall2(syscall.sys_timer_gettime as ptr, t as ptr, &ts as ptr);
     return ts;
 }
 
 fn clock_gettime(clk:ClockTypes):timespec {
     ts:timespec;
-    syscall.syscall2(syscall.SYS_clock_gettime as ptr, clk as ptr, &ts as ptr);
+    syscall.syscall2(syscall.sys_clock_gettime as ptr, clk as ptr, &ts as ptr);
     return ts;
 }
 
 fn time():timespec {
     use ClockTypes;
+    // TODO: needs to check errno
     return clock_gettime(CLOCK_REALTIME);
 }
 
@@ -73,7 +74,7 @@ fn sleep(n:int) {
     rem:timespec;
     req.tv_sec = n as s64;
     req.tv_nsec = 0;
-    syscall.syscall2(syscall.SYS_nanosleep as ptr, &req as ptr, &rem as ptr);
+    syscall.syscall2(syscall.sys_nanosleep as ptr, &req as ptr, &rem as ptr);
 }
 
 fn usleep(n:s64) {
@@ -83,7 +84,7 @@ fn usleep(n:s64) {
     // TODO: no mods!
     //req.tv_nsec = (n % 1000000) * 1000;
     req.tv_nsec = 0;
-    syscall.syscall2(syscall.SYS_nanosleep as ptr, &req as ptr, &rem as ptr);
+    syscall.syscall2(syscall.sys_nanosleep as ptr, &req as ptr, &rem as ptr);
 }
 
 //fn time():float64 {
