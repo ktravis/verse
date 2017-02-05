@@ -1,20 +1,20 @@
-fn floop():int {
+fn floop() -> int {
     return 2;
 }
-fn main():int {
+fn main() -> int {
     grp := floop;
     a:int = grp();
     b:int = 3;
-    /*x := fn ():auto {*/
+    /*x := fn () -> auto {*/
         /*c := #{b};*/
-        /*return fn ():string {*/
+        /*return fn () -> string {*/
             /*return #{itoa(c) + "hiiii"};*/
         /*};*/
     /*};*/
-    /*y := fn ():auto {*/
+    /*y := fn () -> auto {*/
         /*c:[5]string;*/
         /*c[2] = "123";*/
-        /*return fn ():string {*/
+        /*return fn () -> string {*/
             /*c := #{c};*/
             /*return c[2];*/
         /*};*/

@@ -1,4 +1,4 @@
-fn doit(x:$T, y:T):T {
+fn doit(x:$T, y:T) -> T {
     println("ayyyy... lmao");
     a := #typeof(x);
     if a == #type string {
@@ -9,7 +9,7 @@ fn doit(x:$T, y:T):T {
     return x + y;
 }
 
-fn sum(x:[]$T):T {
+fn sum(x:[]$T) -> T {
     println("ayyyy lol");
     s:T;
     for a in x {
@@ -25,15 +25,15 @@ fn wow(f: fn($R), stuff: []R) {
     }
 }
 
-fn var(x:$T...):T {
+fn var(x:$T...) -> T {
     return x[1];
 }
 
-fn eh(x:$T, f:fn(T):T):T {
+fn eh(x:$T, f:fn(T) -> T) -> T {
     return f(x);
 }
 
-fn main():int {
+fn main() -> int {
     (fn(x:$T){
         println("anyony");
     })(2);
@@ -67,7 +67,7 @@ fn main():int {
     println(*(a.value_pointer as &string));
 
     // TODO: bug
-    /*eh(2, fn(a: int):int { return a; });*/
+    /*eh(2, fn(a: int) -> int { return a; });*/
 
     return 0;
 }

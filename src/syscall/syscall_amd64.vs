@@ -15,38 +15,36 @@ sys_exit_group      := 231;
 sys_clock_gettime   := 228;
 sys_clock_nanosleep := 230;
 
-// TODO: can't make declaration the same name as package gets error:
-// Cannot use dot operator on non-struct type 'fn(ptr)'.
-// extern fn syscall(ptr);
-extern fn syscall1(ptr, ptr):ptr;
-extern fn syscall2(ptr, ptr, ptr):ptr;
-extern fn syscall3(ptr, ptr, ptr, ptr):ptr;
-extern fn syscall4(ptr, ptr, ptr, ptr, ptr):ptr;
-extern fn syscall5(ptr, ptr, ptr, ptr, ptr, ptr):ptr;
-extern fn __syscall6(ptr, ptr, ptr, ptr, ptr, ptr, ptr):ptr;
+extern fn syscall(#autocast ptr);
+extern fn syscall1(#autocast ptr, #autocast ptr) -> ptr;
+extern fn syscall2(#autocast ptr, #autocast ptr, #autocast ptr) -> ptr;
+extern fn syscall3(#autocast ptr, #autocast ptr, #autocast ptr, #autocast ptr) -> ptr;
+extern fn syscall4(#autocast ptr, #autocast ptr, #autocast ptr, #autocast ptr, #autocast ptr) -> ptr;
+extern fn syscall5(#autocast ptr, #autocast ptr, #autocast ptr, #autocast ptr, #autocast ptr, #autocast ptr) -> ptr;
+extern fn __syscall6(#autocast ptr, #autocast ptr, #autocast ptr, #autocast ptr, #autocast ptr, #autocast ptr, #autocast ptr) -> ptr;
 
 fn exit(code:int) {
-    syscall1(sys_exit as ptr, code as ptr);
+    syscall1(sys_exit, code as ptr);
 }
 
 fn exit_group(code:int) {
-    syscall1(sys_exit_group as ptr, code as ptr);
+    syscall1(sys_exit_group, code);
 }
 
 fn kill(pid:int, sig:int) {
-    syscall2(sys_kill as ptr, pid as ptr, sig as ptr);
+    syscall2(sys_kill, pid, sig);
 }
 
 fn write(fd:int, data:string, n:int) {
-    syscall3(sys_write as ptr, fd as ptr, data.bytes as ptr, n as ptr);
+    syscall3(sys_write, fd, data.bytes, n);
 }
 
 //fn mmap(addr:uint, len:uint, prot:uint, flags:uint, fd:uint, off:uint):ptr {
 fn mmap(addr:int, len:int, prot:int, flags:int, fd:int, off:int):ptr {
-    return __syscall6(sys_mmap as ptr, addr as ptr, len as ptr, prot as ptr, flags as ptr, fd as ptr, off as ptr);
+    return __syscall6(sys_mmap, addr, len, prot, flags, fd, off);
 }
 
 //fn munmap(addr:uint, len:uint):ptr {
 fn munmap(addr:int, len:int):ptr {
-    return syscall2(sys_munmap as ptr, addr as ptr, len as ptr);
+    return syscall2(sys_munmap, addr, len);
 }

@@ -282,6 +282,8 @@ Tok *_next_token(int nl_ok) {
         char n = get_char();
         if (n == '=') {
             t = make_token(TOK_OPASSIGN);
+        } else if (n == '>') {
+            t = make_token(TOK_ARROW);
         } else {
             t = make_token(TOK_OP);
             unget_char(n);
@@ -305,6 +307,15 @@ Tok *_next_token(int nl_ok) {
             unget_char(n);
         }
         t->op = OP_DIV;
+    } else if (c == '%') {
+        char n = get_char();
+        if (n == '=') {
+            t = make_token(TOK_OPASSIGN);
+        } else {
+            t = make_token(TOK_OP);
+            unget_char(n);
+        }
+        t->op = OP_MOD;
     } else if (c == '^') {
         char n = get_char();
         if (n == '=') {
@@ -505,10 +516,57 @@ char *read_string() {
     int len = 0;
     char c;
     int start = source_stack->line;
+    int escape = 0;
     while ((c = get_char()) != EOF) {
-        if (c == '\"' && (len == 0 || buf[len-1] != '\\')) {
+        if (c == '\"' && !escape) {
             buf[len] = 0;
             return buf;
+        }
+        if (escape) {
+            // are these right?
+            switch (c) {
+            case '\'':
+                c = 0x27;
+                break;
+            case '"':
+                c = 0x22;
+                break;
+            case '?':
+                c = 0x3f;
+                break;
+            case '\\':
+                c = 0x5c;
+                break;
+            case 'a':
+                c = 0x07;
+                break;
+            case 'b':
+                c = 0x08;
+                break;
+            case 'f':
+                c = 0x0c;
+                break;
+            case 'n':
+                c = 0x0a;
+                break;
+            case 'r':
+                c = 0x0d;
+                break;
+            case 't':
+                c = 0x09;
+                break;
+            case 'v':
+                c = 0x0b;
+                break;
+            case 'x':
+                error(lineno(), current_file_name(), "Oops! I haven't done hex escape sequences in strings yet. Nag me pls.");
+            default:
+                error(lineno(), current_file_name(), "Unknown escape sequence '\\%c' in string literal.", c);
+            }
+            escape = 0;
+        } else if (c == '\\') {
+            escape = 1;
+            continue;
         }
         buf[len++] = c;
         if (len == alloc - 1) {
@@ -633,7 +691,7 @@ int priority_of(Tok *t) {
             return 8;
         case OP_PLUS: case OP_MINUS:
             return 9;
-        case OP_MUL: case OP_DIV:
+        case OP_MUL: case OP_DIV: case OP_MOD:
             return 10;
         case OP_NOT:
             return 11;
@@ -679,6 +737,8 @@ const char *tok_to_string(Tok *t) {
         return "\\n";
     case TOK_COLON:
         return ":";
+    case TOK_ARROW:
+        return "->";
     case TOK_DCOLON:
         return "::";
     case TOK_COMMA:
@@ -713,8 +773,6 @@ const char *tok_to_string(Tok *t) {
         return "struct";
     case TOK_TYPE:
         return "type";
-    /*case TOK_TYPE:*/
-        /*return type_as_str(make_type(t->tval));*/
     case TOK_HOLD:
         return "hold";
     case TOK_RELEASE:
@@ -756,6 +814,8 @@ const char *token_type(int type) {
         return "NEWLINE";
     case TOK_COLON:
         return "COLON";
+    case TOK_ARROW:
+        return "ARROW";
     case TOK_DCOLON:
         return "DOUBLE COLON";
     case TOK_COMMA:
@@ -813,6 +873,7 @@ const char *op_to_str(int op) {
     case OP_MINUS: return "-";
     case OP_MUL: return "*";
     case OP_DIV: return "/";
+    case OP_MOD: return "%";
     case OP_XOR: return "^";
     case OP_BINAND: return "&";
     case OP_BINOR: return "|";
@@ -842,7 +903,7 @@ Tok *expect(int type) {
     }
     Tok *t = _next_token(nl_ok);
     if (t == NULL || t->type != type) {
-        error(lineno(), current_file_name(), "Expected token of type '%s', got '%s'.", token_type(type), tok_to_string(t));
+        error(lineno(), current_file_name(), "Expected token '%s', got '%s'.", token_type(type), tok_to_string(t));
     }
     return t;
 }

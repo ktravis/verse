@@ -26,18 +26,12 @@ int main(int argc, char **argv) {
         exit(1);
     }
     
-    Scope *root_scope = new_scope(NULL);
+    Package *main_package = init_main_package(current_file_name());
+    Scope *root_scope = main_package->scope;
     init_builtin_types();
     init_builtins();
 
     Ast *root = parse_block(0);
-    // Should this go somewhere else?
-    PkgList *packages = all_loaded_packages();
-    for (PkgList *list = packages; list != NULL; list = list->next) {
-        for (PkgFileList *files = list->item->files; files != NULL; files = files->next) {
-            files->item->root = parse_semantics(list->item->scope, files->item->root);
-        }
-    }
     root = parse_semantics(root_scope, root);
 
     Var *main_var = NULL;
@@ -70,8 +64,14 @@ int main(int argc, char **argv) {
     }
 
     // declare globals
-    for (VarList *vars = get_global_vars(); vars != NULL; vars = vars->next) {
+    for (VarList *vars = main_package->globals; vars != NULL; vars = vars->next) {
         emit_var_decl(root_scope, vars->item);
+    }
+    PkgList *packages = all_loaded_packages();
+    for (PkgList *list = packages; list != NULL; list = list->next) {
+        for (VarList *vars = list->item->globals; vars != NULL; vars = vars->next) {
+            emit_var_decl(list->item->scope, vars->item);
+        }
     }
 
     // init types
@@ -110,7 +110,7 @@ int main(int argc, char **argv) {
         for (PkgFileList *files = list->item->files; files != NULL; files = files->next) {
             compile(list->item->scope, files->item->root);
         }
-        emit_scope_end(list->item->scope);
+        emit_init_scope_end(list->item->scope);
     }
 
     emit_scope_start(root_scope);

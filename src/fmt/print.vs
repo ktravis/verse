@@ -18,7 +18,7 @@ fn formatArgs(c:u8, val: Any) {
     //}
 }
 
-fn checkArgs(fmt:string, len:int):bool {
+fn checkArgs(fmt:string, len:int) -> bool {
     i := 0;
     j := 0;
     while i < fmt.length {

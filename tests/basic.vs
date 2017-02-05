@@ -9,19 +9,19 @@ x:int = 2;
 x1:int = 2;
 x2:string = "hi";
 
-fn to_be_passed():bool {
+fn to_be_passed() -> bool {
     return false;
 }
 
-assigned:fn():bool;
+assigned:fn() -> bool;
 
-fn to_pass_to(f:fn():bool) {
-    g:fn():bool;
+fn to_pass_to(f:fn() -> bool) {
+    g:fn() -> bool;
     g = f;
     assert(!f());
 }
 
-fn main():int {
+fn main() -> int {
     assert(2 == 2);
     assert(1 + 2 == 3);
     assert(2 * 4 ==  16 / 2);
@@ -33,7 +33,7 @@ fn main():int {
     assigned = to_be_passed;
     to_pass_to(assigned);
 
-    z := fn ():bool {
+    z := fn () -> bool {
         return true;
     };
     z2 := z;
@@ -50,12 +50,12 @@ fn main():int {
     }
     println(x);
 
-    blah := fn(x:int, y:int):int {
+    blah := fn(x:int, y:int) -> int {
         return x * x + y * y;
     };
     assert(blah(3, 4) == 25);
-    blah2 := fn():fn(bool):bool {
-        return fn(a:bool):bool {
+    blah2 := fn() -> fn(bool) -> bool {
+        return fn(a:bool) -> bool {
             return !a;
         };
     };
@@ -95,6 +95,8 @@ fn main():int {
     assert(s == s1);
 
     assert("\r\n"[0] == 13);
+
+    assert((10 as u8) == "\n");
 
     println("Tests passed.");
 
