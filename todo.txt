@@ -15,3 +15,4 @@ TODO
   - Global vars in different packages may be referred to prior to initialization!
     Decide whether this is okay, and possibly change the order that init code is
     generated in (i.e. most nested import first?)
+  - Error reporting on imported package

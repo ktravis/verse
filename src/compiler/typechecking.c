@@ -127,9 +127,6 @@ int can_cast(Type *from, Type *to) {
             }
             return from->data->base == to->data->base;
         case INT_T:
-            if (to->comp == REF && from->data->size == 8) {
-                return 1;
-            }
             if (to->comp == BASIC) {
                 if (to->data->base == BASEPTR_T) {
                     return from->data->size == 8;
@@ -358,18 +355,18 @@ Ast *coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
                 return c;
             }
 
-            /*if (can_cast(from->var_type, t)) {*/
-                /*if (!is_lvalue(from)) {*/
-                    /*allocate_ast_temp_var(scope, from);*/
-                /*}*/
-                /*Ast *c = ast_alloc(AST_CAST);*/
-                /*c->cast->cast_type = to;*/
-                /*c->cast->object = from;*/
-                /*c->line = from->line;*/
-                /*c->file = from->file;*/
-                /*c->var_type = t;*/
-                /*return c;*/
-            /*}*/
+            if (can_cast(from->var_type, t)) {
+                if (!is_lvalue(from)) {
+                    allocate_ast_temp_var(scope, from);
+                }
+                Ast *c = ast_alloc(AST_CAST);
+                c->cast->cast_type = to;
+                c->cast->object = from;
+                c->line = from->line;
+                c->file = from->file;
+                c->var_type = t;
+                return c;
+            }
         }
     }
     return NULL;
@@ -402,7 +399,6 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from) {
         }
     }
     if (from->type == AST_LITERAL) {
-        // TODO: string literal of length 1 -> u8
         if (is_numeric(t) && is_numeric(from->var_type)) {
             int loss = 0;
             if (from->lit->lit_type == INTEGER) {
@@ -441,20 +437,18 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from) {
                 return c;
             }
 
-            // TODO: this needs to be slightly different, because integers will
-            // auto-cast to refs otherwise!
-            /*if (can_cast(from->var_type, t)) {*/
-                /*if (!is_lvalue(from)) {*/
-                    /*allocate_ast_temp_var(scope, from);*/
-                /*}*/
-                /*Ast *c = ast_alloc(AST_CAST);*/
-                /*c->cast->cast_type = to;*/
-                /*c->cast->object = from;*/
-                /*c->line = from->line;*/
-                /*c->file = from->file;*/
-                /*c->var_type = t;*/
-                /*return c;*/
-            /*}*/
+            if (can_cast(from->var_type, t)) {
+                if (!is_lvalue(from)) {
+                    allocate_ast_temp_var(scope, from);
+                }
+                Ast *c = ast_alloc(AST_CAST);
+                c->cast->cast_type = to;
+                c->cast->object = from;
+                c->line = from->line;
+                c->file = from->file;
+                c->var_type = t;
+                return c;
+            }
 
             error(from->line, from->file,
                 "Cannot coerce literal value of type '%s' into type '%s'.",
