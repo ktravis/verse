@@ -233,6 +233,78 @@ Type *parse_fn_type(int poly_ok) {
     return make_fn_type(nargs, args, ret, variadic);
 }
 
+TypeList *parse_type_params(int in_fn) {
+    Tok *t = next_token();
+
+    TypeList *list = NULL;
+
+    for (;;) {
+        if (t == NULL) {
+            error(lineno(), current_file_name(), "Unexpected EOF while parsing type parameter list.");
+        }
+        if (t->type == TOK_OP && t->op == OP_GT) {
+            break;
+        } else {
+            list = typelist_append(list, parse_type(t, in_fn));
+        }
+
+        t = next_token();
+        if (t->type == TOK_OP && t->op == OP_GT) {
+            break;
+        } else if (t->type == TOK_COMMA) {
+            t = next_token();
+        } else {
+            error(lineno(), current_file_name(), "Unexpected token '%s' in type parameter list.", tok_to_string(t));
+        }
+    }
+
+    if (list == NULL) {
+        error(lineno(), current_file_name(), "Empty type parameter list is invalid.");
+    }
+
+    return reverse_typelist(list);
+}
+
+TypeList *parse_type_param_defs() {
+    Tok *t = next_token();
+
+    TypeList *list = NULL;
+
+    for (;;) {
+        if (t == NULL) {
+            error(lineno(), current_file_name(), "Unexpected EOF while parsing type parameter list.");
+        }
+        if (t->type == TOK_OP && t->op == OP_GT) {
+            break;
+        } else if (t->type == TOK_ID) {
+            for (TypeList *prev = list; prev != NULL; prev = prev->next) {
+                if (!strcmp(prev->item->name, t->sval)) {
+                    error(lineno(), current_file_name(), "Repeated name '%s' in type parameter list.", t->sval);
+                }
+            }
+            list = typelist_append(list, make_type(NULL, t->sval));
+        } else {
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing type parameter list.", tok_to_string(t));
+        }
+
+
+        t = next_token();
+        if (t->type == TOK_OP && t->op == OP_GT) {
+            break;
+        } else if (t->type == TOK_COMMA) {
+            t = next_token();
+        } else {
+            error(lineno(), current_file_name(), "Unexpected token '%s' in type parameter list.", tok_to_string(t));
+        }
+    }
+
+    if (list == NULL) {
+        error(lineno(), current_file_name(), "Empty type parameter list is invalid.");
+    }
+
+    return reverse_typelist(list);
+}
+
 Type *parse_type(Tok *t, int poly_ok) {
     if (t == NULL) {
         error(lineno(), current_file_name(), "Unexpected EOF while parsing type.");
@@ -262,6 +334,14 @@ Type *parse_type(Tok *t, int poly_ok) {
             unget_token(t);
             type = make_type(NULL, n);
         }
+
+        t = next_token();
+        if (t->type == TOK_OP && t->op == OP_LT) {
+            type = make_params_type(type, parse_type_params(poly_ok));
+        } else {
+            unget_token(t);
+        }
+
     } else if (t->type == TOK_POLY) {
         if (!poly_ok) {
             error(lineno(), current_file_name(), "Polymorph type definitions are not allowed outside of function arguments.");
@@ -574,7 +654,18 @@ Ast *parse_enum_decl() {
 }
 
 Type *parse_struct_type(int poly_ok) {
-    expect(TOK_LBRACE);
+    Tok *t = next_token();
+
+    int generic = 0;
+    TypeList *params = NULL;
+    if (t->type == TOK_OP && t->op == OP_LT) {
+        params = parse_type_param_defs();
+        t = next_token();
+        generic = 1;
+    }
+    if (t->type != TOK_LBRACE) {
+        error(lineno(), current_file_name(), "Unexpected token '%s' while parsing struct type.", tok_to_string(t));
+    }
 
     int alloc = 6;
     int nmembers = 0;
@@ -614,6 +705,10 @@ Type *parse_struct_type(int poly_ok) {
                     "Repeat member name '%s' in struct.", member_names[i]);
             }
         }
+    }
+
+    if (generic) {
+        return make_generic_struct_type(nmembers, member_names, member_types, params);
     }
 
     return make_struct_type(nmembers, member_names, member_types);

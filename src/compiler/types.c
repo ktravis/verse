@@ -141,11 +141,29 @@ Type *make_enum_type(Type *inner, int nmembers, char **member_names, long *membe
 Type *make_struct_type(int nmembers, char **member_names, Type **member_types) {
     Type *s = malloc(sizeof(Type));
     s->comp = STRUCT;
+    s->st.generic_base = NULL;
     s->st.nmembers = nmembers;
     s->st.member_names = member_names;
     s->st.member_types = member_types;
+    s->st.generic = 0;
     s->id = last_type_id++;
     return s;
+}
+
+Type *make_generic_struct_type(int nmembers, char **member_names, Type **member_types, TypeList *params) {
+    Type *s = make_struct_type(nmembers, member_names, member_types);
+    s->st.arg_params = params;
+    s->st.generic = 1;
+    return s;
+}
+
+Type *make_params_type(Type *inner, TypeList *params) {
+    Type *t = malloc(sizeof(Type));
+    t->comp = PARAMS;
+    t->params.inner = inner;
+    t->params.args = params;
+    t->id = last_type_id++;
+    return t;
 }
 
 Type *make_external_type(char *pkg, char *name) {
@@ -357,10 +375,69 @@ int is_polydef(Type *t) {
             }
         }
         return 0;
+    case PARAMS:
+        for (TypeList *list = t->params.args; list != NULL; list = list->next) {
+            if (is_polydef(list->item)) {
+                return 1;
+            }
+        }
+        if (is_polydef(t->params.inner)) {
+            return 1;
+        }
+        return 0;
     default:
         break;
     }
     return 0;
+}
+
+int is_concrete(Type *t) {
+    t = resolve_alias(t);
+    if (t->comp == STRUCT && t->st.generic) {
+        return 0;
+    }
+    return 1;
+}
+
+Type *replace_type(Type *base, Type *from, Type *to) {
+    if (base == from || base->id == from->id) {
+        return to;
+    }
+
+    switch (base->comp) {
+    case ALIAS:
+        if (from->comp == ALIAS && from->scope == base->scope && !strcmp(from->name, base->name)) {
+            return to;
+        }
+        break;
+    case PARAMS:
+        for (TypeList *args = base->params.args; args != NULL; args = args->next) {
+            args->item = replace_type(args->item, from, to);
+        }
+        base->params.inner = replace_type(base->params.inner, from, to);
+        break;
+    case REF:
+    case ARRAY:
+        base->inner = replace_type(base->inner, from, to);
+        break;
+    case STATIC_ARRAY:
+        base->array.inner = replace_type(base->array.inner, from, to);
+        break;
+    case STRUCT:
+        for (int i = 0; i < base->st.nmembers; i++) {
+            base->st.member_types[i] = replace_type(base->st.member_types[i], from, to);
+        }
+        break;
+    case FUNC:
+        for (TypeList *args = base->fn.args; args != NULL; args = args->next) {
+            args->item = replace_type(args->item, from, to);
+        }
+        base->fn.ret = replace_type(base->fn.ret, from, to);
+        break;
+    default:
+        break;
+    }
+    return base;
 }
 
 static int types_initialized = 0;
@@ -460,7 +537,6 @@ char *type_to_string(Type *t) {
         snprintf(name, n, "%s (aka %s)", t->name, inner);
         return name;
     }
-    /*PARAMS*/
     case STATIC_ARRAY: {
         char *inner = type_to_string(t->array.inner);
         int len = strlen(inner) + 3 + snprintf(NULL, 0, "%ld", t->array.length);
@@ -534,6 +610,9 @@ char *type_to_string(Type *t) {
         return dest;
     }
     case STRUCT: {
+        if (t->st.generic_base != NULL) {
+            return type_to_string(t->st.generic_base);
+        }
         int len = 9; // struct{} + \0
         int n = t->st.nmembers;
         char **member_types = malloc(sizeof(char*) * n);
@@ -561,6 +640,30 @@ char *type_to_string(Type *t) {
         /*free(member_types);*/ // TODO: why?
         strcat(dest, "}");
         return dest;
+    }
+    case PARAMS: {
+        char *left = type_to_string(t->params.inner);
+        int len = strlen(left) + 3; // left<>\0
+        // TODO: this is inefficient, let's do this a better way
+        for (TypeList *list = t->params.args; list != NULL; list = list->next) {
+            len += strlen(type_to_string(list->item));
+            if (list->next != NULL) {
+                len++; // ,
+            }
+        }
+        char *name = malloc(sizeof(char) * len);
+        name[0] = '\0'; // for strcat
+        strcat(name, left);
+        strcat(name, "<");
+        for (TypeList *list = t->params.args; list != NULL; list = list->next) {
+            strcat(name, type_to_string(list->item));
+            if (list->next != NULL) {
+                strcat(name, ",");
+            }
+        }
+        strcat(name, ">");
+        return name;
+
     }
     case EXTERNAL: {
         int len = strlen(t->ext.pkg_name) + strlen(t->ext.type_name) + 2;

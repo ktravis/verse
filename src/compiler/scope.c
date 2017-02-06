@@ -389,7 +389,9 @@ Type *define_type(Scope *s, char *name, Type *type) {
 
     type = make_type(s, name);
 
-    register_type(type);
+    if (!(td->type->comp == STRUCT && td->type->st.generic)) {
+        register_type(type);
+    }
     return type;
 }
 

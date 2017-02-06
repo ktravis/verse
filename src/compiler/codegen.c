@@ -492,17 +492,19 @@ void emit_func_decl(Scope *scope, Ast *fn) {
             printf("_poly_%d_vs_%d(", p->id, fn->fn_decl->var->id);
 
             VarList *args = fn->fn_decl->args;
+            TypeList *arg_types = p->args;
             while (args != NULL) {
                 if (fn->fn_decl->var->type->fn.variadic && args->next == NULL) {
                     printf("struct array_type ");
                 } else {
-                    emit_type(args->item->type);
+                    emit_type(arg_types->item);
                 }
                 printf("_vs_%d", args->item->id);
                 if (args->next != NULL) {
                     printf(",");
                 }
                 args = args->next;
+                arg_types = arg_types->next;
             }
             printf(") ");
             

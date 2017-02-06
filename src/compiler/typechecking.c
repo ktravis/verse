@@ -159,6 +159,9 @@ int match_polymorph(Scope *scope, Type *expected, Type *got) {
         if (expected->comp == ARRAY && res->comp == STATIC_ARRAY) {
             return match_polymorph(scope, expected->inner, res->array.inner);
         }
+        if (expected->comp == PARAMS && res->comp == STRUCT) {
+            return match_polymorph(scope, expected, res->st.generic_base);
+        }
         return 0;
     }
     switch (expected->comp) {
@@ -190,9 +193,33 @@ int match_polymorph(Scope *scope, Type *expected, Type *got) {
             got_args = got_args->next;
         }
         return check_type(expected->fn.ret, res->fn.ret);
+    case PARAMS: {
+        if (!check_type(expected->params.inner, res->params.inner)) {
+            return 0;
+        }
+        TypeList *exp_params = expected->params.args;
+        TypeList *got_params = res->params.args;
+        for (;;) {
+            if (exp_params == NULL && got_params == NULL) {
+                break;
+            } else if (exp_params == NULL || got_params == NULL) {
+                return 0;
+            }
+            // TODO: not sure this was right
+            if (is_polydef(exp_params->item)) {
+                if (!match_polymorph(scope, exp_params->item, got_params->item)) {
+                    return 0;
+                }
+            } else if (!check_type(exp_params->item, got_params->item)) {
+                return 0;
+            }
+            exp_params = exp_params->next;
+            got_params = got_params->next;
+        }
+        return 1;
+    }
     case STRUCT: // naw dog
     case STATIC_ARRAY: // can't use static array as arg can we?
-    case PARAMS:
     case POLYDEF:
     /*case POLY:*/
     case BASIC:
@@ -330,18 +357,19 @@ Ast *coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
                 c->var_type = t;
                 return c;
             }
-            if (can_cast(from->var_type, t)) {
-                if (!is_lvalue(from)) {
-                    allocate_ast_temp_var(scope, from);
-                }
-                Ast *c = ast_alloc(AST_CAST);
-                c->cast->cast_type = to;
-                c->cast->object = from;
-                c->line = from->line;
-                c->file = from->file;
-                c->var_type = t;
-                return c;
-            }
+
+            /*if (can_cast(from->var_type, t)) {*/
+                /*if (!is_lvalue(from)) {*/
+                    /*allocate_ast_temp_var(scope, from);*/
+                /*}*/
+                /*Ast *c = ast_alloc(AST_CAST);*/
+                /*c->cast->cast_type = to;*/
+                /*c->cast->object = from;*/
+                /*c->line = from->line;*/
+                /*c->file = from->file;*/
+                /*c->var_type = t;*/
+                /*return c;*/
+            /*}*/
         }
     }
     return NULL;
@@ -412,18 +440,21 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from) {
                 c->var_type = t;
                 return c;
             }
-            if (can_cast(from->var_type, t)) {
-                if (!is_lvalue(from)) {
-                    allocate_ast_temp_var(scope, from);
-                }
-                Ast *c = ast_alloc(AST_CAST);
-                c->cast->cast_type = to;
-                c->cast->object = from;
-                c->line = from->line;
-                c->file = from->file;
-                c->var_type = t;
-                return c;
-            }
+
+            // TODO: this needs to be slightly different, because integers will
+            // auto-cast to refs otherwise!
+            /*if (can_cast(from->var_type, t)) {*/
+                /*if (!is_lvalue(from)) {*/
+                    /*allocate_ast_temp_var(scope, from);*/
+                /*}*/
+                /*Ast *c = ast_alloc(AST_CAST);*/
+                /*c->cast->cast_type = to;*/
+                /*c->cast->object = from;*/
+                /*c->line = from->line;*/
+                /*c->file = from->file;*/
+                /*c->var_type = t;*/
+                /*return c;*/
+            /*}*/
 
             error(from->line, from->file,
                 "Cannot coerce literal value of type '%s' into type '%s'.",

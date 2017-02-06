@@ -9,6 +9,7 @@ TODO
         // ...
     }
 - Parameterized struct types
+  - Generic functions calls are not generating the right code after the first (when argument type is params with polydef in it)
 - "unwise" cast to silence compiler error
 - Packages
   - Global vars in different packages may be referred to prior to initialization!

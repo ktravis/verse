@@ -52,6 +52,9 @@ typedef struct StructType {
     int nmembers;
     char **member_names;
     struct Type **member_types;
+    int generic;
+    struct TypeList *arg_params;
+    struct Type *generic_base;
 } StructType;
 
 typedef struct EnumType {
@@ -68,7 +71,10 @@ typedef struct Type {
     union {
         struct TypeData *data; // basic
         char *name; // alias
-        struct TypeList *params;
+        struct {
+            struct TypeList *args;
+            struct Type *inner;
+        } params;
         struct {
             long length;
             struct Type *inner;
