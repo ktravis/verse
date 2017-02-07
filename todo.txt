@@ -9,10 +9,16 @@ TODO
         // ...
     }
 - Parameterized struct types
-  - Generic functions calls are not generating the right code after the first (when argument type is params with polydef in it)
+  - Make sure param types work in variadic
+  - Make sure param types work with use (generic func and regular)
+  - Generic struct literal
 - "unwise" cast to silence compiler error
 - Packages
   - Global vars in different packages may be referred to prior to initialization!
     Decide whether this is okay, and possibly change the order that init code is
     generated in (i.e. most nested import first?)
   - Error reporting on imported package
+- Defer (duh-fer)
+- Methods
+  - "impl" blocks
+  - "static" struct (/type) methods
