@@ -487,6 +487,7 @@ void emit_func_decl(Scope *scope, Ast *fn) {
             scope->polymorph = p;
             printf("/* %s */\n", fn->fn_decl->var->name);
             indent();
+            // TODO: is this the right return type?
             emit_type(fn->fn_decl->var->type->fn.ret);
 
             printf("_poly_%d_vs_%d(", p->id, fn->fn_decl->var->id);
@@ -1457,7 +1458,7 @@ void emit_forward_decl(Scope *scope, AstFnDecl *decl) {
 
             printf("_poly_%d_vs_%d(", p->id, decl->var->id);
 
-            TypeList *args = t->fn.args;
+            TypeList *args = p->args;
             for (int i = 0; args != NULL; i++) {
                 if (t->fn.variadic && args->next == NULL) {
                     printf("struct array_type ");

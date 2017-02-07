@@ -23,6 +23,8 @@ Type *make_primitive(int base, int size) {
 }
 
 Type *copy_type(Scope *scope, Type *t) {
+    // Should this be separated into 2 functions, one that replaces scope and
+    // the other that doesn't?
     // TODO: change id?
     if (t->comp == BASIC) {
         return t;
@@ -34,8 +36,15 @@ Type *copy_type(Scope *scope, Type *t) {
     case BASIC:
     case ALIAS:
     case POLYDEF:
-    case PARAMS:
     case EXTERNAL:
+        break;
+    case PARAMS:
+        type->params.args = NULL;
+        for (TypeList *list = t->params.args; list != NULL; list = list->next) {
+            type->params.args = typelist_append(type->params.args, copy_type(scope, list->item));
+        }
+        type->params.args = reverse_typelist(type->params.args);
+        type->params.inner = copy_type(scope, t->params.inner);
         break;
     case STATIC_ARRAY:
         type->array.inner = copy_type(scope, t->array.inner);
@@ -58,6 +67,14 @@ Type *copy_type(Scope *scope, Type *t) {
             type->st.member_types[i] = copy_type(scope, t->st.member_types[i]);
             type->st.member_names[i] = malloc(sizeof(char) * strlen(t->st.member_names[i] + 1));
             strcpy(type->st.member_names[i], t->st.member_names[i]);
+        }
+        if (type->st.generic) {
+            TypeList *l = NULL;
+            for (TypeList *list = t->st.arg_params; list != NULL; list = list->next) {
+                l = typelist_append(l, copy_type(scope, list->item));
+            }
+            type->st.arg_params = reverse_typelist(l);
+            type->st.generic_base = copy_type(scope, t->st.generic_base);
         }
         break;
     case ENUM:

@@ -337,11 +337,11 @@ static Ast *parse_enum_decl_semantics(Scope *scope, Ast *ast) {
 }
 
 void first_pass_type(Scope *scope, Type *t) {
+    t->scope = scope;
     switch (t->comp) {
     case POLYDEF:
     case ALIAS:
     case EXTERNAL:
-        t->scope = scope;
         break;
     case PARAMS:
         for (TypeList *list = t->params.args; list != NULL; list = list->next) {
@@ -679,7 +679,7 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
     }
     for (; given != NULL; given = given->next) {
         for (int i = 0; i < inner->st.nmembers; i++) {
-            member_types[i] = replace_type(member_types[i], expected->item, given->item); 
+            member_types[i] = replace_type(copy_type(member_types[i]->scope, member_types[i]), expected->item, given->item);
         }
 
         expected = expected->next; 
@@ -1046,7 +1046,9 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
         if (t->comp == STATIC_ARRAY) {
             t = make_array_type(t->array.inner);
         }
-        call_arg_types = typelist_append(call_arg_types, t);
+        if (!(resolved->fn.variadic && i >= resolved->fn.nargs)) {
+            call_arg_types = typelist_append(call_arg_types, t);
+        }
     }
     call_arg_types = reverse_typelist(call_arg_types);
 
@@ -1067,9 +1069,9 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
         } else {
             TypeList *list = call_arg_types;
             Type *a = list->item;
-            while (list != NULL) {
-                a = list->item;
+            while (list->next != NULL) {
                 list = list->next;
+                a = list->item;
             }
             a = make_static_array_type(a, ast->call->nargs - (resolved->fn.nargs - 1));
 
@@ -1121,9 +1123,6 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
         v->type = defined_arg_types->item;
         if (resolved->fn.variadic && list->next == NULL) {
             v->type = make_array_type(v->type);
-        }
-        if (list->item->comp == PARAMS) {
-            list->item = v->type;
         }
         attach_var(match->scope, v);
         arg_vars = arg_vars->next;
