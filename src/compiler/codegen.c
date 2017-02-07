@@ -695,7 +695,6 @@ void emit_struct_decl(Scope *scope, Type *st) {
             indent();
             char *member = malloc(sizeof(char) * (strlen(st->st.member_names[i]) + 3));
             sprintf(member, "x.%s", st->st.member_names[i]);
-            member[strlen(st->st.member_names[i])] = 0;
             emit_static_array_copy(scope, t, member, member);
             printf(";\n");
             free(member);

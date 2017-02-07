@@ -336,6 +336,91 @@ static Ast *parse_enum_decl_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
+void check_for_unresolved(Ast *ast, Type *t) {
+    assert(t != NULL);
+    switch (t->comp) {
+    case FUNC:
+        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
+            check_for_unresolved(ast, list->item);
+        }
+        if (t->fn.ret != NULL) {
+            check_for_unresolved(ast, t->fn.ret);
+        }
+        break;
+    case STRUCT: {
+        // line numbers can be weird on this...
+        for (int i = 0; i < t->st.nmembers; i++) {
+            check_for_unresolved(ast, t->st.member_types[i]);
+        }
+        break;
+    }
+    case ALIAS:
+        if (resolve_alias(t) == NULL) {
+            error(ast->line, ast->file, "Unknown type '%s'.", t->name);
+        }
+        break;
+    case REF:
+    case ARRAY:
+        check_for_unresolved(ast, t->inner);
+        break;
+    case STATIC_ARRAY:
+        check_for_unresolved(ast, t->array.inner);
+        break;
+    case BASIC:
+    case POLYDEF:
+    case PARAMS:
+    case EXTERNAL:
+    case ENUM:
+        break;
+    }
+}
+
+Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
+    assert(t->comp == PARAMS);
+    assert(t->params.args != NULL);
+
+    Type *inner = resolve_alias(t->params.inner);
+    if (inner->comp != STRUCT) {
+        error(ast->line, ast->file, "Invalid parameterization, type '%s' is not a generic struct.", type_to_string(t->params.inner));
+    }
+
+    TypeList *given = t->params.args;
+    TypeList *expected = inner->st.arg_params;
+    
+    int given_len = 0;
+    for (TypeList *list = given; list != NULL; list = list->next) {
+        check_for_unresolved(ast, list->item);
+        given_len++;
+    }
+    int expected_len = 0;
+    for (TypeList *list = expected; list != NULL; list = list->next) {
+        expected_len++;
+    }
+
+    if (given_len != expected_len) {
+        error(ast->line, ast->file, "Invalid parameterization, type '%s' expects %d parameters but received %d.",
+              type_to_string(t->params.inner), expected_len, given_len);
+    }
+
+    Type **member_types = malloc(sizeof(Type*) * t->inner->st.nmembers);
+    for (int i = 0; i < inner->st.nmembers; i++) {
+        member_types[i] = inner->st.member_types[i]; 
+    }
+    for (; given != NULL; given = given->next) {
+        for (int i = 0; i < inner->st.nmembers; i++) {
+            member_types[i] = replace_type(copy_type(member_types[i]->scope, member_types[i]), expected->item, given->item);
+        }
+
+        expected = expected->next; 
+    }
+
+    Type *r = make_struct_type(inner->st.nmembers, inner->st.member_names, member_types);
+    r->st.generic_base = t;
+    register_type(r);
+
+    return r;
+}
+
 void first_pass_type(Scope *scope, Type *t) {
     t->scope = scope;
     switch (t->comp) {
@@ -434,6 +519,16 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         }
 
         first_pass_type(ast->fn_decl->scope, ast->fn_decl->var->type);
+        {
+            VarList *vars = ast->fn_decl->args;
+            for (TypeList *args = ast->fn_decl->var->type->fn.args; args != NULL; args = args->next) {
+                if (!is_polydef(args->item) && args->item->comp == PARAMS) {
+                    args->item = reify_struct(ast->fn_decl->scope, ast, args->item);
+                    vars->item->type = args->item;
+                }
+                vars = vars->next;
+            }
+        }
 
         // TODO handle case where arg has same name as func
         if (!is_polydef(ast->fn_decl->var->type)) {
@@ -605,91 +700,6 @@ static Ast *parse_directive_semantics(Scope *scope, Ast *ast) {
 
     error(ast->line, ast->file, "Unrecognized directive '%s'.", n);
     return NULL;
-}
-
-void check_for_unresolved(Ast *ast, Type *t) {
-    assert(t != NULL);
-    switch (t->comp) {
-    case FUNC:
-        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
-            check_for_unresolved(ast, list->item);
-        }
-        if (t->fn.ret != NULL) {
-            check_for_unresolved(ast, t->fn.ret);
-        }
-        break;
-    case STRUCT: {
-        // line numbers can be weird on this...
-        for (int i = 0; i < t->st.nmembers; i++) {
-            check_for_unresolved(ast, t->st.member_types[i]);
-        }
-        break;
-    }
-    case ALIAS:
-        if (resolve_alias(t) == NULL) {
-            error(ast->line, ast->file, "Unknown type '%s'.", t->name);
-        }
-        break;
-    case REF:
-    case ARRAY:
-        check_for_unresolved(ast, t->inner);
-        break;
-    case STATIC_ARRAY:
-        check_for_unresolved(ast, t->array.inner);
-        break;
-    case BASIC:
-    case POLYDEF:
-    case PARAMS:
-    case EXTERNAL:
-    case ENUM:
-        break;
-    }
-}
-
-Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
-    assert(t->comp == PARAMS);
-    assert(t->params.args != NULL);
-
-    Type *inner = resolve_alias(t->params.inner);
-    if (inner->comp != STRUCT) {
-        error(ast->line, ast->file, "Invalid parameterization, type '%s' is not a generic struct.", type_to_string(t->params.inner));
-    }
-
-    TypeList *given = t->params.args;
-    TypeList *expected = inner->st.arg_params;
-    
-    int given_len = 0;
-    for (TypeList *list = given; list != NULL; list = list->next) {
-        check_for_unresolved(ast, list->item);
-        given_len++;
-    }
-    int expected_len = 0;
-    for (TypeList *list = expected; list != NULL; list = list->next) {
-        expected_len++;
-    }
-
-    if (given_len != expected_len) {
-        error(ast->line, ast->file, "Invalid parameterization, type '%s' expects %d parameters but received %d.",
-              type_to_string(t->params.inner), expected_len, given_len);
-    }
-
-    Type **member_types = malloc(sizeof(Type*) * t->inner->st.nmembers);
-    for (int i = 0; i < inner->st.nmembers; i++) {
-        member_types[i] = inner->st.member_types[i]; 
-    }
-    for (; given != NULL; given = given->next) {
-        for (int i = 0; i < inner->st.nmembers; i++) {
-            member_types[i] = replace_type(copy_type(member_types[i]->scope, member_types[i]), expected->item, given->item);
-        }
-
-        expected = expected->next; 
-    }
-
-    Type *r = make_struct_type(inner->st.nmembers, inner->st.member_names, member_types);
-    r->st.generic_base = t;
-    register_type(r);
-
-    return r;
 }
 
 static Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
@@ -1204,12 +1214,12 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
         }
     }
     for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
-        // TODO: this type-checking doesn't work with polydefs properly
         Scope *tmp = args->item->type->scope;
         args->item->type->scope = type_check_scope;
 
         // TODO: there needs to be a way to do this that handles polydef etc
         /*check_for_unresolved(ast, args->item->type);*/
+
         if (!is_concrete(args->item->type)) {
             error(lineno(), current_file_name(),
                   "Argument '%s' has generic type '%s' (not allowed currently).",
