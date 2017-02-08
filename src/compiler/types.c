@@ -410,10 +410,48 @@ int is_polydef(Type *t) {
 
 int is_concrete(Type *t) {
     t = resolve_alias(t);
+    // TODO: this is to handle polymorphic function args. There is probably
+    // a better way to deal with this, but not sure what it is at the moment.
+    // also this doesn't look for cases other than alias? what is this even
+    // doing at all?
+    if (t == NULL) {
+        return 1;
+    }
     if (t->comp == STRUCT && t->st.generic) {
         return 0;
     }
     return 1;
+}
+
+int contains_generic_struct(Type *t) {
+    switch (t->comp) {
+    case POLYDEF:
+        return 0;
+    case REF:
+    case ARRAY:
+        return contains_generic_struct(t->inner);
+    case STATIC_ARRAY:
+        return contains_generic_struct(t->array.inner);
+    case STRUCT:
+        for (int i = 0; i < t->st.nmembers; i++) {
+            if (contains_generic_struct(t->st.member_types[i])) {
+                return 1;
+            }
+        }
+        return 0;
+    case FUNC:
+        for (TypeList *args = t->fn.args; args != NULL; args = args->next) {
+            if (contains_generic_struct(args->item)) {
+                return 1;
+            }
+        }
+        return 0;
+    case PARAMS:
+        return 1;
+    default:
+        break;
+    }
+    return 0;
 }
 
 Type *replace_type(Type *base, Type *from, Type *to) {
