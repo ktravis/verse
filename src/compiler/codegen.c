@@ -403,12 +403,30 @@ void compile_static_array(Scope *scope, Ast *ast) {
 void emit_static_array_decl(Scope *scope, Ast *ast) {
     char *membername = malloc(sizeof(char) * (snprintf(NULL, 0, "_vs_%d", ast->decl->var->id) + 1));
     sprintf(membername, "_vs_%d", ast->decl->var->id);
-    membername[strlen(ast->decl->var->name) + 5] = 0;
     emit_structmember(scope, membername, ast->decl->var->type);
     free(membername);
 
     if (ast->decl->init == NULL) {
         printf(" = {0}");
+    } else if (ast->decl->init->type == AST_LITERAL) {
+        assert(ast->decl->init->lit->lit_type == ARRAY_LIT);
+
+        printf(" = {");
+        for (int i = 0; i < ast->decl->var->type->array.length; i++) {
+            Ast *expr = ast->decl->init->lit->compound_val.member_exprs[i];
+
+            if (is_any(ast->decl->var->type->array.inner) && !is_any(expr->var_type)) {
+                emit_any_wrapper(scope, expr);
+            } else if (is_lvalue(expr)) {
+                emit_copy(scope, expr);
+            } else {
+                compile(scope, expr);
+            }
+            if (i < ast->decl->var->type->array.length - 1) {
+                printf(",");
+            }
+        }
+        printf("}");
     } else {
         printf(";\n");
         indent();
@@ -902,14 +920,14 @@ void compile(Scope *scope, Ast *ast) {
             printf("\", %d)", (int)strlen(ast->lit->string_val));
             break;
         case STRUCT_LIT:
-            printf("(struct _type_vs_%d){", resolve_alias(ast->lit->struct_val.type)->id);
-            if (ast->lit->struct_val.nmembers == 0) {
+            printf("(struct _type_vs_%d){", get_struct_type_id(resolve_alias(ast->var_type)));
+            if (ast->lit->compound_val.nmembers == 0) {
                 printf("0");
             } else {
-                StructType st = resolve_alias(ast->lit->struct_val.type)->st;
-                for (int i = 0; i < ast->lit->struct_val.nmembers; i++) {
-                    Ast *expr = ast->lit->struct_val.member_exprs[i];
-                    printf(".%s = ", ast->lit->struct_val.member_names[i]);
+                StructType st = resolve_alias(ast->var_type)->st;
+                for (int i = 0; i < ast->lit->compound_val.nmembers; i++) {
+                    Ast *expr = ast->lit->compound_val.member_exprs[i];
+                    printf(".%s = ", ast->lit->compound_val.member_names[i]);
 
                     if (is_any(st.member_types[i]) && !is_any(expr->var_type)) {
                         emit_any_wrapper(scope, expr);
@@ -926,11 +944,42 @@ void compile(Scope *scope, Ast *ast) {
             }
             printf("}");
             break;
+        case ARRAY_LIT: {
+            Var *tmp = ast->lit->compound_val.array_tempvar;
+            Type *inner = tmp->type->comp == STATIC_ARRAY ? tmp->type->array.inner : tmp->type->inner;
+
+            long n = ast->lit->compound_val.nmembers;
+
+            printf("(");
+            for (int i = 0; i < n; i++) {
+                Ast *expr = ast->lit->compound_val.member_exprs[i];
+                printf("_tmp%d[%d] = ", tmp->id, i);
+
+                if (is_any(inner) && !is_any(expr->var_type)) {
+                    emit_any_wrapper(scope, expr);
+                } else if (is_lvalue(expr)) {
+                    emit_copy(scope, expr);
+                } else {
+                    compile(scope, expr);
+                }
+
+                printf(",");
+            }
+            if (resolve_alias(ast->var_type)->comp == STATIC_ARRAY) {
+                printf("_tmp%d)", tmp->id);
+            } else {
+                printf("(struct array_type){%ld, _tmp%d})", n, tmp->id);
+            }
+            break;
+        }
         case ENUM_LIT: {
             Type *t = resolve_alias(ast->lit->enum_val.enum_type);
             printf("%ld", t->en.member_values[ast->lit->enum_val.enum_index]);
             break;
         }
+        case COMPOUND_LIT:
+            error(ast->line, ast->file, "<internal> literal type should be determined at this point");
+            break;
         }
         break;     
     case AST_DOT:

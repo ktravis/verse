@@ -75,6 +75,10 @@ fn do_stuff(a:[]int) -> []int {
 }
 
 fn main() -> int {
+    arr := [-]int::{1, 21, 34};
+
+    assert(arr[1] == 21);
+
     x:[3]int;
     i:int;
     while i < x.length {
@@ -91,6 +95,9 @@ fn main() -> int {
     println("Array y:");
     print_array(y);
     i = 0;
+
+    x = [-]int::{1, 2, 3};
+    assert(x[2] == 3);
 
     test_array_copy();
     test_array_with_struct();

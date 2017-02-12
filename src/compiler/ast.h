@@ -17,8 +17,11 @@ typedef enum {
     STRING,
     FLOAT,
     BOOL,
-    STRUCT_LIT,
     ENUM_LIT,
+    // May not need all 3 of these
+    COMPOUND_LIT,
+    ARRAY_LIT,
+    STRUCT_LIT,
 } LiteralType;
 
 typedef struct AstImport {
@@ -27,14 +30,6 @@ typedef struct AstImport {
     Package *package;
 } AstImport;
 
-// TODO: are we allowing nested here? if not, change this
-// also consider just using dot op and resolving to AstPackage or something like
-// that
-typedef struct AstLookup {
-    Ast *left;
-    char *right;
-} AstLookup;
-
 typedef struct AstLiteral {
     LiteralType lit_type;
     union {
@@ -42,11 +37,13 @@ typedef struct AstLiteral {
         double    float_val;
         char      *string_val;
         struct {
-            Type *type;
-            int  nmembers;
+            Type  *type;
+            int    nmembers;
+            int    named;
             char **member_names;
-            Ast **member_exprs;
-        } struct_val;
+            Ast  **member_exprs;
+            Var   *array_tempvar;
+        } compound_val; // array or struct
         struct {
             long enum_index;
             Type *enum_type;
@@ -135,6 +132,10 @@ typedef struct AstConditional {
     AstBlock *else_body;
 } AstConditional;
 
+typedef struct AstTypeObj {
+    Type *t;
+} AstTypeObj;
+
 typedef struct AstTypeDecl {
     char *type_name;
     Type *target_type;
@@ -153,15 +154,6 @@ typedef struct AstReturn {
     //Scope *scope; // Needed ?
     Ast *expr;
 } AstReturn;
-
-typedef struct AstHold {
-    Ast *object;
-    Var *tempvar;
-} AstHold;
-
-typedef struct AstRelease {
-    Ast *object;
-} AstRelease;
 
 typedef struct AstWhile {
     Ast *condition;

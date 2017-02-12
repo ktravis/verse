@@ -709,14 +709,14 @@ char *type_to_string(Type *t) {
         char *name = malloc(sizeof(char) * len);
         name[0] = '\0'; // for strcat
         strcat(name, left);
-        strcat(name, "<");
+        strcat(name, "(");
         for (TypeList *list = t->params.args; list != NULL; list = list->next) {
             strcat(name, type_to_string(list->item));
             if (list->next != NULL) {
                 strcat(name, ",");
             }
         }
-        strcat(name, ">");
+        strcat(name, ")");
         return name;
 
     }

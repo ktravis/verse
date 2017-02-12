@@ -138,6 +138,15 @@ int can_cast(Type *from, Type *to) {
             }
         }
         return from->data->base == to->data->base;
+    case STATIC_ARRAY: {
+        to = resolve_alias(to);
+        if (to->comp == ARRAY) {
+            return check_type(from->array.inner, to->inner);
+        }
+        return 0;
+    }
+    case ARRAY:
+        return 0;
     default:
         from = resolve_alias(from);
         to = resolve_alias(to);

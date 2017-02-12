@@ -98,8 +98,8 @@ Ast *ast_alloc(AstType type) {
     case AST_IMPORT:
         ast->import = calloc(sizeof(AstImport), 1);
         break;
-    case AST_LOOKUP:
-        ast->lookup = calloc(sizeof(AstLookup), 1);
+    case AST_TYPE_OBJ:
+        ast->type_obj = calloc(sizeof(AstTypeObj), 1);
         break;
     }
     return ast;
@@ -116,11 +116,17 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         cp->lit = calloc(sizeof(AstLiteral), 1);
         *cp->lit = *ast->lit;
         switch (cp->lit->lit_type) {
+        case ARRAY_LIT:
         case STRUCT_LIT:
-            cp->lit->struct_val.type = copy_type(scope, cp->lit->struct_val.type);
-            cp->lit->struct_val.member_exprs = malloc(sizeof(Ast*) * cp->lit->struct_val.nmembers);
-            for (int i = 0; i < cp->lit->struct_val.nmembers; i++) {
-                cp->lit->struct_val.member_exprs[i] = copy_ast(scope, cp->lit->struct_val.member_exprs[i]);
+        case COMPOUND_LIT:
+            if (cp->lit->compound_val.array_tempvar != NULL) {
+                cp->lit->compound_val.array_tempvar = copy_var(scope, cp->lit->compound_val.array_tempvar);
+            }
+
+            cp->lit->compound_val.type = copy_type(scope, cp->lit->compound_val.type);
+            cp->lit->compound_val.member_exprs = malloc(sizeof(Ast*) * cp->lit->compound_val.nmembers);
+            for (int i = 0; i < cp->lit->compound_val.nmembers; i++) {
+                cp->lit->compound_val.member_exprs[i] = copy_ast(scope, cp->lit->compound_val.member_exprs[i]);
             }
             break;
         case ENUM_LIT:
@@ -267,9 +273,10 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
     case AST_IMPORT:
         cp->import = ast->import;
         break;
-    case AST_LOOKUP:
-        cp->lookup->left = ast->lookup->left;
-        cp->lookup->right = ast->lookup->right;
+        break;
+    case AST_TYPE_OBJ:
+        cp->type_obj = calloc(sizeof(AstTypeObj), 1);
+        cp->type_obj->t = copy_type(scope, ast->type_obj->t);
         break;
     }
     return cp;

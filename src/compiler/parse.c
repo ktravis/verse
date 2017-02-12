@@ -13,6 +13,45 @@ static int last_tmp_fn_id = 0;
 
 static AstList *global_fn_decls = NULL;
 
+Type *can_be_type_object(Ast *ast) {
+    switch (ast->type) {
+    // AST_TYPEINFO?
+    case AST_IDENTIFIER:
+        return make_type(NULL, ast->ident->varname);
+    case AST_DOT: {
+        Type *lt = can_be_type_object(ast->dot->object);
+        if (lt == NULL) {
+            return NULL;
+        }
+        // may need to allow this later, idk
+        if (lt->comp != ALIAS) {
+            return NULL;
+        }
+        return make_external_type(lt->name, ast->dot->member_name);
+    }
+    case AST_CALL: {
+        Type *lt = can_be_type_object(ast->dot->object);
+        if (lt == NULL) {
+            return NULL;
+        }
+        TypeList *params = NULL;
+        for (AstList *list = ast->call->args; list != NULL; list = list->next) {
+            Type *t = can_be_type_object(list->item);
+            if (t == NULL) {
+                return t;
+            }
+            params = typelist_append(params, t);
+        }
+        return make_params_type(lt, params);
+    }
+    case AST_TYPE_OBJ:
+        return ast->type_obj->t;
+    default:
+        break;
+    }
+    return NULL;
+}
+
 Ast *parse_array_slice(Ast *object, Ast *offset) {
     Ast *s = ast_alloc(AST_SLICE);
     s->slice->object = object;
@@ -103,7 +142,89 @@ Ast *parse_declaration(Tok *t) {
     return lhs; 
 }
 
-Ast *parse_struct_literal(Type *type);
+Ast *parse_compound_literal(Type *type) {
+    Ast *ast = ast_alloc(AST_LITERAL);
+
+    ast->lit->lit_type = COMPOUND_LIT;
+    ast->lit->compound_val.type = type;
+
+    int named = 1;
+    int n = 0;
+
+    if (peek_token()->type == TOK_RBRACE) {
+        next_token();
+        return ast;
+    }
+
+    char **member_names = NULL;
+    Ast **member_exprs = NULL;
+    Tok *t = NULL;
+    int alloc = 0;
+    for (;;) {
+        t = next_token();
+        if (t == NULL) {
+            error(lineno(), current_file_name(), "Unexpected EOF while parsing compound literal.");
+        } else if (t->type == TOK_RBRACE) {
+            break;
+        }
+
+        // make sure we have space
+        if (n >= alloc) {
+            alloc += 4;
+            member_names = realloc(member_names, sizeof(char *)*alloc);
+            member_exprs = realloc(member_exprs, sizeof(Ast *)*alloc);
+        }
+
+        if (t->type == TOK_ID) {
+            // if the first item is an id, check to see if the next is a colon
+            Tok *next = next_token();
+            if (next->type == TOK_OP && next->op == OP_ASSIGN) {
+                // if we have seen members without names previously, this is
+                // invalid
+                if (!named) {
+                    error(lineno(), current_file_name(), "Cannot mix named and non-named fields in a struct-literal.");
+                }
+                member_names[n] = t->sval;
+                t = next_token();
+            } else {
+                // undo our peek otherwise
+                unget_token(next);
+
+                // if we have seen members with names, this is invalid
+                if (named && n > 0) {
+                    error(lineno(), current_file_name(), "Unexpected token '%s' while parsing compound literal (cannot mix named and non-named fields in a struct-literal).", tok_to_string(t));
+                }
+                named = 0;
+            }
+        } else {
+            if (named && n > 0) {
+                error(lineno(), current_file_name(), "Unexpected token '%s' while parsing compound literal (cannot mix named and non-named fields in a struct-literal).", tok_to_string(t));
+            }
+            named = 0;
+        }
+
+        member_exprs[n++] = parse_expression(t, 0);
+
+        t = next_token();
+        if (t == NULL) {
+            error(lineno(), current_file_name(), "Unexpected EOF while parsing compound literal.");
+        } else if (t->type == TOK_RBRACE) {
+            break;
+        } else if (t->type != TOK_COMMA) {
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing compound literal.", tok_to_string(t));
+        }
+    }
+
+    if (named) {
+        ast->lit->lit_type = STRUCT_LIT;
+    }
+    ast->lit->compound_val.nmembers = n;
+    ast->lit->compound_val.named = n == 0 ? 0 : named;
+    ast->lit->compound_val.member_names = member_names;
+    ast->lit->compound_val.member_exprs = member_exprs;
+
+    return ast;
+}
 
 Ast *parse_expression(Tok *t, int priority) {
     Ast *ast = parse_primary(t);
@@ -124,32 +245,22 @@ Ast *parse_expression(Tok *t, int priority) {
             unget_token(t);
             return ast;
         } else if (t->type == TOK_OPASSIGN) {
+            // TODO: this shouldn't be allowed in expression, why is this here?!
             Ast *rhs = parse_expression(next_token(), 0);
             rhs = make_ast_binop(t->op, ast, rhs);
             ast = make_ast_assign(ast, rhs);
         } else if (t->type == TOK_DCOLON) {
-            if (!(ast->type == AST_IDENTIFIER || ast->type == AST_DOT)) {
-                error(lineno(), current_file_name(), "Unexpected token '%s'.", tok_to_string(t));
+            Type *lt = can_be_type_object(ast);
+            if (lt == NULL) {
+                error(lineno(), current_file_name(), "Unexpected token '::' (previous expression is not a type).");
             }
 
             t = next_token();
-            if (t->type == TOK_LBRACE) {
-                // TODO: if this can be refactored it should be
-                if (ast->type == AST_IDENTIFIER) {
-                    Type *t = make_type(NULL, ast->ident->varname);
-                    return parse_struct_literal(t);
-                } else if (ast->type == AST_DOT) {
-                    if (ast->dot->object->type != AST_IDENTIFIER) {
-                        error(lineno(), current_file_name(), "Struct literals can only be created on type names.");
-                    }
-                    Type *t = make_external_type(ast->dot->object->ident->varname, ast->dot->member_name);
-                    return parse_struct_literal(t);
-                } else {
-                    error(lineno(), current_file_name(), "Unexpected token '%s'.", tok_to_string(t));
-                }
-            } else {
+            if (t->type != TOK_LBRACE) {
                 error(lineno(), current_file_name(), "Unexpected token '%s' following '::'.", tok_to_string(t));
             }
+
+            return parse_compound_literal(lt);
         } else if (t->type == TOK_OP) {
             if (t->op == OP_ASSIGN) {
                 ast = make_ast_assign(ast, parse_expression(next_token(), 0));
@@ -242,14 +353,14 @@ TypeList *parse_type_params(int in_fn) {
         if (t == NULL) {
             error(lineno(), current_file_name(), "Unexpected EOF while parsing type parameter list.");
         }
-        if (t->type == TOK_OP && t->op == OP_GT) {
+        if (t->type == TOK_RPAREN) {
             break;
         } else {
             list = typelist_append(list, parse_type(t, in_fn));
         }
 
         t = next_token();
-        if (t->type == TOK_OP && t->op == OP_GT) {
+        if (t->type == TOK_RPAREN) {
             break;
         } else if (t->type == TOK_COMMA) {
             t = next_token();
@@ -274,7 +385,7 @@ TypeList *parse_type_param_defs() {
         if (t == NULL) {
             error(lineno(), current_file_name(), "Unexpected EOF while parsing type parameter list.");
         }
-        if (t->type == TOK_OP && t->op == OP_GT) {
+        if (t->type == TOK_RPAREN) {
             break;
         } else if (t->type == TOK_ID) {
             for (TypeList *prev = list; prev != NULL; prev = prev->next) {
@@ -289,7 +400,7 @@ TypeList *parse_type_param_defs() {
 
 
         t = next_token();
-        if (t->type == TOK_OP && t->op == OP_GT) {
+        if (t->type == TOK_RPAREN) {
             break;
         } else if (t->type == TOK_COMMA) {
             t = next_token();
@@ -336,7 +447,7 @@ Type *parse_type(Tok *t, int poly_ok) {
         }
 
         t = next_token();
-        if (t->type == TOK_OP && t->op == OP_LT) {
+        if (t->type == TOK_LPAREN) {
             type = make_params_type(type, parse_type_params(poly_ok));
         } else {
             unget_token(t);
@@ -462,7 +573,6 @@ Ast *parse_func_decl(int anonymous) {
         snprintf(fname, len+1, "%d", last_tmp_fn_id++);
         fname[len] = 0;
     } else {
-    /*if (!anonymous) {*/
         t = expect(TOK_ID);
         fname = t->sval;
     }
@@ -489,8 +599,13 @@ Ast *parse_func_decl(int anonymous) {
 
         if (t->type != TOK_ID) {
             if (t->type == TOK_DIRECTIVE) {
-                error(lineno(), current_file_name(),
-                      "Directive '#autocast' not allowed outside extern function declaration.");
+                if (!strcmp(t->sval, "autocast")) {
+                    error(lineno(), current_file_name(),
+                          "Directive '#autocast' not allowed outside extern function declaration.");
+                } else {
+                    error(lineno(), current_file_name(),
+                          "Unrecognized directive '#%s' in function declaration.", t->sval);
+                }
             }
             error(lineno(), current_file_name(),
                   "Unexpected token (type '%s') in argument list of function declaration '%s'.",
@@ -658,7 +773,7 @@ Type *parse_struct_type(int poly_ok) {
 
     int generic = 0;
     TypeList *params = NULL;
-    if (t->type == TOK_OP && t->op == OP_LT) {
+    if (t->type == TOK_LPAREN) {
         params = parse_type_param_defs();
         t = next_token();
         generic = 1;
@@ -839,56 +954,43 @@ Ast *parse_statement(Tok *t) {
     return ast;
 }
 
-Ast *parse_struct_literal(Type *type) {
-    Ast *ast = ast_alloc(AST_LITERAL);
+/*Ast *parse_array_literal(Type *type) {*/
+    /*Ast *ast = ast_alloc(AST_LITERAL);*/
 
-    ast->lit->lit_type = STRUCT_LIT;
-    ast->lit->struct_val.type = type;
-    ast->lit->struct_val.nmembers = 0;
+    /*// TODO: check for count mismatch with type*/
+    /*ast->lit->lit_type = ARRAY_LIT;*/
+    /*ast->lit->compound_val.type = type;*/
+    /*ast->lit->compound_val.member_exprs = NULL;*/
 
-    if (peek_token()->type == TOK_RBRACE) {
-        next_token();
-        return ast;
-    }
+    /*if (peek_token()->type == TOK_RBRACE) {*/
+        /*next_token();*/
+        /*return ast;*/
+    /*}*/
 
-    Tok *t = NULL;
-    int alloc = 0;
-    for (;;) {
-        t = next_token();
-        if (t == NULL) {
-            error(lineno(), current_file_name(), "Unexpected EOF while parsing struct literal.");
-        } else if (t->type != TOK_ID) {
-            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing struct literal.", tok_to_string(t));
-        }
+    /*AstList *items = NULL;*/
 
-        if (ast->lit->struct_val.nmembers >= alloc) {
-            alloc += 4;
-            ast->lit->struct_val.member_names = realloc(ast->lit->struct_val.member_names, sizeof(char *)*alloc);
-            ast->lit->struct_val.member_exprs = realloc(ast->lit->struct_val.member_exprs, sizeof(Ast *)*alloc);
-        }
+    /*Tok *t = NULL;*/
+    /*for (;;) {*/
+        /*t = next_token();*/
+        /*if (t == NULL) {*/
+            /*error(lineno(), current_file_name(), "Unexpected EOF while parsing array literal.");*/
+        /*}*/
 
-        ast->lit->struct_val.member_names[ast->lit->struct_val.nmembers] = t->sval;
+        /*items = astlist_append(items, parse_expression(t, 0));*/
 
-        t = next_token();
-        if (t == NULL) {
-            error(lineno(), current_file_name(), "Unexpected EOF while parsing struct literal.");
-        } else if (t->type != TOK_OP || t->op != OP_ASSIGN) {
-            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing struct literal.", tok_to_string(t));
-        }
+        /*t = next_token();*/
+        /*if (t == NULL) {*/
+            /*error(lineno(), current_file_name(), "Unexpected EOF while parsing struct literal.");*/
+        /*} else if (t->type == TOK_RBRACE) {*/
+            /*break;*/
+        /*} else if (t->type != TOK_COMMA) {*/
+            /*error(lineno(), current_file_name(), "Unexpected token '%s' while parsing array literal.", tok_to_string(t));*/
+        /*}*/
+    /*}*/
 
-        ast->lit->struct_val.member_exprs[ast->lit->struct_val.nmembers++] = parse_expression(next_token(), 0);
-
-        t = next_token();
-        if (t == NULL) {
-            error(lineno(), current_file_name(), "Unexpected EOF while parsing struct literal.");
-        } else if (t->type == TOK_RBRACE) {
-            break;
-        } else if (t->type != TOK_COMMA) {
-            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing struct literal.", tok_to_string(t));
-        }
-    }
-    return ast;
-}
+    /*ast->lit->array_val.items = reverse_astlist(items);*/
+    /*return ast;*/
+/*}*/
 
 Ast *parse_directive(Tok *t) {
     Ast *dir = ast_alloc(AST_DIRECTIVE);
@@ -1006,6 +1108,11 @@ Ast *parse_primary(Tok *t) {
                 "Unexpected token '%s' encountered while parsing parenthetical expression (starting line %d).",
                 tok_to_string(next), ast->line);
         }
+        return ast;
+    }
+    case TOK_LSQUARE: {
+        Ast *ast = ast_alloc(AST_TYPE_OBJ);
+        ast->type_obj->t = parse_type(t, 0);
         return ast;
     }
     default:

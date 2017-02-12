@@ -171,7 +171,7 @@ typedef enum AstType {
     AST_ENUM_DECL,
     AST_USE,
     AST_IMPORT,
-    AST_LOOKUP,
+    AST_TYPE_OBJ,
 } AstType;
 
 typedef struct Ast {
@@ -193,7 +193,6 @@ typedef struct Ast {
         struct AstCall          *call;
         struct AstSlice         *slice;
         struct AstIndex         *index;
-        struct AstBind          *bind;
         struct AstBlock         *block;
         struct AstConditional   *cond;
         struct AstTypeDecl      *type_decl;
@@ -201,15 +200,13 @@ typedef struct Ast {
         struct AstTempVar       *tempvar;
         struct AstCopy          *copy;
         struct AstReturn        *ret;
-        struct AstHold          *hold;
-        struct AstRelease       *release;
         struct AstWhile         *while_loop;
         struct AstFor           *for_loop;
         struct AstAnonScope     *anon_scope;
         struct AstDirective     *directive;
         struct AstUse           *use;
         struct AstImport        *import;
-        struct AstLookup        *lookup;
+        struct AstTypeObj       *type_obj;
     };
 } Ast;
 

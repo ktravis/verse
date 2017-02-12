@@ -48,6 +48,7 @@ void check_for_unresolved(Ast *ast, Type *t) {
     }
 }
 
+// TODO: make reify_struct deduplicate reifications?
 Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
     t = copy_type(t->scope, t);
 
@@ -526,10 +527,10 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         ast->import->package = load_package(ast->file, scope, ast->import->path);
         break;
     case AST_LITERAL:
-        if (ast->lit->lit_type == STRUCT_LIT) {
-            first_pass_type(scope, ast->lit->struct_val.type);
-            for (int i = 0; i < ast->lit->struct_val.nmembers; i++) {
-                ast->lit->struct_val.member_exprs[i] = first_pass(scope, ast->lit->struct_val.member_exprs[i]);
+        if (ast->lit->lit_type == STRUCT_LIT || ast->lit->lit_type == COMPOUND_LIT) {
+            first_pass_type(scope, ast->lit->compound_val.type);
+            for (int i = 0; i < ast->lit->compound_val.nmembers; i++) {
+                ast->lit->compound_val.member_exprs[i] = first_pass(scope, ast->lit->compound_val.member_exprs[i]);
             }
 
         } else if (ast->lit->lit_type == ENUM_LIT) {
@@ -685,10 +686,12 @@ Ast *first_pass(Scope *scope, Ast *ast) {
     case AST_USE:
         ast->use->object = first_pass(scope, ast->use->object);
         break;
+    case AST_TYPE_OBJ:
+        first_pass_type(scope, ast->type_obj->t);
+        break;
     case AST_BREAK:
     case AST_CONTINUE:
     case AST_IDENTIFIER:
-    case AST_LOOKUP:
         break;
     }
     return ast;
@@ -754,46 +757,115 @@ static Ast *parse_directive_semantics(Scope *scope, Ast *ast) {
     return NULL;
 }
 
-static Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
+static Ast *_parse_struct_literal_semantics(Scope *scope, Ast *ast, Type *type, Type *resolved) {
+    assert(resolved->comp == STRUCT);
+
+    ast->var_type = type;
+
     AstLiteral *lit = ast->lit;
-    Type *type = lit->struct_val.type;
+
+    // if not named, check that there are enough members
+    if (!lit->compound_val.named && lit->compound_val.nmembers != 0) {
+        if (lit->compound_val.nmembers != resolved->st.nmembers) {
+            error(ast->line, ast->file, "Wrong number of members for struct '%s', expected %d but received %d.",
+                type_to_string(type), resolved->st.nmembers, lit->compound_val.nmembers);
+        }
+    }
+
+    for (int i = 0; i < lit->compound_val.nmembers; i++) {
+        Ast *expr = parse_semantics(scope, lit->compound_val.member_exprs[i]);
+        Type *t = resolved->st.member_types[i];
+        char *name = resolved->st.member_names[i];
+
+        if (lit->compound_val.named) {
+            int found = -1;
+            for (int j = 0; j < resolved->st.nmembers; j++) {
+                if (!strcmp(lit->compound_val.member_names[i], resolved->st.member_names[j])) {
+                    found = j;
+                    break;
+                }
+            }
+            if (found == -1) {
+                error(ast->line, ast->file, "Struct '%s' has no member named '%s'.",
+                        type_to_string(type), lit->compound_val.member_names[i]);
+            }
+
+            t = resolved->st.member_types[found];
+            name = resolved->st.member_names[found];
+        }
+
+        if (!check_type(t, expr->var_type)) {
+            expr = coerce_type(scope, t, expr);
+            if (expr == NULL) {
+                error(ast->line, ast->file, "Type mismatch in struct literal '%s' field '%s', expected %s but received %s.",
+                    type_to_string(type), name, type_to_string(t), type_to_string(expr->var_type));
+            }
+        }
+
+        lit->compound_val.member_names[i] = name;
+        lit->compound_val.member_exprs[i] = expr;
+    }
+    return ast;
+}
+
+static Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
+    Type *type = ast->lit->compound_val.type;
     if (contains_generic_struct(type)) {
         type = reify_struct(scope, ast, type);
     }
 
     Type *resolved = resolve_alias(type);
-    if (resolved->comp != STRUCT) {
-        error(ast->line, ast->file, "Type '%s' is not a struct.", type_to_string(type));
+    return _parse_struct_literal_semantics(scope, ast, type, resolved);
+}
+
+static Ast *parse_compound_literal_semantics(Scope *scope, Ast *ast) {
+    Type *type = ast->lit->compound_val.type;
+    if (contains_generic_struct(type)) {
+        type = reify_struct(scope, ast, type);
     }
 
+    long nmembers = ast->lit->compound_val.nmembers;
+
+    Type *resolved = resolve_alias(type);
+    if (resolved->comp == STRUCT) {
+        ast->lit->lit_type = STRUCT_LIT;
+        return _parse_struct_literal_semantics(scope, ast, type, resolved);
+    } else if (resolved->comp == STATIC_ARRAY) {
+        // validate length
+        if (resolved->array.length == -1) {
+            resolved->array.length = nmembers;
+        } else if (resolved->array.length != nmembers) {
+            error(ast->line, ast->file, "Wrong number of members for static array literal, expected %d but received %d.",
+                resolved->array.length, nmembers);
+        }
+    } else if (resolved->comp == ARRAY) {
+        // TODO: need something here?
+    } else {
+        error(ast->line, ast->file, "Invalid compound literal: type '%s' is not a struct or array.", type_to_string(type));
+    }
+
+    // otherwise we have an array
+    ast->lit->lit_type = ARRAY_LIT;
     ast->var_type = type;
 
-    for (int i = 0; i < lit->struct_val.nmembers; i++) {
-        int found = 0;
-        for (int j = 0; j < resolved->st.nmembers; j++) {
-            if (!strcmp(lit->struct_val.member_names[i], resolved->st.member_names[j])) {
-                found = 1;
-                break;
-            }
-        }
-        if (!found) {
-            // TODO show alias in error
-            error(ast->line, ast->file, "Struct '%s' has no member named '%s'.",
-                    type_to_string(type), lit->struct_val.member_names[i]);
-        }
+    Type *inner = type->comp == STATIC_ARRAY ? type->array.inner : type->inner;
 
-        Ast *expr = parse_semantics(scope, lit->struct_val.member_exprs[i]);
-        Type *t = resolved->st.member_types[i];
+    for (int i = 0; i < nmembers; i++) {
+        Ast *expr = parse_semantics(scope, ast->lit->compound_val.member_exprs[i]);
 
-        if (!check_type(t, expr->var_type)) {
-            expr = coerce_type(scope, t, expr);
+        if (!check_type(inner, expr->var_type)) {
+            expr = coerce_type(scope, inner, expr);
             if (expr == NULL) {
-                error(ast->line, ast->file, "Type mismatch in struct literal '%s' field '%s', expected %s but got %s.",
-                    type_to_string(type), lit->struct_val.member_names[i], type_to_string(t), type_to_string(expr->var_type));
+                error(ast->line, ast->file, "Type mismatch in array literal '%s', expected %s but got %s.",
+                    type_to_string(type), type_to_string(inner), type_to_string(expr->var_type));
             }
         }
-        lit->struct_val.member_exprs[i] = expr;
+        ast->lit->compound_val.member_exprs[i] = expr;
     }
+
+    // TODO: should this be resolved, or type?
+    Type *tmpvar_type = make_static_array_type(inner, nmembers);
+    ast->lit->compound_val.array_tempvar = make_temp_var(scope, tmpvar_type, ast->id);
     return ast;
 }
 
@@ -1409,7 +1481,13 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             ast->var_type = base_type(BOOL_T);
             break;
         case STRUCT_LIT:
+            check_for_unresolved(ast, ast->lit->compound_val.type);
             ast = parse_struct_literal_semantics(scope, ast);
+            break;
+        case ARRAY_LIT:
+        case COMPOUND_LIT:
+            check_for_unresolved(ast, ast->lit->compound_val.type);
+            ast = parse_compound_literal_semantics(scope, ast);
             break;
         case ENUM_LIT: // eh?
             break;
@@ -1497,6 +1575,9 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         }
         break;
     }
+    case AST_TYPE_OBJ:
+        error(ast->line, ast->file, "<internal> unexpected type '%s'.", type_to_string(ast->type_obj->t));
+        break;
     case AST_EXTERN_FUNC_DECL:
         // TODO: fix this
         if (scope->parent != NULL) {
