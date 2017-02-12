@@ -51,6 +51,10 @@ fn concat(args: []Wrapper(string)) -> string {
     return out;
 }
 
+fn test_use(use a: Wrapper(string)) {
+   assert(inner == a.inner);
+}
+
 fn main() -> int {
     x:derp(s64,string);
     x.a[0] = 4123214;
@@ -113,6 +117,10 @@ fn main() -> int {
     };
 
     assert(concat(again) == "testme");
+
+    test_use(again[0]);
+    test_use(again[1]);
+    test_use(Wrapper(string)::{"heyyyy"});
 
     println("Tests passed.");
 

@@ -8,10 +8,6 @@ TODO
     if t == int {
         // ...
     }
-- Parameterized struct types
-  - Make sure param types work in variadic
-  - Make sure param types work with use (generic func and regular)
-  - Generic struct literal
 - "unwise" cast to silence compiler error
 - Packages
   - Global vars in different packages may be referred to prior to initialization!
@@ -22,3 +18,7 @@ TODO
 - Methods
   - "impl" blocks
   - "static" struct (/type) methods
+
+Things to fix:
+  - Use on polymorphic types? Should this be allowed? It is weird.
+  - Polydef in params of argument type does not carry the definition of "T" to the return value type?
