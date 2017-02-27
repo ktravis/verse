@@ -35,8 +35,8 @@ fn kill(pid:int, sig:int) {
     syscall2(sys_kill, pid, sig);
 }
 
-fn write(fd:int, data:string, n:int) {
-    syscall3(sys_write, fd, data.bytes, n);
+fn write(fd: int, str: string, n: int) {
+    syscall3(sys_write, fd, str.bytes, n);
 }
 
 // TODO: should be uint?

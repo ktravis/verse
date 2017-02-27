@@ -113,6 +113,7 @@ void emit_string_binop(Scope *scope, Ast *ast) {
     case AST_DOT:
     case AST_INDEX:
     case AST_UOP:
+    case AST_BINOP:
         printf("append_string(");
         compile(scope, ast->binary->left);
         printf(",");
@@ -127,7 +128,7 @@ void emit_string_binop(Scope *scope, Ast *ast) {
         printf("\",%d)", (int) escaped_strlen(ast->binary->right->lit->string_val));
         break;
     default:
-        error(-1, "internal", "Couldn't do the string binop? %d", ast->type);
+        error(ast->line, ast->file, "<internal> couldn't do the string binop? %d", ast->type);
     }
 }
 
@@ -648,8 +649,13 @@ void emit_static_array_copy(Scope *scope, Type *t, char *dest, char *src) {
 void emit_struct_decl(Scope *scope, Type *st) {
     assert(st->comp == STRUCT);
 
-    if (st->id != get_struct_type_id(st)) {
-        return;
+    /*if (st->id != get_struct_type_id(st)) {*/
+        /*return;*/
+    /*}*/
+    for (TypeList *list = struct_types; list != NULL; list = list->next) {
+        if (list->item->id == st->id) {
+            return;
+        }
     }
     struct_types = typelist_append(struct_types, st);
 
@@ -784,8 +790,8 @@ void emit_any_wrapper(Scope *scope, Ast *ast) {
     } else {
         emit_temp_var(scope, ast, 1);
     }
-    Type *obj_type = resolve_alias(ast->var_type);
-    printf(",.type=(struct _type_vs_%d *)&_type_info%d}", get_typeinfo_type_id(), obj_type->id);
+    /*Type *obj_type = resolve_alias(ast->var_type);*/
+    printf(",.type=(struct _type_vs_%d *)&_type_info%d}", get_typeinfo_type_id(), get_type_id(ast->var_type));
 }
 
 void compile_call_arg(Scope *scope, Ast *ast, int arr) {
@@ -871,7 +877,7 @@ void compile_fn_call(Scope *scope, Ast *ast) {
             } else {
                 compile_ref(scope, args->item);
             }
-            printf(",.type=(struct _type_vs_%d *)&_type_info%d}", get_typeinfo_type_id(), a->id);
+            printf(",.type=(struct _type_vs_%d *)&_type_info%d}", get_typeinfo_type_id(), get_type_id(args->item->var_type));
         } else {
             compile_call_arg(scope, args->item, resolve_alias(argtypes->item)->comp == ARRAY);
         }
@@ -902,9 +908,29 @@ void compile(Scope *scope, Ast *ast) {
     switch (ast->type) {
     case AST_LITERAL:
         switch (ast->lit->lit_type) {
-        case INTEGER:
+        case INTEGER: {
+            Type *res = resolve_alias(ast->var_type);
             printf("%lld", ast->lit->int_val);
+            // This may break somehow but I'm pissed and don't want to make it
+            // right
+            switch (res->data->size) {
+                case 8:
+                    if (res->data->base == UINT_T) {
+                        printf("U");
+                    }
+                    printf("LL");
+                    break;
+                case 4:
+                    if (res->data->base == UINT_T) {
+                        printf("U");
+                    }
+                    printf("L");
+                    break;
+                default:
+                    break;
+            }
             break;
+        }
         case FLOAT: // TODO this is truncated
             printf("%F", ast->lit->float_val);
             break;
@@ -1237,7 +1263,7 @@ void compile(Scope *scope, Ast *ast) {
     case AST_TYPEINFO:
         printf("((struct _type_vs_%d *)&_type_info%d)",
             get_typeinfo_type_id(),
-            resolve_alias(ast->typeinfo->typeinfo_target)->id);
+            get_type_id(ast->typeinfo->typeinfo_target));
         break;
     case AST_TYPE_DECL:
         break;
@@ -1257,15 +1283,16 @@ void emit_scope_start(Scope *scope) {
     while (list != NULL) {
         Type *t = resolve_alias(list->var->type);
         indent();
-        emit_type(t);
-        printf("_tmp%d", list->var->id);
-        if (t->comp == STRUCT ||
-           (t->comp == BASIC && t->data->base == STRING_T)) {
-            printf(" = {0}");
-        } else if (t->comp == STATIC_ARRAY) {
-            printf(" = alloca(%ld * sizeof(", t->array.length);
+        if (t->comp == STATIC_ARRAY) {
             emit_type(t->array.inner);
-            printf("))");
+            printf("_tmp%d[%ld]", list->var->id, t->array.length);
+        } else {
+            emit_type(t);
+            printf("_tmp%d", list->var->id);
+            if (t->comp == STRUCT ||
+               (t->comp == BASIC && t->data->base == STRING_T)) {
+                printf(" = {0}");
+            }
         }
         printf(";\n");
         list = list->next;

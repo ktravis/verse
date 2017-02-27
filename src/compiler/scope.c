@@ -45,7 +45,11 @@ void init_builtin_types() {
 }
 TypeList *builtin_types() {
     assert(builtin_types_scope != NULL);
-    return builtin_types_scope->used_types;
+    TypeList *out = NULL;
+    for (TypeList *list = builtin_types_scope->used_types; list != NULL; list = list->next) {
+        out = typelist_append(out, list->item);
+    }
+    return out;
 }
 
 static PkgList *all_packages = NULL;
@@ -206,7 +210,11 @@ Package *lookup_imported_package(Scope *scope, char *name) {
 static TypeList *used_types = NULL;
 
 TypeList *all_used_types() {
-    return used_types;
+    TypeList *out = NULL;
+    for (TypeList *list = used_types; list != NULL; list = list->next) {
+        out = typelist_append(out, list->item);
+    }
+    return out;
 }
 // --
 
@@ -278,43 +286,63 @@ Type *lookup_type(Scope *s, char *name) {
     return lookup_local_type(builtin_types_scope, name);
 }
 
+int check_type(Type *a, Type *b);
+int get_type_id(Type *t) {
+    for (TypeList *list = used_types; list != NULL; list = list->next) {
+        if (check_type(list->item, t)) {
+
+            /*errlog("get type id for %d %s %d %s", t->id, type_to_string(t), list->item->id, type_to_string(list->item));*/
+            return list->item->id;
+        }
+    }
+    return -1;
+}
+
 void register_type(Type *t) {
-    t = resolve_alias(t);
-    if (t == NULL) {
+    // TODO: why are we getting here with this in the first place?
+    if (t->comp == ENUM) {
         return;
     }
     for (TypeList *list = used_types; list != NULL; list = list->next) {
-        if (list->item->id == t->id) {
+        if (check_type(list->item, t)) {
             return;
         }
     }
     for (TypeList *list = builtin_types_scope->used_types; list != NULL; list = list->next) {
-        if (list->item->id == t->id) {
+        if (check_type(list->item, t)) {
             return;
         }
     }
+
     used_types = typelist_append(used_types, t);
-    switch (t->comp) {
+    /*errlog("Registering %d %s", t->id, type_to_string(t));*/
+
+    Type *resolved = resolve_alias(t);
+    if (resolved == NULL) {
+        return;
+    }
+
+    switch (resolved->comp) {
     case STRUCT:
-        for (int i = 0; i < t->st.nmembers; i++) {
-            register_type(t->st.member_types[i]);
+        for (int i = 0; i < resolved->st.nmembers; i++) {
+            register_type(resolved->st.member_types[i]);
         }
         break;
     case ENUM:
-        register_type(t->en.inner);
+        register_type(resolved->en.inner);
         break;
     case STATIC_ARRAY:
-        register_type(t->array.inner);
+        register_type(resolved->array.inner);
         break;
     case ARRAY:
     case REF:
-        register_type(t->inner);
+        register_type(resolved->inner);
         break;
     case FUNC:
-        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
+        for (TypeList *list = resolved->fn.args; list != NULL; list = list->next) {
             register_type(list->item);
         }
-        register_type(t->fn.ret);
+        register_type(resolved->fn.ret);
         break;
     default:
         break;
@@ -388,6 +416,7 @@ Type *define_type(Scope *s, char *name, Type *type) {
     s->types = td;
 
     type = make_type(s, name);
+    td->defined_type = type;
 
     if (!(td->type->comp == STRUCT && td->type->st.generic)) {
         register_type(type);

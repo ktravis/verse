@@ -16,7 +16,7 @@ typedef enum PrimitiveType {
 typedef struct TypeData {
     int base;
     int size;
-    long length;
+    //long length;
 } TypeData;
 
 typedef struct TypeList {

@@ -60,6 +60,8 @@ enum {
     OP_ASSIGN,
     OP_AND,
     OP_OR,
+    OP_LSHIFT,
+    OP_RSHIFT,
     OP_EQUALS,
     OP_NEQUALS,
     OP_NOT,

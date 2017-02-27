@@ -50,6 +50,8 @@ Ast *eval_int_binop(Ast *ast) {
         case OP_XOR: ival ^= r; break;
         case OP_BINAND: ival &= r; break;
         case OP_BINOR: ival |= r; break;
+        case OP_LSHIFT: ival <<= r; break;
+        case OP_RSHIFT: ival >>= r; break;
         case OP_EQUALS: return wrap_bool(ast, ival == r);
         case OP_NEQUALS: return wrap_bool(ast, ival != r);
         case OP_GT: return wrap_bool(ast, ival > r);

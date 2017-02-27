@@ -10,15 +10,30 @@ TODO
     }
 - "unwise" cast to silence compiler error
 - Packages
+  - "use" on a package
   - Global vars in different packages may be referred to prior to initialization!
     Decide whether this is okay, and possibly change the order that init code is
     generated in (i.e. most nested import first?)
   - Error reporting on imported package
+- Owned reference
 - Defer (duh-fer)
+- Multiple return values
 - Methods
   - "impl" blocks
   - "static" struct (/type) methods
+- Change backend
+- Range of numbers iterable
+- Range by reference
+- Range with index
+- Const!
+- Const members in struct
+- Types:
+  - tuple?
+  - union?
 
 Things to fix:
   - Use on polymorphic types? Should this be allowed? It is weird.
   - Polydef in params of argument type does not carry the definition of "T" to the return value type?
+  - "type" identifier is not usable in a struct literal due to lexer
+  - float literal should default to float64 if not constrained?
+  - See print_test, converting a reference to Any is acting strange

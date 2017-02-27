@@ -1255,6 +1255,11 @@ void init_builtins() {
     v->constant = 1;
     define_builtin(v);
 
+    v = make_var("utoa", make_fn_type(1, typelist_append(NULL, base_type(UINT_T)), base_type(STRING_T), 0));
+    v->ext = 1;
+    v->constant = 1;
+    define_builtin(v);
+
     v = make_var("validptr", make_fn_type(1, typelist_append(NULL, base_type(BASEPTR_T)), base_type(BOOL_T), 0));
     v->ext = 1;
     v->constant = 1;

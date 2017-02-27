@@ -24,6 +24,7 @@ Type *lookup_local_type(Scope *s, char *name);
 int define_polydef_alias(Scope *scope, Type *t);
 Type *define_polymorph(Scope *s, Type *poly, Type *type);
 Type *define_type(Scope *s, char *name, Type *type);
+int get_type_id(Type *t);
 TypeDef *find_type_definition(Type *t);
 int local_type_name_conflict(Scope *scope, char *name);
 void register_type(Type *t);

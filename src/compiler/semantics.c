@@ -159,12 +159,14 @@ static Ast *parse_uop_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file, "Cannot dereference a non-reference type (must cast baseptr).");
         }
         ast->var_type = o->var_type->inner;
+        register_type(ast->var_type);
         break;
     case OP_REF:
         if (o->type != AST_IDENTIFIER && o->type != AST_DOT) {
             error(ast->line, ast->file, "Cannot take a reference to a non-variable.");
         }
         ast->var_type = make_ref_type(o->var_type);
+        register_type(ast->var_type);
         break;
     case OP_MINUS:
     case OP_PLUS: {
@@ -494,11 +496,11 @@ void first_pass_type(Scope *scope, Type *t) {
         for (int i = 0; i < t->st.nmembers; i++) {
             first_pass_type(scope, t->st.member_types[i]);
         }
-        if (!t->st.generic) {
-            register_type(t);
-        }
         for (TypeList *list = t->st.arg_params; list != NULL; list = list->next) {
             first_pass_type(scope, list->item);
+        }
+        if (!t->st.generic) {
+            register_type(t);
         }
         break;
     case ENUM:
@@ -594,7 +596,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         if (local_type_name_conflict(scope, ast->enum_decl->enum_name)) {
             error(ast->line, ast->file, "Type named '%s' already exists in local scope.", ast->enum_decl->enum_name);
         }
-        // TODO: need to do the epxrs here or not?
+        // TODO: need to do the exprs here or not?
         first_pass_type(scope, ast->enum_decl->enum_type);
         ast->enum_decl->enum_type = define_type(scope, ast->enum_decl->enum_name, ast->enum_decl->enum_type);
         break;
@@ -671,6 +673,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
     case AST_CAST:
         ast->cast->object = first_pass(scope, ast->cast->object);
         first_pass_type(scope, ast->cast->cast_type);
+        register_type(ast->cast->cast_type);
         break;
     case AST_DIRECTIVE:
         if (ast->directive->object != NULL) {
@@ -795,11 +798,12 @@ static Ast *_parse_struct_literal_semantics(Scope *scope, Ast *ast, Type *type, 
         }
 
         if (!check_type(t, expr->var_type)) {
-            expr = coerce_type(scope, t, expr);
-            if (expr == NULL) {
+            Ast *coerced = coerce_type(scope, t, expr);
+            if (coerced == NULL) {
                 error(ast->line, ast->file, "Type mismatch in struct literal '%s' field '%s', expected %s but received %s.",
                     type_to_string(type), name, type_to_string(t), type_to_string(expr->var_type));
             }
+            expr = coerced;
         }
 
         lit->compound_val.member_names[i] = name;
@@ -1099,6 +1103,7 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     }
 
     ast->var_type = base_type(VOID_T);
+    register_type(ast->var_type);
 
     if (scope->parent == NULL) {
         ast->decl->global = 1;
@@ -1483,11 +1488,13 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         case STRUCT_LIT:
             check_for_unresolved(ast, ast->lit->compound_val.type);
             ast = parse_struct_literal_semantics(scope, ast);
+            register_type(ast->var_type);
             break;
         case ARRAY_LIT:
         case COMPOUND_LIT:
             check_for_unresolved(ast, ast->lit->compound_val.type);
             ast = parse_compound_literal_semantics(scope, ast);
+            register_type(ast->var_type);
             break;
         case ENUM_LIT: // eh?
             break;

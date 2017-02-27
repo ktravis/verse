@@ -124,11 +124,19 @@ void _vs_print_str(struct string_type str) {
     free(str.bytes);
     /*free(str);*/
 }
-struct string_type _vs_itoa(int x) {
+struct string_type _vs_utoa(uint64_t x) {
     struct string_type v;
-    int l = snprintf(NULL, 0, "%d", x);
+    int l = snprintf(NULL, 0, "%lu", x);
     v.bytes = malloc(l+1);
-    snprintf(v.bytes, l+1, "%d", x);
+    snprintf(v.bytes, l+1, "%lu", x);
+    v.length = strlen(v.bytes);
+    return v;
+}
+struct string_type _vs_itoa(int64_t x) {
+    struct string_type v;
+    int l = snprintf(NULL, 0, "%ld", x);
+    v.bytes = malloc(l+1);
+    snprintf(v.bytes, l+1, "%ld", x);
     v.length = strlen(v.bytes);
     return v;
 }

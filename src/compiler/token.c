@@ -325,6 +325,19 @@ Tok *_next_token(int nl_ok) {
             unget_char(n);
         }
         t->op = OP_XOR;
+    } else if (c == '|') {
+        char n = get_char();
+        int op = OP_BINOR;
+        if (n == '=') {
+            t = make_token(TOK_OPASSIGN);
+        } else if (n == '|') {
+            t = make_token(TOK_OP);
+            op = OP_OR;
+        } else {
+            t = make_token(TOK_OP);
+            unget_char(n);
+        }
+        t->op = op;
     } else if (c == '&') {
         char n = get_char();
         int op = OP_BINAND;
@@ -343,19 +356,23 @@ Tok *_next_token(int nl_ok) {
         int d = get_char();
         if (d == '=') {
             t->op = OP_GTE;
+        } else if (d == '>') {
+            t->op = OP_RSHIFT;
         } else {
             unget_char(d);
             t->op = OP_GT;
-        } // TODO binary shift
+        }
     } else if (c == '<') {
         t = make_token(TOK_OP);
         int d = get_char();
         if (d == '=') {
             t->op = OP_LTE;
+        } else if (d == '<') {
+            t->op = OP_LSHIFT;
         } else {
             unget_char(d);
             t->op = OP_LT;
-        } // TODO binary shift
+        }
     } else if (c == '!') {
         int d = get_char();
         if (d == '=') {
@@ -366,17 +383,14 @@ Tok *_next_token(int nl_ok) {
             t = make_token(TOK_UOP);
             t->op = OP_NOT;
         }
-    } else if (c == '|' || c == '=') {
-        int d = get_char();
-        int same = (d == c);
-        if (!same) {
-            unget_char(d);
-        }
+    } else if (c == '=') {
         t = make_token(TOK_OP);
-        switch (c) {
-        case '&': t->op = same ? OP_AND : OP_BINAND; break;
-        case '|': t->op = same ? OP_OR : OP_BINOR; break;
-        case '=': t->op = same ? OP_EQUALS : OP_ASSIGN; break;
+        t->op = OP_ASSIGN;
+        int d = get_char();
+        if (d == '=') {
+            t->op = OP_EQUALS;
+        } else {
+            unget_char(d);
         }
     }
     if (t == NULL) {
@@ -424,8 +438,8 @@ int is_hex_digit(char c) {
     return isdigit(c) || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F');
 }
 
-int hex_val(char c) {
-    if ('a' <= c && c < 'f') {
+unsigned long long hex_val(char c) {
+    if ('a' <= c && c <= 'f') {
         return c - 'a' + 10;
     } else if ('A' <= c && c <= 'F') {
         return c - 'A' + 10;
@@ -434,7 +448,7 @@ int hex_val(char c) {
 }
 
 Tok *read_hex_number(char c) {
-    long n = hex_val(c);
+    unsigned long long n = hex_val(c);
     for (;;) {
         char c = get_char();
         if (!is_hex_digit(c)) {
@@ -668,7 +682,7 @@ int valid_unary_op(int op) {
 
 int priority_of(Tok *t) {
     if (t->type == TOK_LPAREN || t->type == TOK_LSQUARE || t->type == TOK_DCOLON) {
-        return 14;
+        return 15;
     } else if (t->type == TOK_OPASSIGN) {
         return 1;
     } else if (t->type == TOK_OP || t->type == TOK_UOP) {
@@ -689,18 +703,20 @@ int priority_of(Tok *t) {
             return 7;
         case OP_GT: case OP_GTE: case OP_LT: case OP_LTE:
             return 8;
-        case OP_PLUS: case OP_MINUS:
+        case OP_LSHIFT: case OP_RSHIFT:
             return 9;
-        case OP_MUL: case OP_DIV: case OP_MOD:
+        case OP_PLUS: case OP_MINUS:
             return 10;
-        case OP_NOT:
+        case OP_MUL: case OP_DIV: case OP_MOD:
             return 11;
+        case OP_NOT:
+            return 12;
         case OP_CAST:
-            return 12; // TODO this priority might be wrong
+            return 13; // TODO this priority might be wrong
         case OP_REF: case OP_DEREF:
-            return 13;
-        case OP_DOT:
             return 14;
+        case OP_DOT:
+            return 15;
         default:
             return -1;
         }
@@ -887,6 +903,8 @@ const char *op_to_str(int op) {
     case OP_GTE: return ">=";
     case OP_LT: return "<";
     case OP_LTE: return "<=";
+    case OP_LSHIFT: return "<<";
+    case OP_RSHIFT: return ">>";
     case OP_DOT: return ".";
     case OP_REF: return "&";
     case OP_DEREF: return "*";

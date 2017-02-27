@@ -94,6 +94,7 @@ typedef struct Type {
 typedef struct TypeDef {
     char *name;
     Type *type;
+    Type *defined_type;
     struct TypeDef *next;
 } TypeDef;
 

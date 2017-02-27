@@ -1,6 +1,9 @@
 #import "syscall"
 #import "os"
 
+Stdout := 1;
+Stderr := 2;
+
 O_CREAT     :=     0o100;
 O_EXCL      :=     0o200;
 O_NOCTTY    :=     0o400;

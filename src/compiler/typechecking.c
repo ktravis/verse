@@ -66,7 +66,7 @@ int check_type(Type *a, Type *b) {
         }
         return check_type(a->fn.ret, b->fn.ret);
     default:
-        error(-1, "internal", "Cmon mang");
+        error(-1, "internal", "typechecking unhandled case");
     }
     return 0;
 }

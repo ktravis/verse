@@ -17,11 +17,12 @@ fn main() -> int {
     b:blerg;
 
     // use #typeof to get the &Type of a value/expression (at compile time)
+    /*t := #typeof(b) as &StructType;*/
     t := #typeof(b) as &StructType;
 
     i := 0;
     for m in t.members {
-        println("member " + itoa(i) + ": " + m.name);
+        println("member " + m.name + ": " + m.type.name);
         i = i + 1;
     }
 

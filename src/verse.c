@@ -39,8 +39,8 @@ int main(int argc, char **argv) {
     printf("%.*s\n", prelude_length, prelude);
 
     /*TypeList *used_types = reverse_typelist(root_scope->used_types);*/
-    TypeList *used_types = reverse_typelist(all_used_types());
-    TypeList *builtins = reverse_typelist(builtin_types());
+    TypeList *used_types = all_used_types();
+    TypeList *builtins = builtin_types();
 
     // declare structs
     for (TypeList *list = builtins; list != NULL; list = list->next) {
