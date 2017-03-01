@@ -172,6 +172,14 @@ fn any_to_string(a: Any) -> string {
                 return itoa(*(a.value_pointer as &u8) as int);
             }
         }
+    } else if bt == ANY {
+        return "ANY";
+    } else if bt == BOOL {
+        b := *(a.value_pointer as &bool);
+        if b {
+            return "true";
+        }
+        return "false";
     } else if bt == STRUCT {
         s := a.type.name;
         s += "::{";

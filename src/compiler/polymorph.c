@@ -21,19 +21,6 @@ Polymorph *check_for_existing_polymorph(AstFnDecl *decl, TypeList *arg_types) {
 
         for (TypeList *list = p->args; list != NULL; list = list->next) {
             match = p;
-            // NOTE: this is handled in the calling function now
-            // if variadic and list->next == NULL
-            /*if (decl->var->type->fn.variadic && list->next == NULL) {*/
-                // for remaining call args
-                /*for (TypeList *rem = types; rem->next != NULL; rem = rem->next) {*/
-                    // if !check_type(arg, list->item->inner) || ...
-                    /*if (!check_type(rem->item, list->item->inner)) {*/
-                        /*match = NULL;*/
-                        /*break;*/
-                    /*}*/
-                /*}*/
-                /*break;*/
-            /*}*/
             if (!check_type(list->item, types->item)) {
                 match = NULL;
                 break;

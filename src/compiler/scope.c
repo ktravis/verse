@@ -331,10 +331,10 @@ void register_type(Type *t) {
     case ENUM:
         register_type(resolved->en.inner);
         break;
+    case ARRAY:
     case STATIC_ARRAY:
         register_type(resolved->array.inner);
         break;
-    case ARRAY:
     case REF:
         register_type(resolved->inner);
         break;
@@ -374,9 +374,9 @@ int define_polydef_alias(Scope *scope, Type *t) {
         count++;
         break;
     case REF:
-    case ARRAY:
         count += define_polydef_alias(scope, t->inner);
         break;
+    case ARRAY:
     case STATIC_ARRAY:
         count += define_polydef_alias(scope, t->array.inner);
         break;

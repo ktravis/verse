@@ -32,6 +32,7 @@ TODO
   - union?
 
 Things to fix:
+  - Returning a string as Any causes it to not be copied
   - Use on polymorphic types? Should this be allowed? It is weird.
   - Polydef in params of argument type does not carry the definition of "T" to the return value type?
   - "type" identifier is not usable in a struct literal due to lexer

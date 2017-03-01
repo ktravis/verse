@@ -33,9 +33,9 @@ void check_for_unresolved(Ast *ast, Type *t) {
         }
         break;
     case REF:
-    case ARRAY:
         check_for_unresolved(ast, t->inner);
         break;
+    case ARRAY:
     case STATIC_ARRAY:
         check_for_unresolved(ast, t->array.inner);
         break;
@@ -72,14 +72,14 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
         return t;
     }
     case REF:
-    case ARRAY:
         if (contains_generic_struct(t->inner)) {
             t->inner = reify_struct(scope, ast, t->inner);
         }
         return t;
+    case ARRAY:
     case STATIC_ARRAY:
         if (contains_generic_struct(t->array.inner)) {
-            t->inner = reify_struct(scope, ast, t->array.inner);
+            t->array.inner = reify_struct(scope, ast, t->array.inner);
         }
         return t;
     case BASIC:
@@ -278,7 +278,7 @@ static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
         if (!strcmp(ast->dot->member_name, "length")) {
             ast->var_type = base_type(INT_T);
         } else if (!strcmp(ast->dot->member_name, "data")) {
-            ast->var_type = make_ref_type(t->comp == ARRAY ? t->inner : t->array.inner);
+            ast->var_type = make_ref_type(t->array.inner);
         } else {
             error(ast->line, ast->file,
                     "Cannot dot access member '%s' on array (only length or data).", ast->dot->member_name);
@@ -508,9 +508,9 @@ void first_pass_type(Scope *scope, Type *t) {
         register_type(t);
         break;
     case REF:
-    case ARRAY:
         first_pass_type(scope, t->inner);
         break;
+    case ARRAY:
     case STATIC_ARRAY:
         first_pass_type(scope, t->array.inner);
         break;
@@ -692,6 +692,9 @@ Ast *first_pass(Scope *scope, Ast *ast) {
     case AST_TYPE_OBJ:
         first_pass_type(scope, ast->type_obj->t);
         break;
+    case AST_SPREAD:
+        ast->spread->object = first_pass(scope, ast->spread->object);
+        break;
     case AST_BREAK:
     case AST_CONTINUE:
     case AST_IDENTIFIER:
@@ -852,7 +855,7 @@ static Ast *parse_compound_literal_semantics(Scope *scope, Ast *ast) {
     ast->lit->lit_type = ARRAY_LIT;
     ast->var_type = type;
 
-    Type *inner = type->comp == STATIC_ARRAY ? type->array.inner : type->inner;
+    Type *inner = type->array.inner;
 
     for (int i = 0; i < nmembers; i++) {
         Ast *expr = parse_semantics(scope, ast->lit->compound_val.member_exprs[i]);
@@ -969,9 +972,7 @@ static Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
     Type *a = slice->object->var_type;
     Type *resolved = resolve_alias(a);
 
-    if (resolved->comp == ARRAY) {
-        ast->var_type = make_array_type(resolved->inner);
-    } else if (resolved->comp == STATIC_ARRAY) {
+    if (resolved->comp == ARRAY || resolved->comp == STATIC_ARRAY) {
         ast->var_type = make_array_type(resolved->array.inner);
     } else if (resolved->comp == BASIC && resolved->data->base == STRING_T) {
         // TODO: is this right?
@@ -1131,11 +1132,45 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-static void verify_arg_types(Scope *scope, Ast *call, TypeList *expected_types, AstList *arg_vals, int variadic) {
+static int verify_arg_count(Scope *scope, Ast *ast, Type *fn_type) {
+    if (!fn_type->fn.variadic) {
+        if (ast->call->nargs != fn_type->fn.nargs) {
+            error(ast->line, ast->file,
+                "Incorrect argument count to function (expected %d, got %d)",
+                fn_type->fn.nargs, ast->call->nargs);
+        }
+        return -1;
+    }
+
+    if (ast->call->nargs < fn_type->fn.nargs - 1) {
+        error(ast->line, ast->file,
+            "Expected at least %d arguments to variadic function, but only got %d.",
+            fn_type->fn.nargs-1, ast->call->nargs);
+        return -1;
+    }
+
+    int i = 0;
+    for (AstList *list = ast->call->args; list != NULL; list = list->next) {
+        if (list->item->type == AST_SPREAD) {
+            if (list->next != NULL) {
+                error(ast->line, ast->file, "Only the last argument to a function call may be a spread.");
+            }
+            if (i != fn_type->fn.nargs - 1) {
+                error(ast->line, ast->file, "Spread array cannot be combined with other values for variadic function argument.");
+            }
+            ast->call->has_spread = 1;
+        }
+        i++;
+    }
+
+    return i;
+}
+
+static void verify_arg_types(Scope *scope, Ast *ast, TypeList *expected_types, AstList *arg_vals, int variadic) {
     AstFnDecl *decl = NULL;
     int ext = 0;
-    if (call->call->fn->type == AST_IDENTIFIER) {
-        decl = call->call->fn->ident->var->fn_decl;
+    if (ast->call->fn->type == AST_IDENTIFIER) {
+        decl = ast->call->fn->ident->var->fn_decl;
         if (decl != NULL) {
             ext = decl->var->ext;
         }
@@ -1144,6 +1179,30 @@ static void verify_arg_types(Scope *scope, Ast *call, TypeList *expected_types, 
     for (int i = 0; arg_vals != NULL; i++) {
         Ast *arg = arg_vals->item;
         Type *expected = expected_types->item;
+
+        if (arg->type == AST_SPREAD) {
+            // handled by verify_arg_count
+            assert(variadic);
+            assert(ast->call->has_spread);
+            assert(expected_types->next == NULL);
+            assert(!ext);
+
+            arg = arg->spread->object;
+
+            if (!is_array(arg->var_type)) {
+                error(ast->line, ast->file, "Cannot spread non-array type '%s'.", type_to_string(arg->var_type));
+            }
+
+            if (!check_type(arg->var_type->array.inner, expected)) {
+                error(ast->line, ast->file,
+                    "Expected argument (%d) of type '%s', but got type '%s'.",
+                    i, type_to_string(expected), type_to_string(arg->var_type));
+            }
+
+            // TODO: decide if we want to not hide the AST_SPREAD part of this
+            arg_vals->item = arg;
+            break;
+        }
 
         if (ext && (decl->ext_autocast & (1 << i))) {
             // TODO: should this check that the cast is still valid? or is total
@@ -1158,39 +1217,21 @@ static void verify_arg_types(Scope *scope, Ast *call, TypeList *expected_types, 
         } else if (!check_type(arg->var_type, expected)) {
             Ast* a = coerce_type(scope, expected, arg);
             if (a == NULL) {
-                error(call->line, call->file, "Expected argument (%d) of type '%s', but got type '%s'.",
+                error(ast->line, ast->file, "Expected argument (%d) of type '%s', but got type '%s'.",
                     i, type_to_string(expected), type_to_string(arg->var_type));
             }
             arg_vals->item = a;
         }
 
-        arg_vals = arg_vals->next;
         if (!(variadic && expected_types->next == NULL)) {
             expected_types = expected_types->next;
         }
+        arg_vals = arg_vals->next;
     }
 }
 
-static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
-    AstList *call_args = ast->call->args;
-    TypeList *call_arg_types = NULL;
-
-    // collect call arg types
-    for (int i = 0; call_args != NULL; i++) {
-        Ast *arg = parse_semantics(scope, call_args->item);
-        call_args->item = arg;
-        call_args = call_args->next;
-        Type *t = arg->var_type;
-        // TODO: this is super hacky / or is it?
-        if (t->comp == STATIC_ARRAY) {
-            t = make_array_type(t->array.inner);
-        }
-        if (!(resolved->fn.variadic && i >= resolved->fn.nargs)) {
-            call_arg_types = typelist_append(call_arg_types, t);
-        }
-    }
-    call_arg_types = reverse_typelist(call_arg_types);
-
+static AstFnDecl *get_fn_decl(Ast *ast) {
+    assert(ast->type == AST_CALL);
     AstFnDecl *decl = NULL;
     if (ast->call->fn->type == AST_IDENTIFIER) {
         decl = ast->call->fn->ident->var->fn_decl;
@@ -1198,29 +1239,58 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
         decl = ast->call->fn->fn_decl;
     } 
     if (decl == NULL) {
-        error(ast->line, "internal", "Uh oh, polymorph func decl was null...");
+        error(ast->line, ast->file, "<internal> Unable to find function declaration for polymorphic function call.");
     }
-    
-    if (resolved->fn.variadic) {
-        if (ast->call->nargs < resolved->fn.nargs - 1) {
-            error(ast->line, ast->file, "Expected at least %d arguments to variadic function, but only got %d.", resolved->fn.nargs-1, ast->call->nargs);
-            return NULL;
-        } else {
-            TypeList *list = call_arg_types;
-            Type *a = list->item;
-            while (list->next != NULL) {
-                list = list->next;
-                a = list->item;
-            }
-            a = make_static_array_type(a, ast->call->nargs - (resolved->fn.nargs - 1));
+    return decl;
+}
 
-            // TODO: this should do something else
-            ast->call->variadic_tempvar = make_temp_var(scope, a, ast->id);
+static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
+    AstList *call_args = ast->call->args;
+
+    // collect call arg types
+    TypeList *call_arg_types = NULL;
+    for (int i = 0; call_args != NULL; i++) {
+        Ast *arg = call_args->item;
+
+        if (arg->type == AST_SPREAD) {
+            arg->spread->object = parse_semantics(scope, arg->spread->object);
+            arg->var_type = arg->spread->object->var_type;
+            // TODO: there may be an issue here if this is arg->var_type is
+            // a STATIC_ARRAY
+            call_arg_types = typelist_append(call_arg_types, arg->var_type);
+        } else {
+            arg = parse_semantics(scope, call_args->item);
+
+            Type *t = arg->var_type;
+            if (t->comp == STATIC_ARRAY) {
+                t = make_array_type(t->array.inner);
+            }
+            if (!(resolved->fn.variadic && i >= resolved->fn.nargs)) {
+                call_arg_types = typelist_append(call_arg_types, t);
+            }
         }
-    } else if (ast->call->nargs != resolved->fn.nargs) {
-        error(ast->line, ast->file, "Incorrect argument count to function (expected %d, got %d)", resolved->fn.nargs, ast->call->nargs);
-        return NULL;
+
+        call_args->item = arg;
+        call_args = call_args->next;
     }
+    call_arg_types = reverse_typelist(call_arg_types);
+
+    int given_count = verify_arg_count(scope, ast, resolved);
+
+    // create variadic temp var if necessary (variadic, no spread, more than
+    // 0 args to variadic "slot")
+    if (resolved->fn.variadic && !ast->call->has_spread && given_count >= resolved->fn.nargs) {
+        for (TypeList *list = call_arg_types; list != NULL; list = list->next) {
+            // if last one
+            if (list->next == NULL) {
+                long length = ast->call->nargs - (resolved->fn.nargs - 1);
+                Type *a = make_static_array_type(list->item, length);
+                ast->call->variadic_tempvar = make_temp_var(scope, a, ast->id);
+            }
+        }
+    }
+
+    AstFnDecl *decl = get_fn_decl(ast);
 
     Polymorph *match = check_for_existing_polymorph(decl, call_arg_types);
     if (match != NULL) {
@@ -1235,28 +1305,30 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
     decl->scope->polymorph = match;
     ast->call->polymorph = match;
     
+    // reset call_args
+    call_args = ast->call->args;
+
+    VarList *arg_vars = decl->args;
     TypeList *defined_arg_types = NULL;
 
-    call_args = ast->call->args;
-    VarList *arg_vars = decl->args;
     for (TypeList *list = resolved->fn.args; list != NULL; list = list->next) {
         Type *arg_type = call_args->item->var_type;
-        if (is_polydef(list->item)) {
-            if (!match_polymorph(decl->scope, list->item, arg_type)) {
+        Type *expected_type = list->item;
+
+        if (is_polydef(expected_type)) {
+            if (!match_polymorph(decl->scope, expected_type, arg_type)) {
                 error(ast->line, ast->file, "Expected polymorphic argument type %s, but got an argument of type %s",
-                        type_to_string(list->item), type_to_string(arg_type));
+                        type_to_string(expected_type), type_to_string(arg_type));
             }
-            // TODO: make this better
+
+            expected_type = arg_type;
+
             if (arg_type->comp == STATIC_ARRAY) {
-                Type *t = make_array_type(arg_type->array.inner);
-                defined_arg_types = typelist_append(defined_arg_types, t);
-            } else {
-                defined_arg_types = typelist_append(defined_arg_types, arg_type);
+                expected_type = make_array_type(arg_type->array.inner);
             }
-        } else {
-            defined_arg_types = typelist_append(defined_arg_types, list->item);
         }
-        call_args = call_args->next;
+
+        defined_arg_types = typelist_append(defined_arg_types, expected_type);
 
         Var *v = copy_var(match->scope, arg_vars->item);
         v->type = defined_arg_types->item;
@@ -1264,15 +1336,16 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
             v->type = make_array_type(v->type);
         }
         attach_var(match->scope, v);
+
+        call_args = call_args->next;
         arg_vars = arg_vars->next;
     }
-    defined_arg_types = reverse_typelist(defined_arg_types);
-    call_args = ast->call->args;
 
-    // we still need this, not every argument is a polydef!!
-    verify_arg_types(scope, ast, defined_arg_types, call_args, resolved->fn.variadic);
+    defined_arg_types = reverse_typelist(defined_arg_types);
+    verify_arg_types(scope, ast, defined_arg_types, ast->call->args, resolved->fn.variadic);
 
     match->body = parse_block_semantics(match->scope, match->body, 1);
+
     ast->var_type = resolve_polymorph(resolved->fn.ret);
 
     return ast;
@@ -1292,31 +1365,25 @@ static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
         return parse_poly_call_semantics(scope, ast, resolved);
     }
     
-    if (resolved->fn.variadic) {
-        if (ast->call->nargs < resolved->fn.nargs - 1) {
-            error(ast->line, ast->file, "Expected at least %d arguments to variadic function, but only got %d.", resolved->fn.nargs-1, ast->call->nargs);
-            return NULL;
-        } else {
-            TypeList *list = resolved->fn.args;
-            Type *a = list->item;
-            while (list != NULL) {
-                a = list->item;
-                list = list->next;
+    int given_count = verify_arg_count(scope, ast, resolved);
+
+    // create variadic temp var if necessary
+    if (resolved->fn.variadic && !ast->call->has_spread && resolved->fn.nargs <= given_count) {
+        for (TypeList *list = resolved->fn.args; list != NULL; list = list->next) {
+            if (list->next == NULL) {
+                long length = ast->call->nargs - (resolved->fn.nargs - 1);
+                Type *a = make_static_array_type(list->item, length);
+                ast->call->variadic_tempvar = make_temp_var(scope, a, ast->id);
             }
-            a = make_static_array_type(a, ast->call->nargs - (resolved->fn.nargs - 1));
-
-            // TODO: this should do something else
-            ast->call->variadic_tempvar = make_temp_var(scope, a, ast->id);
         }
-    } else if (ast->call->nargs != resolved->fn.nargs) {
-        error(ast->line, ast->file, "Incorrect argument count to function (expected %d, got %d)", resolved->fn.nargs, ast->call->nargs);
-        return NULL;
     }
-
     
-    // if we make this a part of "verify_arg_types" and remove its use from the
-    // polymorph version, there only has to be one loop over the call args
     for (AstList *args = ast->call->args; args != NULL; args = args->next) {
+        if (args->item->type == AST_SPREAD) {
+            args->item->spread->object = parse_semantics(scope, args->item->spread->object);
+            args->item->var_type = args->item->spread->object->var_type;
+            continue;
+        }
         args->item = parse_semantics(scope, args->item);
     }
 
@@ -1336,6 +1403,8 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
         type_check_scope = new_scope(scope);
         poly = 1;
 
+        // this is prior to the below loop in case the polydef is after another
+        // argument using its type, as in fn (T, $T) -> T
         for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
             if (is_polydef(args->item->type)) {
                 // get alias
@@ -1350,6 +1419,7 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
 
         // TODO: there needs to be a way to do this that handles polydef etc
         /*check_for_unresolved(ast, args->item->type);*/
+
 
         if (!is_concrete(args->item->type)) {
             error(lineno(), current_file_name(),
@@ -1438,9 +1508,9 @@ static Ast *parse_index_semantics(Scope *scope, Ast *ast) {
         }
     } else if (obj_type->comp == STATIC_ARRAY) {
         size = obj_type->array.length;
-        ast->var_type = obj_type->array.inner; // need to call something different?
+        ast->var_type = obj_type->array.inner;
     } else if (obj_type->comp == ARRAY) {
-        ast->var_type = obj_type->inner; // need to call something different?
+        ast->var_type = obj_type->array.inner;
     } else {
         error(ast->index->object->line, ast->index->object->file,
             "Cannot perform index/subscript operation on non-array type (type is '%s').",
@@ -1649,10 +1719,8 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         Type *it_type = lp->iterable->var_type;
         Type *resolved = resolve_alias(it_type);
 
-        if (resolved->comp == STATIC_ARRAY) {
+        if (resolved->comp == ARRAY || resolved->comp == STATIC_ARRAY) {
             lp->itervar->type = it_type->array.inner;
-        } else if (resolved->comp == ARRAY) {
-            lp->itervar->type = it_type->inner;
         } else if (resolved->comp == BASIC && resolved->data->base == STRING_T) {
             lp->itervar->type = base_numeric_type(UINT_T, 8);
         } else {
@@ -1735,6 +1803,8 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             pop_current_package();
         }
         break;
+    case AST_SPREAD:
+        error(ast->line, ast->file, "Spread is not valid outside of function call.");
     default:
         error(-1, "internal", "idk parse semantics %d", ast->type);
     }

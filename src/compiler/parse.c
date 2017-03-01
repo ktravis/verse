@@ -233,6 +233,10 @@ Ast *parse_expression(Tok *t, int priority) {
         t = next_token();
         if (t == NULL) {
             return ast;
+        } else if (t->type == TOK_ELLIPSIS) {
+            Ast *s = ast_alloc(AST_SPREAD);
+            s->spread->object = ast;
+            return s;
         } else if (t->type == TOK_SEMI || t->type == TOK_RPAREN ||
                  t->type == TOK_LBRACE || t->type == TOK_RBRACE ||
                  t->type == TOK_RSQUARE) {
@@ -636,7 +640,7 @@ Ast *parse_func_decl(int anonymous) {
             argtype = make_array_type(argtype);
             args = varlist_append(args, make_var(argname, argtype));
             args->item->initialized = 1;
-            arg_types = typelist_append(arg_types, argtype->inner);
+            arg_types = typelist_append(arg_types, argtype->array.inner);
             break;
         }
 

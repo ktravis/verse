@@ -32,6 +32,7 @@ Type *typeinfo_ref();
 char *type_to_string(Type *t);
 int is_any(Type *t);
 int is_dynamic(Type *t);
+int is_array(Type *t);
 int is_numeric(Type *t);
 int is_string(Type *t);
 int is_bool(Type *t);

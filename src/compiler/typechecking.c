@@ -30,7 +30,7 @@ int check_type(Type *a, Type *b) {
     case REF:
         return check_type(a->inner, b->inner);
     case ARRAY:
-        return check_type(a->inner, b->inner);
+        return check_type(a->array.inner, b->array.inner);
     case STATIC_ARRAY:
         return a->array.length == b->array.length && check_type(a->array.inner, b->array.inner);
     case STRUCT:
@@ -141,7 +141,7 @@ int can_cast(Type *from, Type *to) {
     case STATIC_ARRAY: {
         to = resolve_alias(to);
         if (to->comp == ARRAY) {
-            return check_type(from->array.inner, to->inner);
+            return check_type(from->array.inner, to->array.inner);
         }
         return 0;
     }
@@ -163,7 +163,7 @@ int match_polymorph(Scope *scope, Type *expected, Type *got) {
     Type *res = resolve_alias(got);
     if (res->comp != expected->comp) {
         if (expected->comp == ARRAY && res->comp == STATIC_ARRAY) {
-            return match_polymorph(scope, expected->inner, res->array.inner);
+            return match_polymorph(scope, expected->array.inner, res->array.inner);
         }
         if (expected->comp == PARAMS && res->comp == STRUCT) {
             return match_polymorph(scope, expected, res->st.generic_base);
@@ -174,7 +174,7 @@ int match_polymorph(Scope *scope, Type *expected, Type *got) {
     case REF:
         return match_polymorph(scope, expected->inner, res->inner);
     case ARRAY:
-        return match_polymorph(scope, expected->inner, res->inner);
+        return match_polymorph(scope, expected->array.inner, res->array.inner);
     case FUNC:
         if (expected->fn.variadic != res->fn.variadic) {
             return 0;
@@ -316,10 +316,10 @@ Ast *coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
     Type *t = resolve_alias(to);
     if (t->comp == ARRAY) {
         if (from->var_type->comp == STATIC_ARRAY) {
-            t = t->inner;
+            t = t->array.inner;
             Type *from_type = from->var_type->array.inner;
             while (from_type->comp == STATIC_ARRAY && t->comp == ARRAY) {
-                t = t->inner;
+                t = t->array.inner;
                 from_type = from_type->array.inner;
             }
             if (!check_type(t, from_type)) {
@@ -394,10 +394,10 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from) {
     Type *t = resolve_alias(to);
     if (t->comp == ARRAY) {
         if (from->var_type->comp == STATIC_ARRAY) {
-            t = t->inner;
+            t = t->array.inner;
             Type *from_type = from->var_type->array.inner;
             while (from_type->comp == STATIC_ARRAY && t->comp == ARRAY) {
-                t = t->inner;
+                t = t->array.inner;
                 from_type = from_type->array.inner;
             }
             if (!check_type(t, from_type)) {

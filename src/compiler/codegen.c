@@ -623,7 +623,7 @@ void emit_static_array_copy(Scope *scope, Type *t, char *dest, char *src) {
         sname[depth_len+2] = 0;
 
         printf("%s = %s[i], %s = %s[i];\n", dname, dest, sname, src); 
-        emit_static_array_copy(scope, t->inner, dname, sname);
+        emit_static_array_copy(scope, t->array.inner, dname, sname);
 
         free(dname);
         free(sname);
@@ -860,12 +860,21 @@ void compile_fn_call(Scope *scope, Ast *ast) {
 
     int i = 0;
     while (args != NULL) {
+        // we check vt here to help with handling spread, there is probably
+        // a nicer way
         if (t->fn.variadic) {
-            if (i == t->fn.nargs - 1) {
-                printf("(");
-            }
-            if (i >= t->fn.nargs - 1) {
-                printf("_tmp%d[%d] = ", vt->id, i - (t->fn.nargs - 1));
+            if (ast->call->has_spread) {
+                if (i == t->fn.nargs - 1) {
+                    compile_call_arg(scope, args->item, 1);
+                    break;
+                }
+            } else {
+                if (i == t->fn.nargs - 1) {
+                    printf("(");
+                }
+                if (i >= t->fn.nargs - 1) {
+                    printf("_tmp%d[%d] = ", vt->id, i - (t->fn.nargs - 1));
+                }
             }
         }
 
@@ -893,7 +902,7 @@ void compile_fn_call(Scope *scope, Ast *ast) {
         }
     }
 
-    if (t->fn.variadic) {
+    if (t->fn.variadic && !ast->call->has_spread) {
         if (ast->call->nargs - (t->fn.nargs) < 0) {
             printf(", (struct array_type){0, NULL}");
         } else if (ast->call->nargs > t->fn.nargs - 1) {
@@ -972,7 +981,6 @@ void compile(Scope *scope, Ast *ast) {
             break;
         case ARRAY_LIT: {
             Var *tmp = ast->lit->compound_val.array_tempvar;
-            Type *inner = tmp->type->comp == STATIC_ARRAY ? tmp->type->array.inner : tmp->type->inner;
 
             long n = ast->lit->compound_val.nmembers;
 
@@ -981,7 +989,7 @@ void compile(Scope *scope, Ast *ast) {
                 Ast *expr = ast->lit->compound_val.member_exprs[i];
                 printf("_tmp%d[%d] = ", tmp->id, i);
 
-                if (is_any(inner) && !is_any(expr->var_type)) {
+                if (is_any(tmp->type->array.inner) && !is_any(expr->var_type)) {
                     emit_any_wrapper(scope, expr);
                 } else if (is_lvalue(expr)) {
                     emit_copy(scope, expr);
@@ -1047,7 +1055,8 @@ void compile(Scope *scope, Ast *ast) {
     }
     case AST_SLICE: {
         Type *obj_type = resolve_alias(ast->slice->object->var_type);
-        if (obj_type->comp == BASIC && obj_type->data->base == STRING_T) {
+
+        if (is_string(obj_type)) {
             printf("string_slice(");
             compile(scope, ast->slice->object);
             printf(",");
@@ -1065,34 +1074,62 @@ void compile(Scope *scope, Ast *ast) {
             printf(")");
             break;
         }
-        printf("(struct array_type){.data=");
-        if (needs_temp_var(ast->slice->object)) {
-            emit_temp_var(scope, ast->slice->object, 0);
-        } else {
-            compile_static_array(scope, ast->slice->object);
-        }
 
-        if (ast->slice->offset != NULL) {
-            printf("+(");
-            compile(scope, ast->slice->offset);
+        if (obj_type->comp == STATIC_ARRAY) {
+            printf("(struct array_type){.data=");
+
+            if (ast->slice->offset != NULL) {
+                printf("((char *)");
+            }
+
+            if (needs_temp_var(ast->slice->object)) {
+                emit_temp_var(scope, ast->slice->object, 0);
+            } else {
+                compile_static_array(scope, ast->slice->object);
+            }
+
+            if (ast->slice->offset != NULL) {
+                printf(")+(");
+                compile(scope, ast->slice->offset);
+                printf("*sizeof(");
+                emit_type(obj_type->array.inner);
+                printf("))");
+            }
+
+            printf(",.length=");
+            if (ast->slice->length != NULL) {
+                compile(scope, ast->slice->length);
+            } else {
+                printf("%ld", obj_type->array.length); 
+            }
+
+            if (ast->slice->offset != NULL) {
+                printf("-");
+                compile(scope, ast->slice->offset);
+            }
+            printf("}");
+        } else { // ARRAY
+            printf("array_slice(");
+
+            compile_unspecified_array(scope, ast->slice->object);
+
+            printf(",");
+            if (ast->slice->offset != NULL) {
+                compile(scope, ast->slice->offset);
+                printf(",sizeof(");
+                emit_type(obj_type->array.inner);
+                printf("),");
+            } else {
+                printf("0,0,");
+            }
+
+            if (ast->slice->length != NULL) {
+                compile(scope, ast->slice->length);
+            } else {
+                printf("-1");
+            }
             printf(")");
         }
-        printf(",.length=");
-
-        if (ast->slice->length != NULL) {
-            compile(scope, ast->slice->length);
-        } else if (obj_type->comp == STATIC_ARRAY) {
-            printf("%ld", obj_type->array.length); 
-        } else {
-            // TODO make this work (store tmpvar of thing being sliced to avoid
-            // re-running whatever it is)
-            error(ast->line, ast->file, "Slicing a slice, uh ohhhhh");
-        }
-        if (ast->slice->offset != NULL) {
-            printf("-");
-            compile(scope, ast->slice->offset);
-        }
-        printf("}");
         break;
     }
     case AST_IDENTIFIER: {
@@ -1153,7 +1190,7 @@ void compile(Scope *scope, Ast *ast) {
             printf("(");
             if (lt->comp == ARRAY) {
                 printf("(");
-                emit_type(lt->inner);
+                emit_type(lt->array.inner);
                 printf("*)");
             }
 
@@ -1493,7 +1530,6 @@ void emit_var_decl(Scope *scope, Var *v) {
         printf("(*");
     } else if (t->comp == STATIC_ARRAY) {
         emit_type(t->array.inner);
-        /*printf("_vs_%s[%ld] = {0};\n", v->name, t->array.length);*/
         printf("_vs_%d[%ld] = {0};\n", v->id, t->array.length);
         return;
     } else {

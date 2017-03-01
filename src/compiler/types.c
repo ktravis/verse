@@ -79,10 +79,10 @@ Type *copy_type(Scope *scope, Type *t) {
         type->params.args = reverse_typelist(type->params.args);
         type->params.inner = copy_type(scope, t->params.inner);
         break;
+    case ARRAY:
     case STATIC_ARRAY:
         type->array.inner = copy_type(scope, t->array.inner);
         break;
-    case ARRAY:
     case REF:
         type->inner = copy_type(scope, t->inner);
         break;
@@ -172,7 +172,8 @@ Type *make_static_array_type(Type *inner, long length) {
 Type *make_array_type(Type *inner) {
     Type *type = calloc(sizeof(Type), 1);
     type->comp = ARRAY;
-    type->inner = inner;
+    type->array.inner = inner;
+    type->array.length = -1; // eh?
     type->id = last_type_id++;
     return type;
 }
@@ -384,6 +385,11 @@ int is_bool(Type *t) {
     return is_base_type(t, BOOL_T);
 }
 
+int is_array(Type *t) {
+    t = resolve_alias(t);
+    return t->comp == ARRAY || t->comp == STATIC_ARRAY;
+}
+
 int is_dynamic(Type *t) {
     t = resolve_alias(t);
 
@@ -407,8 +413,8 @@ int is_polydef(Type *t) {
     case POLYDEF:
         return 1;
     case REF:
-    case ARRAY:
         return is_polydef(t->inner);
+    case ARRAY:
     case STATIC_ARRAY:
         return is_polydef(t->array.inner);
     case STRUCT:
@@ -461,8 +467,8 @@ int contains_generic_struct(Type *t) {
     case POLYDEF:
         return 0;
     case REF:
-    case ARRAY:
         return contains_generic_struct(t->inner);
+    case ARRAY:
     case STATIC_ARRAY:
         return contains_generic_struct(t->array.inner);
     case STRUCT:
@@ -505,9 +511,9 @@ Type *replace_type(Type *base, Type *from, Type *to) {
         base->params.inner = replace_type(base->params.inner, from, to);
         break;
     case REF:
-    case ARRAY:
         base->inner = replace_type(base->inner, from, to);
         break;
+    case ARRAY:
     case STATIC_ARRAY:
         base->array.inner = replace_type(base->array.inner, from, to);
         break;
@@ -635,7 +641,7 @@ char *type_to_string(Type *t) {
         return dest;
     }
     case ARRAY: {
-        char *inner = type_to_string(t->inner);
+        char *inner = type_to_string(t->array.inner);
         char *dest = malloc(sizeof(char) * (strlen(inner) + 3));
         snprintf(dest, strlen(inner) + 3, "[]%s", inner);
         free(inner);
@@ -1165,7 +1171,7 @@ void emit_typeinfo_init(Scope *scope, Type *t) {
         printf("_type_info%d = (struct _type_vs_%d){%d, 7, ", id, arraytype_type_id, id);
         emit_string_struct(name);
         printf(", (struct _type_vs_%d *)&_type_info%d, %ld, %d};\n",
-                typeinfo_type_id, get_type_id(resolved->inner), (long)0, 0);
+                typeinfo_type_id, get_type_id(resolved->array.inner), (long)0, 0);
         break;
     case FUNC: {
         int i = 0;

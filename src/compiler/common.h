@@ -84,7 +84,7 @@ typedef struct Type {
             char *pkg_name;
             char *type_name;
         } ext;
-        struct Type *inner; // slice / ref
+        struct Type *inner;
         FnType fn;
         StructType st;
         EnumType en;
@@ -173,6 +173,7 @@ typedef enum AstType {
     AST_USE,
     AST_IMPORT,
     AST_TYPE_OBJ,
+    AST_SPREAD,
 } AstType;
 
 typedef struct Ast {
@@ -208,6 +209,7 @@ typedef struct Ast {
         struct AstUse           *use;
         struct AstImport        *import;
         struct AstTypeObj       *type_obj;
+        struct AstSpread        *spread;
     };
 } Ast;
 

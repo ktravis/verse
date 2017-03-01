@@ -93,6 +93,7 @@ typedef struct AstCall {
     struct AstList *args;
     Var *variadic_tempvar;
     Polymorph *polymorph;
+    char has_spread;
 } AstCall;
 
 typedef struct AstSlice {
@@ -187,6 +188,10 @@ typedef struct AstEnumDecl {
     Type *enum_type;
     Ast **exprs;
 } AstEnumDecl;
+
+typedef struct AstSpread {
+    Ast *object;
+} AstSpread;
 
 Ast *ast_alloc(AstType type);
 Ast *deep_copy(Ast *ast);

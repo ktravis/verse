@@ -101,6 +101,9 @@ Ast *ast_alloc(AstType type) {
     case AST_TYPE_OBJ:
         ast->type_obj = calloc(sizeof(AstTypeObj), 1);
         break;
+    case AST_SPREAD:
+        ast->spread = calloc(sizeof(AstSpread), 1);
+        break;
     }
     return ast;
 }
@@ -278,6 +281,10 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         cp->type_obj = calloc(sizeof(AstTypeObj), 1);
         cp->type_obj->t = copy_type(scope, ast->type_obj->t);
         break;
+    case AST_SPREAD:
+        cp->spread = calloc(sizeof(AstSpread), 1);
+        cp->spread->object = copy_ast(scope, ast->spread->object);
+        break;
     }
     return cp;
 }
@@ -446,136 +453,4 @@ AstList *astlist_append(AstList *list, Ast *ast) {
     l->item = ast;
     l->next = list;
     return l;
-}
-
-void print_ast(Ast *ast) {
-    /*switch (ast->type) {*/
-    /*case AST_INTEGER:*/
-        /*printf("%ld", ast->ival);*/
-        /*break;*/
-    /*case AST_FLOAT:*/
-        /*printf("%f", ast->fval);*/
-        /*break;*/
-    /*case AST_BOOL:*/
-        /*printf("%s", ast->ival == 1 ? "true" : "false");*/
-        /*break;*/
-    /*case AST_STRING:*/
-        /*printf("\"");*/
-        /*print_quoted_string(ast->sval);*/
-        /*printf("\"");*/
-        /*break;*/
-    /*case AST_DOT:*/
-        /*print_ast(ast->dot_left);*/
-        /*printf(".%s", ast->member_name);*/
-        /*break;*/
-    /*case AST_UOP:*/
-        /*printf("(%s ", op_to_str(ast->op));*/
-        /*print_ast(ast->right);*/
-        /*printf(")");*/
-        /*break;*/
-    /*case AST_BINOP:*/
-        /*printf("(%s ", op_to_str(ast->op));*/
-        /*print_ast(ast->left);*/
-        /*printf(" ");*/
-        /*print_ast(ast->right);*/
-        /*printf(")");*/
-        /*break;*/
-    /*case AST_TEMP_VAR:*/
-        /*printf("(tmp ");*/
-        /*print_ast(ast->expr);*/
-        /*printf(")");*/
-        /*break;*/
-    /*case AST_IDENTIFIER:*/
-        /*printf("%s", ast->varname);*/
-        /*break;*/
-    /*case AST_DECL:*/
-        /*printf("(decl %s %s", ast->decl_var->name, ast->decl_var->type->name);*/
-        /*if (ast->init != NULL) {*/
-            /*printf(" ");*/
-            /*print_ast(ast->init);*/
-        /*}*/
-        /*printf(")");*/
-        /*break;*/
-    /*case AST_TYPE_DECL:*/
-        /*printf("(type %s %s)", ast->type_name, ast->target_type->name);*/
-        /*break;*/
-    /*case AST_EXTERN_FUNC_DECL:*/
-        /*printf("(extern fn %s)", ast->fn_decl_var->name);*/
-        /*break;*/
-    /*case AST_ANON_FUNC_DECL:*/
-    /*case AST_FUNC_DECL: {*/
-        /*VarList *args = ast->fn_decl_args;*/
-        /*printf("(fn ");*/
-        /*if (!ast->anon) {*/
-            /*printf("%s", ast->fn_decl_var->name);*/
-        /*}*/
-        /*printf("(");*/
-        /*while (args != NULL) {*/
-            /*printf("%s", args->item->name);*/
-            /*if (args->next != NULL) {*/
-                /*printf(",");*/
-            /*}*/
-            /*args = args->next;*/
-        /*}*/
-        /*printf("):%s ", ast->fn_decl_var->type->ret->name);*/
-        /*print_ast(ast->fn_body);*/
-        /*printf(")");*/
-        /*break;*/
-    /*}*/
-    /*case AST_RETURN:*/
-        /*printf("(return");*/
-        /*if (ast->ret_expr != NULL) {*/
-            /*printf(" ");*/
-            /*print_ast(ast->ret_expr);*/
-        /*}*/
-        /*printf(")");*/
-        /*break;*/
-    /*case AST_CALL: {*/
-        /*AstList *args = ast->args;*/
-        /*print_ast(ast->fn);*/
-        /*printf("(");*/
-        /*while (args != NULL) {*/
-            /*print_ast(args->item);*/
-            /*if (args->next != NULL) {*/
-                /*printf(",");*/
-            /*}*/
-            /*args = args->next;*/
-        /*}*/
-        /*printf(")");*/
-        /*break;*/
-    /*}*/
-    /*case AST_INDEX:*/
-        /*print_ast(ast->left);*/
-        /*printf("[");*/
-        /*print_ast(ast->right);*/
-        /*printf("]");*/
-        /*break;*/
-    /*case AST_BLOCK:*/
-        /*for (int i = 0; i < ast->num_statements; i++) {*/
-            /*print_ast(ast->statements[i]);*/
-        /*}*/
-        /*break;*/
-    /*case AST_SCOPE:*/
-        /*printf("{ ");*/
-        /*print_ast(ast->body);*/
-        /*printf(" }");*/
-        /*break;*/
-    /*case AST_CONDITIONAL:*/
-        /*printf("(if ");*/
-        /*print_ast(ast->condition);*/
-        /*printf(" ");*/
-        /*print_ast(ast->if_body);*/
-        /*if (ast->else_body != NULL) {*/
-            /*printf(" ");*/
-            /*print_ast(ast->else_body);*/
-        /*}*/
-        /*printf(")");*/
-        /*break;*/
-    /*case AST_HOLD:*/
-        /*printf("(hold ");*/
-        /*print_ast(ast->expr);*/
-        /*printf(")");*/
-    /*default:*/
-        /*error(ast->line, "Cannot print this ast.");*/
-    /*}*/
 }

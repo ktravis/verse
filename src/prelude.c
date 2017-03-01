@@ -104,6 +104,14 @@ struct array_type string_as_array(struct string_type str) {
     return arr;
 }
 
+struct array_type array_slice(struct array_type arr, long offset, size_t el_size, long length) {
+    if (offset != 0) {
+        arr.data = (((char *)arr.data) + (offset * el_size));
+    }
+    arr.length = length == -1 ? arr.length - offset : length;
+    return arr;
+}
+
 // builtins
 /*void assert(unsigned char a) {*/
     /*assert(a);*/
