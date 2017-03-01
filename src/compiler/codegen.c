@@ -112,6 +112,7 @@ void emit_string_binop(Scope *scope, Ast *ast) {
     case AST_IDENTIFIER:
     case AST_DOT:
     case AST_INDEX:
+    case AST_SLICE:
     case AST_UOP:
     case AST_BINOP:
         printf("append_string(");

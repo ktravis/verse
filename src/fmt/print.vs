@@ -271,11 +271,13 @@ fn any_repr(a: Any) -> string {
     return s;
 }
 
-fn printf(fmt:string, args:Any...) {
+fn sprintf(fmt: string, args: Any...) -> string {
+    out: string;
+
     expected := numFormatArgs(fmt);
     if expected != args.length {
         os.write(os.Stderr, "Format string expects " + itoa(expected) + " args but received " + itoa(args.length) + ".\n");
-        return;
+        return out;
     }
 
     i := 0;
@@ -285,16 +287,21 @@ fn printf(fmt:string, args:Any...) {
         c := fmt[i];
         if c == "%" {
             if i + 1 < fmt.length && fmt[i+1] == "%" {
-                os.write(os.Stdout, "%");
+                out += "%";
                 i += 2;
                 continue;
             } else {
-                os.write(os.Stdout, any_to_string(args[n]));
+                out += any_to_string(args[n]);
                 n += 1;
             }
         } else {
-            os.write(os.Stdout, fmt[i:1]);
+            out += fmt[i:1];
         }
         i += 1;
     }
+    return out;
+}
+
+fn printf(fmt:string, args:Any...) {
+    os.write(os.Stdout, sprintf(fmt, args...));
 }
