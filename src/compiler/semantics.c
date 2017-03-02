@@ -659,6 +659,9 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         if (ast->for_loop->itervar->type != NULL) {
             first_pass_type(scope, ast->for_loop->itervar->type);
         }
+        if (ast->for_loop->index != NULL) {
+            first_pass_type(scope, ast->for_loop->index->type);
+        }
         break;
     case AST_ANON_SCOPE:
         ast->anon_scope->scope = new_scope(scope);
@@ -1746,6 +1749,23 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
     case AST_FOR: {
         AstFor *lp = ast->for_loop;
         lp->iterable = parse_semantics(scope, lp->iterable);
+
+        if (lp->index != NULL) {
+            if (!strcmp(lp->index->name, lp->itervar->name)) {
+                error(ast->line, ast->file, "Cannot name iteration and index variables the same.");
+            }
+            check_for_unresolved(ast, lp->index->type);
+
+            Type *t = resolve_alias(lp->index->type);
+            assert(t != NULL);
+
+            if (!(t->data->base == INT_T || t->data->base == UINT_T)) {
+                error(ast->line, ast->file, "Index variable '%s' has type '%s', which is not an integer type.", lp->index->name, type_to_string(lp->index->type));
+
+            }
+            // TODO: check for overflow of index type on static array
+            attach_var(lp->scope, lp->index);
+        }
 
         Type *it_type = lp->iterable->var_type;
         Type *resolved = resolve_alias(it_type);

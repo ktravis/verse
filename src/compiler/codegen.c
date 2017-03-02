@@ -1273,6 +1273,12 @@ void compile(Scope *scope, Ast *ast) {
         compile_unspecified_array(scope, ast->for_loop->iterable);
         printf(";\n");
 
+        if (ast->for_loop->index != NULL) {
+            indent();
+            emit_type(ast->for_loop->index->type);
+            printf("_vs_%d;\n", ast->for_loop->index->id);
+        }
+
         indent();
         printf("for (long _i = 0; _i < _iter.length; _i++) {\n");
 
@@ -1283,6 +1289,14 @@ void compile(Scope *scope, Ast *ast) {
         printf("_vs_%d = ((", ast->for_loop->itervar->id);
         emit_type(ast->for_loop->itervar->type);
         printf("*)_iter.data)[_i];\n");
+
+        if (ast->for_loop->index != NULL) {
+            indent();
+            emit_type(ast->for_loop->index->type);
+            printf("_vs_%d = (", ast->for_loop->index->id);
+            emit_type(ast->for_loop->index->type);
+            printf(")_i;\n");
+        }
 
         indent();
         emit_scope_start(ast->for_loop->scope);

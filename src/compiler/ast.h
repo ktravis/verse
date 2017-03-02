@@ -164,6 +164,7 @@ typedef struct AstWhile {
 
 typedef struct AstFor {
     Var *itervar;
+    Var *index;
     Scope *scope;
     Ast *iterable;
     AstBlock *body;

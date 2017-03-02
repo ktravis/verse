@@ -925,6 +925,19 @@ Ast *parse_statement(Tok *t) {
         ast->for_loop->itervar = make_var(t->sval, NULL);
         
         t = next_token();
+        if (t->type == TOK_COMMA) {
+            t = expect(TOK_ID);
+            char *name = t->sval;
+            Type *index_type = base_type(INT_T);
+
+            t = next_token();
+            if (t->type == TOK_COLON) {
+                index_type = parse_type(next_token(), 0);
+                t = next_token();
+            }
+
+            ast->for_loop->index = make_var(name, index_type);
+        }
         if (t->type != TOK_IN) {
             error(ast->line, ast->file,
                 "Unexpected token '%s' while parsing for loop.", tok_to_string(t));
@@ -957,44 +970,6 @@ Ast *parse_statement(Tok *t) {
     expect(TOK_SEMI);
     return ast;
 }
-
-/*Ast *parse_array_literal(Type *type) {*/
-    /*Ast *ast = ast_alloc(AST_LITERAL);*/
-
-    /*// TODO: check for count mismatch with type*/
-    /*ast->lit->lit_type = ARRAY_LIT;*/
-    /*ast->lit->compound_val.type = type;*/
-    /*ast->lit->compound_val.member_exprs = NULL;*/
-
-    /*if (peek_token()->type == TOK_RBRACE) {*/
-        /*next_token();*/
-        /*return ast;*/
-    /*}*/
-
-    /*AstList *items = NULL;*/
-
-    /*Tok *t = NULL;*/
-    /*for (;;) {*/
-        /*t = next_token();*/
-        /*if (t == NULL) {*/
-            /*error(lineno(), current_file_name(), "Unexpected EOF while parsing array literal.");*/
-        /*}*/
-
-        /*items = astlist_append(items, parse_expression(t, 0));*/
-
-        /*t = next_token();*/
-        /*if (t == NULL) {*/
-            /*error(lineno(), current_file_name(), "Unexpected EOF while parsing struct literal.");*/
-        /*} else if (t->type == TOK_RBRACE) {*/
-            /*break;*/
-        /*} else if (t->type != TOK_COMMA) {*/
-            /*error(lineno(), current_file_name(), "Unexpected token '%s' while parsing array literal.", tok_to_string(t));*/
-        /*}*/
-    /*}*/
-
-    /*ast->lit->array_val.items = reverse_astlist(items);*/
-    /*return ast;*/
-/*}*/
 
 Ast *parse_directive(Tok *t) {
     Ast *dir = ast_alloc(AST_DIRECTIVE);
