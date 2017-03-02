@@ -885,7 +885,7 @@ void init_types(Scope *scope) {
     string_type = define_type(scope, "string", make_primitive(STRING_T, 16));
     string_type_id = resolve_alias(string_type)->id;
 
-    char **member_names = malloc(sizeof(char*)*11);
+    char **member_names = malloc(sizeof(char*)*12);
     member_names[0] = "INT";
     member_names[1] = "BOOL";
     member_names[2] = "FLOAT";
@@ -897,7 +897,8 @@ void init_types(Scope *scope) {
     member_names[8] = "ENUM";
     member_names[9] = "REF";
     member_names[10] = "STRUCT";
-    long *member_values = malloc(sizeof(long)*11);
+    member_names[11] = "PTR";
+    long *member_values = malloc(sizeof(long)*12);
     member_values[0] = 1;
     member_values[1] = 2;
     member_values[2] = 3;
@@ -909,7 +910,8 @@ void init_types(Scope *scope) {
     member_values[8] = 9;
     member_values[9] = 10;
     member_values[10] = 11;
-    basetype_type = define_type(scope, "BaseType", make_enum_type(int32_type, 11, member_names, member_values));
+    member_values[11] = 12;
+    basetype_type = define_type(scope, "BaseType", make_enum_type(int32_type, 12, member_names, member_values));
     basetype_type_id = resolve_alias(basetype_type)->id;
 
     baseptr_type = define_type(scope, "ptr", make_primitive(BASEPTR_T, 8));
@@ -1211,6 +1213,11 @@ void emit_typeinfo_init(Scope *scope, Type *t) {
             printf(", %d, 1};\n", resolved->data->size);
             break;
         case BASEPTR_T:
+            indent();
+            printf("_type_info%d = (struct _type_vs_%d){%d, 12, ", id, typeinfo_type_id, id);
+            emit_string_struct(name);
+            printf("};\n");
+            break;
         case STRING_T:
             indent();
             printf("_type_info%d = (struct _type_vs_%d){%d, 6, ", id, typeinfo_type_id, id);

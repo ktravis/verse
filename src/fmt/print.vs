@@ -219,7 +219,11 @@ fn any_to_string(a: Any) -> string {
             if i != 0 {
                 s += ", ";
             }
-            s += any_repr(Any::{(data + i * stride) as ptr,at.inner});
+            if at.inner == #type Any {
+                s += any_repr(*(((data + i * stride) as ptr) as &Any));
+            } else {
+                s += any_repr(Any::{(data + i * stride) as ptr,at.inner});
+            }
             i += 1;
         }
         return s + "}";
@@ -237,6 +241,8 @@ fn size_of_type(t: &Type) -> int {
         return 1;
     } else if bt == VOID {
         return 0;
+    } else if bt == PTR {
+        return 8;
     } else if bt == INT || bt == FLOAT {
         t := t as &NumType;
         return t.size_in_bytes;

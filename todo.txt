@@ -1,40 +1,40 @@
 TODO
 ====
 
-- Better error message for checking polymorphic function arg types
-- Improve TypeInfo and related types -- allow types (int, u8, string) to be used
-  as identifiers? i.e.:
-    t := #typeof(x);
-    if t == int {
-        // ...
-    }
 - "unwise" cast to silence compiler error
-- Packages
-  - "use" on a package
-  - Global vars in different packages may be referred to prior to initialization!
-    Decide whether this is okay, and possibly change the order that init code is
-    generated in (i.e. most nested import first?)
-  - Error reporting on imported package
+- Range by reference
+- Range with index
+- Range of numbers iterable
 - Owned reference
 - Defer (duh-fer)
 - Multiple return values
 - Methods
   - "impl" blocks
   - "static" struct (/type) methods
-- Change backend
-- Range of numbers iterable
-- Range by reference
-- Range with index
 - Const!
 - Const members in struct
+- Overhaul errors
+  - Error reporting on imported package
+  - Better error message for checking polymorphic function arg types
+- Change backend
 - Types:
   - tuple?
   - union?
+- Allow types (int, u8, string) to be used
+  as identifiers? i.e.:
+    t := #typeof(x);
+    if t == int {
+        // ...
+    }
 
 Things to fix:
   - Returning a string as Any causes it to not be copied
+  - See print_test, converting a reference to Any is acting strange
   - Use on polymorphic types? Should this be allowed? It is weird.
   - Polydef in params of argument type does not carry the definition of "T" to the return value type?
   - "type" identifier is not usable in a struct literal due to lexer
   - float literal should default to float64 if not constrained?
-  - See print_test, converting a reference to Any is acting strange
+  - spread on array literal
+  - Global vars in different packages may be referred to prior to initialization!
+    Decide whether this is okay, and possibly change the order that init code is
+    generated in (i.e. most nested import first?)

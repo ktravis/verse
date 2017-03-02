@@ -877,14 +877,15 @@ static Ast *parse_compound_literal_semantics(Scope *scope, Ast *ast) {
 }
 
 static Ast *parse_use_semantics(Scope *scope, Ast *ast) {
-    // TODO: use on package?
+    if (scope->type == Root) {
+        error(ast->line, ast->file, "'use' is not permitted in global scope.");
+    }
     if (ast->use->object->type == AST_IDENTIFIER) {
-        Type *t = make_type(scope, ast->dot->object->ident->varname);
+        char *used_name = ast->use->object->ident->varname;
+        Type *t = make_type(scope, used_name);
         Type *resolved = resolve_alias(t);
         if (resolved != NULL) {
-
             if (resolved->comp != ENUM) {
-                // TODO: show alias
                 error(ast->use->object->line, ast->file,
                     "'use' is not valid on non-enum type '%s'.", type_to_string(t));
             }
@@ -912,6 +913,36 @@ static Ast *parse_use_semantics(Scope *scope, Ast *ast) {
                 a->lit->enum_val.enum_type = resolved;
                 a->var_type = t;
                 v->proxy = a;
+                attach_var(scope, v);
+            }
+            return ast;
+        }
+
+        Package *p = lookup_imported_package(scope, used_name);
+        if (p != NULL) {
+            for (VarList *list = p->scope->vars; list != NULL; list = list->next) {
+                if (list->item->proxy != NULL) {
+                    // skip use aliases
+                    continue;
+                }
+
+                char *name = list->item->name;
+
+                if (lookup_local_var(scope, name) != NULL) {
+                    error(ast->use->object->line, ast->file,
+                        "'use' statement on package '%s' conflicts with local variable named '%s'.", used_name, name);
+                }
+
+                if (find_builtin_var(name) != NULL) {
+                    error(ast->use->object->line, ast->file,
+                        "'use' statement on enum '%s' conflicts with builtin variable named '%s'.", used_name, name);
+                }
+
+                Var *v = make_var(name, list->item->type);
+                Ast *dot = make_ast_dot_op(ast->use->object, name);
+                dot->line = ast->line;
+                dot->file = ast->file;
+                v->proxy = dot;
                 attach_var(scope, v);
             }
             return ast;
@@ -1395,7 +1426,7 @@ static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
+static Ast *parse_func_decl_semantics(Scope *scope, Ast *ast) {
     int poly = 0;
     Scope *type_check_scope = scope;
 
@@ -1674,7 +1705,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         break;
     case AST_ANON_FUNC_DECL:
     case AST_FUNC_DECL:
-        return check_func_decl_semantics(scope, ast);
+        return parse_func_decl_semantics(scope, ast);
     case AST_CALL:
         return parse_call_semantics(scope, ast);
     case AST_INDEX: 
