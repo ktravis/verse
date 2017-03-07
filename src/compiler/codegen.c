@@ -56,7 +56,16 @@ void emit_temp_var(Scope *scope, Ast *ast, int ref) {
     Var *v = find_temp_var(scope, ast);
     assert(v != NULL);
     v->initialized = 1;
+    Type *t = resolve_alias(v->type);
     printf("(_tmp%d = ", v->id);
+    if (t->comp == REF) {
+        t = resolve_alias(t->inner);
+        if (t->comp == STATIC_ARRAY) {
+            printf("(");
+            emit_type(t);
+            printf("*)");
+        }
+    }
     compile(scope, ast);
     printf(", %s_tmp%d)", ref ? "&" : "", v->id);
 }
@@ -743,21 +752,8 @@ void emit_struct_decl(Scope *scope, Type *st) {
 void compile_ref(Scope *scope, Ast *ast) {
     assert(is_lvalue(ast));
 
-    if (is_dynamic(ast->var_type)) {
-        Type *t = resolve_alias(ast->var_type);
-        if (t->comp == FUNC) {
-            printf("&");
-            compile(scope, ast);
-        } else {
-            // TODO: is this a leak? not sure why temp var was emitted here
-            /*emit_temp_var(scope, ast, 1);*/
-            printf("&");
-            compile(scope, ast);
-        }
-    } else {
-        printf("&");
-        compile(scope, ast);
-    }
+    printf("&");
+    compile(scope, ast);
 }
 
 void compile_block(Scope *scope, AstBlock *block) {
