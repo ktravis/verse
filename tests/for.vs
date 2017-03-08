@@ -1,3 +1,13 @@
+fn test_by_reference() {
+    arr := []s64::{0, 2, 4, 6, 8};
+    for &x in arr {
+        *x += 1;
+    }
+    for x in arr {
+        assert(x % 2 == 1);
+    }
+}
+
 fn main() -> int {
     arr: [10]string;
 
@@ -22,5 +32,7 @@ fn main() -> int {
     for x in []s64::{0, 2, 4, 6, 8} {
         assert(x % 2 == 0);
     }
+
+    test_by_reference();
     return 0;
 }
