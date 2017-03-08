@@ -8,6 +8,16 @@ fn test_by_reference() {
     }
 }
 
+fn test_by_reference_string() {
+    arr := []string::{"a", "b", "c"};
+    for &x in arr {
+        *x += *x;
+    }
+    for x in arr {
+        assert(x.length == 2 && x[0] == x[1]);
+    }
+}
+
 fn main() -> int {
     arr: [10]string;
 
@@ -34,5 +44,6 @@ fn main() -> int {
     }
 
     test_by_reference();
+    test_by_reference_string();
     return 0;
 }
