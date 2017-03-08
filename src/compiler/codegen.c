@@ -244,9 +244,9 @@ void emit_assignment(Scope *scope, Ast *ast) {
             indent();
             printf("SWAP(");
 
-            if (l->type == AST_DOT || l->type == AST_INDEX) {
+            if (l->type == AST_DOT || l->type == AST_INDEX || l->type == AST_UOP) {
                 compile(scope, l);
-            } else { // missing any cases?
+            } else {
                 printf("_vs_%d", l->ident->var->id);
             }
             printf(",_tmp%d)", temp->id);
@@ -1281,10 +1281,16 @@ void compile(Scope *scope, Ast *ast) {
         change_indent(1);
         indent();
         emit_type(ast->for_loop->itervar->type);
-        /*printf("_vs_%s = ((", ast->for_loop->itervar->name);*/
-        printf("_vs_%d = ((", ast->for_loop->itervar->id);
+        printf("_vs_%d = ", ast->for_loop->itervar->id);
+        if (ast->for_loop->by_reference) {
+            printf("&");
+        }
+        printf("((");
         emit_type(ast->for_loop->itervar->type);
-        printf("*)_iter.data)[_i];\n");
+        if (!ast->for_loop->by_reference) {
+            printf("*");
+        }
+        printf(")_iter.data)[_i];\n");
 
         if (ast->for_loop->index != NULL) {
             indent();

@@ -2,7 +2,6 @@ TODO
 ====
 
 - "unwise" cast to silence compiler error
-- Range by reference
 - Range of numbers iterable
 - Owned reference
 - Defer (duh-fer)

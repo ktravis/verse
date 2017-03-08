@@ -1778,6 +1778,9 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file,
                 "Cannot use for loop on non-iterable type '%s'.", type_to_string(it_type));
         }
+        if (ast->for_loop->by_reference) {
+            lp->itervar->type = make_ref_type(lp->itervar->type);
+        }
         // TODO type check for when type of itervar is explicit
         attach_var(lp->scope, lp->itervar);
         lp->body = parse_block_semantics(lp->scope, lp->body, 0);

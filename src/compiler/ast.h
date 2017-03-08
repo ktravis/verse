@@ -168,6 +168,7 @@ typedef struct AstFor {
     Scope *scope;
     Ast *iterable;
     AstBlock *body;
+    char by_reference;
 } AstFor;
 
 typedef struct AstAnonScope {

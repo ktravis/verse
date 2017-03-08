@@ -921,7 +921,16 @@ Ast *parse_statement(Tok *t) {
         return ast;
     case TOK_FOR:
         ast = ast_alloc(AST_FOR);
-        t = expect(TOK_ID);
+        t = next_token();
+        // TODO: OP_REF and OP_BINAND? whoops
+        if (t->type == TOK_OP && t->op == OP_BINAND) {
+            ast->for_loop->by_reference = 1;
+            t = next_token();
+        }
+        if (t->type != TOK_ID) {
+            error(ast->line, ast->file, 
+                "Unexpected token '%s' while parsing for loop.", tok_to_string(t));
+        }
         ast->for_loop->itervar = make_var(t->sval, NULL);
         
         t = next_token();
