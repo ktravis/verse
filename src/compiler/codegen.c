@@ -790,7 +790,7 @@ void compile_ref(Scope *scope, Ast *ast) {
 void compile_block(Scope *scope, AstBlock *block) {
     for (AstList *st = block->statements; st != NULL; st = st->next) {
         if (st->item->type == AST_FUNC_DECL || st->item->type == AST_EXTERN_FUNC_DECL ||
-            st->item->type == AST_USE || st->item->type == AST_TYPE_DECL ||
+            st->item->type == AST_USE || st->item->type == AST_TYPE_DECL || st->item->type == AST_DEFER || 
             (st->item->type == AST_DECL && st->item->decl->global)) {
             continue;
         }
@@ -1210,6 +1210,7 @@ void compile(Scope *scope, Ast *ast) {
             printf(";");
         }
         printf("\n");
+        emit_deferred(scope);
         emit_free_locals(scope);
 
         indent();
@@ -1637,11 +1638,24 @@ void emit_init_scope_end(Scope *scope) {
 
 void emit_scope_end(Scope *scope) {
     if (!scope->has_return) {
+        emit_deferred(scope);
         emit_free_locals(scope);
     }
     change_indent(-1);
     indent();
     printf("}\n");
+}
+
+void emit_deferred(Scope *scope) {
+    for (AstList *ast = scope->deferred; ast != NULL; ast = ast->next) {
+        indent();
+        if (needs_temp_var(ast->item)) {
+            Var *v = find_temp_var(scope, ast->item);
+            printf("_tmp%d = ", v->id);
+        }
+        compile(scope, ast->item);
+        printf(";\n");
+    }
 }
 
 void emit_extern_fn_decl(Scope *scope, Var *v) {

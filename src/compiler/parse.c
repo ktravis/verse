@@ -872,6 +872,10 @@ Ast *parse_statement(Tok *t) {
         ast = ast_alloc(AST_USE);
         ast->use->object = parse_expression(next_token(), 0);
         break;
+    case TOK_DEFER:
+        ast = ast_alloc(AST_DEFER);
+        ast->defer->call = parse_expression(next_token(), 0);
+        break;
     case TOK_DIRECTIVE:
         if (!strcmp(t->sval, "include")) {
             t = next_token();

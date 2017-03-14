@@ -46,7 +46,8 @@ typedef enum {
     TOK_ELLIPSIS,
     TOK_ENUM,
     TOK_USE,
-    TOK_NEW
+    TOK_NEW,
+    TOK_DEFER
 } TokType;
 
 enum {

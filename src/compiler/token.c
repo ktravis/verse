@@ -625,6 +625,8 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_STRUCT);
     } else if (!strcmp(buf, "new")) {
         return make_token(TOK_NEW);
+    } else if (!strcmp(buf, "defer")) {
+        return make_token(TOK_DEFER);
     } else if (!strcmp(buf, "break")) {
         return make_token(TOK_BREAK);
     } else if (!strcmp(buf, "continue")) {
@@ -633,8 +635,6 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_ENUM);
     } else if (!strcmp(buf, "use")) {
         return make_token(TOK_USE);
-    } else if (!strcmp(buf, "new")) {
-        return make_token(TOK_NEW);
     } else if (!strcmp(buf, "as")) {
         Tok *t = make_token(TOK_OP);
         t->op = OP_CAST;
@@ -795,6 +795,8 @@ const char *tok_to_string(Tok *t) {
         return "type";
     case TOK_NEW:
         return "new";
+    case TOK_DEFER:
+        return "defer";
     case TOK_WHILE:
         return "while";
     case TOK_FOR:
@@ -864,6 +866,8 @@ const char *token_type(int type) {
         return "TYPE";
     case TOK_NEW:
         return "NEW";
+    case TOK_DEFER:
+        return "DEFER";
     case TOK_WHILE:
         return "WHILE";
     case TOK_FOR:

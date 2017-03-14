@@ -709,6 +709,9 @@ Ast *first_pass(Scope *scope, Ast *ast) {
     case AST_USE:
         ast->use->object = first_pass(scope, ast->use->object);
         break;
+    case AST_DEFER:
+        ast->defer->call = first_pass(scope, ast->defer->call);
+        break;
     case AST_TYPE_OBJ:
         first_pass_type(scope, ast->type_obj->t);
         break;
@@ -1721,6 +1724,15 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         return parse_use_semantics(scope, ast);
     case AST_SLICE:
         return parse_slice_semantics(scope, ast);
+    case AST_DEFER:
+        if (ast->defer->call->type != AST_CALL) {
+            error(ast->line, ast->file, "Defer statement must be a function call.");
+        }
+        if (scope->parent == NULL) {
+            error(ast->line, ast->file, "Defer statement cannot be at root scope.");
+        }
+        scope->deferred = astlist_append(scope->deferred, parse_semantics(scope, ast->defer->call));
+        break;
     case AST_NEW: {
         ast->var_type = ast->new->type;
 

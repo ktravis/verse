@@ -56,5 +56,6 @@ void emit_free(Scope *scope, Var *var);
 void emit_free_locals(Scope *scope);
 void emit_scope_end(Scope *scope);
 void emit_init_scope_end(Scope *scope);
+void emit_deferred(Scope *scope);
 
 #endif

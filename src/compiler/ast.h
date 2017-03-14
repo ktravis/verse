@@ -200,6 +200,10 @@ typedef struct AstNew {
     Type *type;
 } AstNew;
 
+typedef struct AstDefer {
+    Ast *call;
+} AstDefer;
+
 Ast *ast_alloc(AstType type);
 Ast *deep_copy(Ast *ast);
 Ast *copy_ast(Scope *scope, Ast *ast);

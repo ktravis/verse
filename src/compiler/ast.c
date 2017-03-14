@@ -107,6 +107,9 @@ Ast *ast_alloc(AstType type) {
     case AST_NEW:
         ast->new = calloc(sizeof(AstNew), 1);
         break;
+    case AST_DEFER:
+        ast->defer = calloc(sizeof(AstDefer), 1);
+        break;
     }
     return ast;
 }
@@ -294,6 +297,10 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
             cp->new->count = copy_ast(scope, ast->new->count);
         }
         cp->new->type = copy_type(scope, ast->new->type);
+        break;
+    case AST_DEFER:
+        cp->defer = calloc(sizeof(AstDefer), 1);
+        cp->defer->call = copy_ast(scope, ast->defer->call);
         break;
     }
     return cp;

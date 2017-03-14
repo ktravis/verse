@@ -152,6 +152,7 @@ typedef struct Scope {
     unsigned char has_return;
     Var *fn_var;
     Polymorph *polymorph;
+    struct AstList *deferred;
     struct PkgList *packages;
 } Scope;
 
@@ -188,6 +189,7 @@ typedef enum AstType {
     AST_TYPE_OBJ,
     AST_SPREAD,
     AST_NEW,
+    AST_DEFER,
 } AstType;
 
 typedef struct Ast {
@@ -225,6 +227,7 @@ typedef struct Ast {
         struct AstTypeObj       *type_obj;
         struct AstSpread        *spread;
         struct AstNew           *new;
+        struct AstDefer         *defer;
     };
 } Ast;
 
