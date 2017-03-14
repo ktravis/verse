@@ -36,6 +36,7 @@ Var *lookup_var(Scope *scope, char *name);
 Var *allocate_ast_temp_var(Scope *scope, Ast *ast);
 Var *make_temp_var(Scope *scope, Type *t, int id);
 Var *find_temp_var(Scope *scope, Ast *ast);
+void remove_temp_var_by_id(Scope *scope, int id);
 
 void define_builtin(Var *v);
 Var *find_builtin_var(char *name);

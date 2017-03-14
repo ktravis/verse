@@ -192,17 +192,17 @@ Tok *_next_token(int nl_ok) {
         t->type = TOK_POLY;
     } else if (isalpha(c) || c == '_') {
         t = read_identifier(c);
-    } else if (c == '\'') {
-        t = make_token(TOK_CHAR);
-        c = get_char();
-        if (c == '\\') {
-            c = get_char();
-        }
-        t->ival = c;
-        c = get_char();
-        if (c != '\'') {
-            error(lineno(), current_file_name(), "Invalid character literal sequence.");
-        }
+    /*} else if (c == '\'') {*/
+        /*t = make_token(TOK_CHAR);*/
+        /*c = get_char();*/
+        /*if (c == '\\') {*/
+            /*c = get_char();*/
+        /*}*/
+        /*t->ival = c;*/
+        /*c = get_char();*/
+        /*if (c != '\'') {*/
+            /*error(lineno(), current_file_name(), "Invalid character literal sequence.");*/
+        /*}*/
     } else if (c == '\"') {
         t = make_token(TOK_STR);
         t->sval = read_string();
@@ -214,6 +214,8 @@ Tok *_next_token(int nl_ok) {
         t = make_token(TOK_LSQUARE);
     } else if (c == ']') {
         t = make_token(TOK_RSQUARE);
+    } else if (c == '\'') {
+        t = make_token(TOK_SQUOTE);
     } else if (c == '#') {
         c = get_char();
         if (c == '{') {
@@ -621,10 +623,8 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_TYPE);
     } else if (!strcmp(buf, "struct")) {
         return make_token(TOK_STRUCT);
-    } else if (!strcmp(buf, "hold")) {
-        return make_token(TOK_HOLD);
-    } else if (!strcmp(buf, "release")) {
-        return make_token(TOK_RELEASE);
+    } else if (!strcmp(buf, "new")) {
+        return make_token(TOK_NEW);
     } else if (!strcmp(buf, "break")) {
         return make_token(TOK_BREAK);
     } else if (!strcmp(buf, "continue")) {
@@ -633,6 +633,8 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_ENUM);
     } else if (!strcmp(buf, "use")) {
         return make_token(TOK_USE);
+    } else if (!strcmp(buf, "new")) {
+        return make_token(TOK_NEW);
     } else if (!strcmp(buf, "as")) {
         Tok *t = make_token(TOK_OP);
         t->op = OP_CAST;
@@ -753,6 +755,8 @@ const char *tok_to_string(Tok *t) {
         return "\\n";
     case TOK_COLON:
         return ":";
+    case TOK_SQUOTE:
+        return "'";
     case TOK_ARROW:
         return "->";
     case TOK_DCOLON:
@@ -789,10 +793,8 @@ const char *tok_to_string(Tok *t) {
         return "struct";
     case TOK_TYPE:
         return "type";
-    case TOK_HOLD:
-        return "hold";
-    case TOK_RELEASE:
-        return "release";
+    case TOK_NEW:
+        return "new";
     case TOK_WHILE:
         return "while";
     case TOK_FOR:
@@ -830,6 +832,8 @@ const char *token_type(int type) {
         return "NEWLINE";
     case TOK_COLON:
         return "COLON";
+    case TOK_SQUOTE:
+        return "SQUOTE";
     case TOK_ARROW:
         return "ARROW";
     case TOK_DCOLON:
@@ -858,10 +862,8 @@ const char *token_type(int type) {
         return "STRUCT";
     case TOK_TYPE:
         return "TYPE";
-    case TOK_HOLD:
-        return "HOLD";
-    case TOK_RELEASE:
-        return "RELEASE";
+    case TOK_NEW:
+        return "NEW";
     case TOK_WHILE:
         return "WHILE";
     case TOK_FOR:

@@ -427,10 +427,18 @@ Type *parse_type(Tok *t, int poly_ok) {
 
     Type *type = NULL;
     unsigned char ref = 0;
+    unsigned char owned = 0;
 
     if ((t->type == TOK_UOP && t->op == OP_REF) ||
         (t->type == TOK_OP && t->op == OP_BINAND)) {
         ref = 1;
+        t = next_token();
+    } else if (t->type == TOK_SQUOTE) {
+        if (poly_ok) {
+            error(lineno(), current_file_name(), "Onwed reference type not allowed in function arguments.", tok_to_string(t));
+        }
+        ref = 1;
+        owned = 1;
         t = next_token();
     }
 
@@ -502,7 +510,12 @@ Type *parse_type(Tok *t, int poly_ok) {
     }
 
     if (ref) {
-        type = make_ref_type(type);
+        if (owned && type->comp == ARRAY) {
+            type->array.owned = 1;
+        } else {
+            type = make_ref_type(type);
+            type->ref.owned = owned;
+        }
     }
 
     return type;
@@ -802,9 +815,11 @@ Type *parse_struct_type(int poly_ok) {
         Tok *t = expect(TOK_ID);
         expect(TOK_COLON);
 
+        char *name = t->sval;
+
         Type *ty = parse_type(next_token(), poly_ok);
 
-        member_names[nmembers] = t->sval;
+        member_names[nmembers] = name;
         member_types[nmembers++] = ty;
 
         expect(TOK_SEMI);
@@ -1101,6 +1116,33 @@ Ast *parse_primary(Tok *t) {
     case TOK_LSQUARE: {
         Ast *ast = ast_alloc(AST_TYPE_OBJ);
         ast->type_obj->t = parse_type(t, 0);
+        return ast;
+    }
+    case TOK_NEW: {
+        Ast *ast = ast_alloc(AST_NEW);
+        Tok *next = next_token();
+        if (next == NULL) {
+            error(lineno(), current_file_name(), "Unexpected end of input.");
+        }
+        if (next->type == TOK_LSQUARE) {
+            next = next_token();
+            if (next->type == TOK_RSQUARE) {
+                error(lineno(), current_file_name(), "Must provide a count for 'new' array type.");
+            }
+            Ast *count = parse_expression(next, 0);
+            expect(TOK_RSQUARE);
+            ast->new->count = count;
+            next = next_token();
+        }
+        Type *t = parse_type(next, 0);
+        if (ast->new->count != NULL) {
+            t = make_array_type(t);
+            t->array.owned = 1;
+        } else {
+            t = make_ref_type(t);
+            t->ref.owned = 1;
+        }
+        ast->new->type = t;
         return ast;
     }
     default:

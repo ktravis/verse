@@ -33,7 +33,7 @@ void check_for_unresolved(Ast *ast, Type *t) {
         }
         break;
     case REF:
-        check_for_unresolved(ast, t->inner);
+        check_for_unresolved(ast, t->ref.inner);
         break;
     case ARRAY:
     case STATIC_ARRAY:
@@ -72,8 +72,8 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
         return t;
     }
     case REF:
-        if (contains_generic_struct(t->inner)) {
-            t->inner = reify_struct(scope, ast, t->inner);
+        if (contains_generic_struct(t->ref.inner)) {
+            t->ref.inner = reify_struct(scope, ast, t->ref.inner);
         }
         return t;
     case ARRAY:
@@ -124,7 +124,7 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
               type_to_string(t->params.inner), expected_len, given_len);
     }
 
-    Type **member_types = malloc(sizeof(Type*) * t->inner->st.nmembers);
+    Type **member_types = malloc(sizeof(Type*) * t->ref.inner->st.nmembers);
     for (int i = 0; i < inner->st.nmembers; i++) {
         member_types[i] = inner->st.member_types[i]; 
     }
@@ -158,7 +158,7 @@ static Ast *parse_uop_semantics(Scope *scope, Ast *ast) {
         if (o->var_type->comp != REF) {
             error(ast->line, ast->file, "Cannot dereference a non-reference type (must cast baseptr).");
         }
-        ast->var_type = o->var_type->inner;
+        ast->var_type = o->var_type->ref.inner;
         register_type(ast->var_type);
         break;
     case OP_REF:
@@ -267,7 +267,7 @@ static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
     Type *t = orig;
 
     if (t->comp == REF) {
-        t = t->inner;
+        t = t->ref.inner;
     }
 
     // TODO: how much resolving should happen here? does this allow for more
@@ -329,9 +329,25 @@ static Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
     Type *lt = ast->binary->left->var_type;
     Type *rt = ast->binary->right->var_type;
 
-
-    if (is_dynamic(ast->binary->left->var_type)) {
+    if (needs_temp_var(ast->binary->right) || is_dynamic(ast->binary->left->var_type)) {
+    /*if(needs_temp_var(ast->binary->right)) {*/
         allocate_ast_temp_var(scope, ast->binary->right);
+    }
+
+    Type *res_l = resolve_alias(lt);
+    /*Type *res_r = resolve_alias(rt);*/
+
+    // owned references
+    if (res_l->comp == REF && res_l->ref.owned) {
+        if (!(ast->binary->right->type == AST_NEW/* || ast->binary->right == AST_MOVE*/)) {
+            error(ast->line, ast->file, "Owned reference can only be assigned from new or move expression.");
+        }
+    }
+
+    if (res_l->comp == ARRAY && res_l->array.owned) {
+        if (!(ast->binary->right->type == AST_NEW/* || ast->binary->right == AST_MOVE*/)) {
+            error(ast->line, ast->file, "Owned array slice can only be assigned from new or move expression.");
+        }
     }
 
     if (!check_type(lt, rt)) {
@@ -493,6 +509,7 @@ void first_pass_type(Scope *scope, Type *t) {
         first_pass_type(scope, t->fn.ret);
         break;
     case STRUCT:
+        // TODO: owned references need to check for circular type declarations
         for (int i = 0; i < t->st.nmembers; i++) {
             first_pass_type(scope, t->st.member_types[i]);
         }
@@ -508,7 +525,7 @@ void first_pass_type(Scope *scope, Type *t) {
         register_type(t);
         break;
     case REF:
-        first_pass_type(scope, t->inner);
+        first_pass_type(scope, t->ref.inner);
         break;
     case ARRAY:
     case STATIC_ARRAY:
@@ -697,6 +714,12 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         break;
     case AST_SPREAD:
         ast->spread->object = first_pass(scope, ast->spread->object);
+        break;
+    case AST_NEW:
+        if (ast->new->count != NULL) {
+            ast->new->count = first_pass(scope, ast->new->count);
+        }
+        first_pass_type(scope, ast->new->type);
         break;
     case AST_BREAK:
     case AST_CONTINUE:
@@ -958,7 +981,7 @@ static Ast *parse_use_semantics(Scope *scope, Ast *ast) {
     Type *t = orig;
 
     if (t->comp == REF) {
-        t = t->inner;
+        t = t->ref.inner;
     }
 
     Type *resolved = resolve_alias(t);
@@ -1068,22 +1091,70 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
         }
     }
 
+
     if (init == NULL) {
         if (decl->var->type->comp == STATIC_ARRAY && decl->var->type->array.length == -1) {
             error(ast->line, ast->file, "Cannot use unspecified array type for variable '%s' without initialization.", decl->var->name);
         }
+
+        /*if (decl->var->type->comp == ARRAY) {*/
+            /*error(ast->line, ast->file, "Cannot use array slice type for variable '%s' without initialization.", decl->var->name);*/
+        /*} else if (decl->var->type->comp == REF) {*/
+            /*error(ast->line, ast->file, "Cannot declare variable '%s' as a reference without initialization.", decl->var->name);*/
+        /*}*/
     } else {
         decl->init = parse_semantics(scope, init);
         init = decl->init;
 
+        if (decl->init->type == AST_LITERAL &&
+                resolve_alias(init->var_type)->comp == STATIC_ARRAY) {
+            Var *tmp = decl->init->lit->compound_val.array_tempvar;
+            if (tmp != NULL) {
+                remove_temp_var_by_id(scope, tmp->id);
+            }
+        }
+
         if (decl->var->type == NULL) {
             decl->var->type = init->var_type;
-            if (resolve_alias(decl->var->type)->comp == STRUCT) {
+
+            switch (resolve_alias(decl->var->type)->comp) {
+            case STRUCT:
                 init_struct_var(decl->var); // need to do this anywhere else?
+                break;
+            // TODO: is there a better way to do this?
+            case REF:
+                if (decl->var->type->ref.owned) {
+                    if (!(init->type == AST_NEW /*|| init->type == AST_MOVE*/)) {
+                        decl->var->type = make_ref_type(decl->var->type->ref.inner);
+                    }
+                }
+                break;
+            case ARRAY:
+                if (decl->var->type->array.owned) {
+                    if (!(init->type == AST_NEW /*|| init->type == AST_MOVE*/)) {
+                        decl->var->type = make_array_type(decl->var->type->array.inner);
+                    }
+                }
+                break;
+            default:
+                break;
             }
         } else {
             Type *lt = decl->var->type;
             Type *resolved = resolve_alias(lt);
+            
+            // owned references
+            if (resolved->comp == REF && resolved->ref.owned) {
+                if (!(init->type == AST_NEW/* || ast->binary->right == AST_MOVE*/)) {
+                    error(ast->line, ast->file, "Owned reference can only be assigned from new or move expression.");
+                }
+            }
+
+            if (resolved->comp == ARRAY && resolved->array.owned) {
+                if (!(init->type == AST_NEW/* || ast->binary->right == AST_MOVE*/)) {
+                    error(ast->line, ast->file, "Owned array slice can only be assigned from new or move expression.");
+                }
+            }
 
             // TODO: shouldn't this check RHS type first?
             // TODO: do we want to resolve here?
@@ -1138,6 +1209,7 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     }
 
     ast->var_type = base_type(VOID_T);
+    // TODO: why? was this supposed to be decl->var->type?
     register_type(ast->var_type);
 
     if (scope->parent == NULL) {
@@ -1468,7 +1540,7 @@ static Ast *parse_func_decl_semantics(Scope *scope, Ast *ast) {
             Type *orig = args->item->type;
             Type *t = resolve_alias(orig);
             while (t->comp == REF) {
-                t = resolve_alias(t->inner);
+                t = resolve_alias(t->ref.inner);
             }
             if (t->comp != STRUCT) {
                 error(ast->line, ast->file,
@@ -1567,6 +1639,7 @@ static Ast *parse_index_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file, "Array index is larger than object length (%ld vs length %ld).", i, size);
         }
     }
+
     return ast;
 }
 
@@ -1648,6 +1721,45 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         return parse_use_semantics(scope, ast);
     case AST_SLICE:
         return parse_slice_semantics(scope, ast);
+    case AST_NEW: {
+        ast->var_type = ast->new->type;
+
+        Type *res = resolve_alias(ast->var_type);
+        if (res == NULL) {
+            error(ast->line, ast->file, "Unknown type for new, '%s'", type_to_string(ast->var_type));
+        }
+        check_for_unresolved(ast, res);
+
+        if (res->comp == ARRAY) {
+            // could be a named array type?
+            if (ast->new->count == NULL) {
+                error(ast->line, ast->file, "Cannot call 'new' on array type '%s' without specifying a count.", type_to_string(ast->var_type));
+            }
+
+            ast->new->count = parse_semantics(scope, ast->new->count);
+            Type *r = resolve_alias(ast->new->count->var_type);
+            if (r->comp != BASIC || !(r->data->base == INT_T || r->data->base == UINT_T)) {
+                error(ast->line, ast->file, "Count for a new array must be an integer type, not '%s'", type_to_string(ast->new->count->var_type));
+            }
+            if (ast->new->count->type == AST_LITERAL) {
+                assert(ast->new->count->lit->lit_type == INTEGER);
+                if (ast->new->count->lit->int_val < 1) {
+                    error(ast->line, ast->file, "Count for a new array must be greater than 0.");
+                }
+            }
+        } else {
+            // parser should reject this
+            assert(ast->new->count == NULL); 
+            assert(res->comp == REF);
+
+            Type *inner = resolve_alias(res->ref.inner);
+
+            if (inner->comp != STRUCT) {
+                error(ast->line, ast->file, "Cannot use 'new' on a type that is not a struct or array.");
+            }
+        }
+        return ast;
+    }
     case AST_CAST: {
         AstCast *cast = ast->cast;
         cast->object = parse_semantics(scope, cast->object);

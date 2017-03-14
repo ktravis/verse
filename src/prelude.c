@@ -26,19 +26,23 @@ struct array_type {
 // TODO double-check nulls are in the right spot
 struct string_type init_string(const char *str, int l) {
     struct string_type v;
+    if (l <= 0) {
+        return (struct string_type){.bytes=NULL, .length=0};
+    }
     v.length = l;
     v.bytes = malloc(l+1);
-    strncpy(v.bytes, str, l);
-    v.bytes[l] = 0;
+    strncpy(v.bytes, str, l+1);
     return v;
 }
 struct string_type copy_string(struct string_type str) {
     struct string_type v;
     int l = str.length;
+    if (l <= 0) {
+        return (struct string_type){.bytes=NULL, .length=0};
+    }
     v.length = l;
     v.bytes = malloc(l+1);
-    strncpy(v.bytes, str.bytes, l);
-    v.bytes[l] = 0;
+    strncpy(v.bytes, str.bytes, l+1);
     return v;
 }
 struct string_type append_string(struct string_type lhs, struct string_type rhs) {
@@ -110,6 +114,13 @@ struct array_type array_slice(struct array_type arr, long offset, size_t el_size
     }
     arr.length = length == -1 ? arr.length - offset : length;
     return arr;
+}
+
+struct array_type allocate_array(long length, size_t el_size) {
+    return (struct array_type){
+        .length = length,
+        .data   = calloc(el_size, length),
+    };
 }
 
 // builtins

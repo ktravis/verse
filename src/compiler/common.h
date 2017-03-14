@@ -41,6 +41,17 @@ typedef enum TypeComp {
     ENUM
 } TypeComp;
 
+typedef struct RefType {
+    char owned;
+    struct Type *inner;
+} RefType;
+
+typedef struct ArrayType {
+    char owned;
+    long length;
+    struct Type *inner;
+} ArrayType;
+
 typedef struct FnType {
     int nargs;
     struct TypeList *args;
@@ -69,22 +80,24 @@ typedef struct Type {
     TypeComp comp;
     struct Scope *scope;
     union {
-        struct TypeData *data; // basic
-        char *name; // alias
+        // basic
+        struct TypeData *data;
+        // alias
+        char *name;
+
         struct {
             struct TypeList *args;
             struct Type *inner;
         } params;
-        struct {
-            long length;
-            struct Type *inner;
-        } array;
+
         // is this good, or do we need additional levels?
         struct {
             char *pkg_name;
             char *type_name;
         } ext;
-        struct Type *inner;
+
+        RefType ref;
+        ArrayType array;
         FnType fn;
         StructType st;
         EnumType en;
@@ -174,6 +187,7 @@ typedef enum AstType {
     AST_IMPORT,
     AST_TYPE_OBJ,
     AST_SPREAD,
+    AST_NEW,
 } AstType;
 
 typedef struct Ast {
@@ -210,6 +224,7 @@ typedef struct Ast {
         struct AstImport        *import;
         struct AstTypeObj       *type_obj;
         struct AstSpread        *spread;
+        struct AstNew           *new;
     };
 } Ast;
 

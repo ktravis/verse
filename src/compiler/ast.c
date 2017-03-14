@@ -104,6 +104,9 @@ Ast *ast_alloc(AstType type) {
     case AST_SPREAD:
         ast->spread = calloc(sizeof(AstSpread), 1);
         break;
+    case AST_NEW:
+        ast->new = calloc(sizeof(AstNew), 1);
+        break;
     }
     return ast;
 }
@@ -285,6 +288,13 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         cp->spread = calloc(sizeof(AstSpread), 1);
         cp->spread->object = copy_ast(scope, ast->spread->object);
         break;
+    case AST_NEW:
+        cp->new = calloc(sizeof(AstNew), 1);
+        if (ast->new->count != NULL) {
+            cp->new->count = copy_ast(scope, ast->new->count);
+        }
+        cp->new->type = copy_type(scope, ast->new->type);
+        break;
     }
     return cp;
 }
@@ -310,10 +320,14 @@ Ast *make_ast_copy(Ast *ast) {
 
 int needs_temp_var(Ast *ast) {
     switch (ast->type) {
+    case AST_NEW:
+        return 1;
     case AST_BINOP:
     case AST_UOP:
     case AST_CALL:
     case AST_LITERAL:
+    case AST_SLICE:
+    case AST_INDEX:
         return is_dynamic(ast->var_type);
     default:
         break;

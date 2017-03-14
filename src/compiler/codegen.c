@@ -59,7 +59,7 @@ void emit_temp_var(Scope *scope, Ast *ast, int ref) {
     Type *t = resolve_alias(v->type);
     printf("(_tmp%d = ", v->id);
     if (t->comp == REF) {
-        t = resolve_alias(t->inner);
+        t = resolve_alias(t->ref.inner);
         if (t->comp == STATIC_ARRAY) {
             printf("(");
             emit_type(t);
@@ -221,8 +221,9 @@ void emit_assignment(Scope *scope, Ast *ast) {
         return;
     }
 
-    if (is_dynamic(lt)) {
-        if (l->type == AST_IDENTIFIER && !l->ident->var->initialized) {
+    if (is_dynamic(lt) || r->type == AST_NEW) {
+        if (l->type == AST_IDENTIFIER &&
+                !l->ident->var->initialized && !is_owned(lt)) {
             printf("_vs_%d = ", l->ident->var->id);
             if (is_lvalue(r)) {
                 emit_copy(scope, r);
@@ -300,7 +301,10 @@ void emit_copy(Scope *scope, Ast *ast) {
     Type *t = resolve_alias(ast->var_type);
 
     // TODO: should this bail out here, or just never be called?
-    if (t->comp == FUNC || !is_dynamic(t)) {
+    /*if (t->comp == FUNC || !is_dynamic(t)) {*/
+    // TODO: is this good? are we missing places that owned references need to
+    // be copied?
+    if (t->comp == FUNC || t->comp == REF || !is_dynamic(t)) {
         compile(scope, ast);
         return;
     }
@@ -358,7 +362,7 @@ void emit_type(Type *type) {
         printf("fn_type ");
         break;
     case REF:
-        emit_type(type->inner);
+        emit_type(type->ref.inner);
         printf("*");
         break;
     case ARRAY:
@@ -710,6 +714,16 @@ void emit_struct_decl(Scope *scope, Type *st) {
     emit_type(st);
     printf("));\n");
 
+    for (int i = 0; i < st->st.nmembers; i++) {
+        Type *t = st->st.member_types[i];
+        if (t->comp == REF && t->ref.owned) {
+            indent();
+            printf("x->%s = calloc(sizeof(", st->st.member_names[i]);
+            emit_type(t->ref.inner);
+            printf("), 1);\n");
+        }
+    }
+
     indent();
     printf("return x;\n");
     change_indent(-1);
@@ -725,6 +739,7 @@ void emit_struct_decl(Scope *scope, Type *st) {
     change_indent(1);
     for (int i = 0; i < st->st.nmembers; i++) {
         Type *t = resolve_alias(st->st.member_types[i]);
+        // TODO: important, copy owned array slice
         if (t->comp == STATIC_ARRAY && is_dynamic(t->array.inner)) {
             indent();
             char *member = malloc(sizeof(char) * (strlen(st->st.member_names[i]) + 3));
@@ -739,6 +754,22 @@ void emit_struct_decl(Scope *scope, Type *st) {
             indent();
             printf("x.%s = _copy_%d(x.%s);\n", st->st.member_names[i],
                     get_struct_type_id(t), st->st.member_names[i]);
+        } else if (t->comp == REF && t->ref.owned) {
+            indent();
+            emit_type(t->ref.inner);
+            if (is_string(t)) {
+                printf("tmp%d = _copy_%d(*x.%s);\n", i, get_struct_type_id(t), st->st.member_names[i]);
+            } else if (t->comp == STRUCT) {
+                printf("tmp%d = _copy_%d(*x.%s);\n", i, get_struct_type_id(t), st->st.member_names[i]);
+            } else {
+                printf("tmp%d = *x.%s;\n", i, st->st.member_names[i]);
+            }
+            indent();
+            printf("x.%s = malloc(sizeof(", st->st.member_names[i]);
+            emit_type(st->st.member_types[i]);
+            printf("));\n");
+            indent();
+            printf("*x.%s = tmp%d;\n", st->st.member_names[i], i);
         }
     }
     indent();
@@ -1025,6 +1056,30 @@ void compile(Scope *scope, Ast *ast) {
     case AST_BINOP:
         emit_binop(scope, ast);
         break;
+    case AST_NEW: {
+        Var *tmp = find_temp_var(scope, ast);
+
+        // no temp var in case of declaration
+        if (tmp != NULL) {
+            printf("(_tmp%d = ", tmp->id);
+        }
+
+        Type *t = resolve_alias(ast->var_type);
+        if (t->comp == ARRAY) {
+            printf("(allocate_array(");
+            compile(scope, ast->new->count);
+            printf(",sizeof(");
+            emit_type(t->array.inner);
+            printf(")))");
+        } else {
+            assert(t->comp == REF);
+            printf("(_init_%d(NULL))", get_struct_type_id(resolve_alias(t->ref.inner)));
+        }
+        if (tmp != NULL) {
+            printf(")");
+        }
+        break;
+    }
     case AST_CAST: {
         Type *t = resolve_alias(ast->cast->cast_type);
         if (is_any(t)) {
@@ -1280,17 +1335,29 @@ void compile(Scope *scope, Ast *ast) {
 
         change_indent(1);
         indent();
-        emit_type(ast->for_loop->itervar->type);
-        printf("_vs_%d = ", ast->for_loop->itervar->id);
+
         if (ast->for_loop->by_reference) {
+            emit_type(ast->for_loop->itervar->type);
+            printf("_vs_%d = ", ast->for_loop->itervar->id);
             printf("&");
+            printf("((");
+            emit_type(ast->for_loop->itervar->type);
+            printf(")_iter.data)[_i];\n");
+        } else {
+            Type *t = ast->for_loop->itervar->type;
+            Type *res = resolve_alias(t);
+
+            emit_type(t);
+            printf("_vs_%d = ", ast->for_loop->itervar->id);
+            if (is_string(res)) {
+                printf("copy_string");
+            } else if (res->comp == STRUCT && is_dynamic(res)) {
+                printf("_copy_%d", get_struct_type_id(res));
+            }
+            printf("(((");
+            emit_type(t);
+            printf("*)_iter.data)[_i]);\n");
         }
-        printf("((");
-        emit_type(ast->for_loop->itervar->type);
-        if (!ast->for_loop->by_reference) {
-            printf("*");
-        }
-        printf(")_iter.data)[_i];\n");
 
         if (ast->for_loop->index != NULL) {
             indent();
@@ -1353,65 +1420,111 @@ void emit_scope_start(Scope *scope) {
     }
 }
 
+void open_block() {
+    indent();
+    printf("{\n");
+    change_indent(1);
+}
+
+void close_block() {
+    change_indent(-1);
+    indent();
+    printf("}\n");
+}
+
 void emit_free_struct(Scope *scope, char *name, Type *st, int is_ref) {
     char *sep = is_ref ? "->" : ".";
     st = resolve_alias(st);
     assert(st->comp == STRUCT);
 
     for (int i = 0; i < st->st.nmembers; i++) {
-        Type *t = st->st.member_types[i];
-        if (t->comp == BASIC && t->data->base == STRING_T) {
-            indent();
-            printf("if (%s%s%s.bytes != NULL) {\n", name, sep, st->st.member_names[i]);
+        Type *res = resolve_alias(st->st.member_types[i]);
+        char *memname = malloc(sizeof(char) * (strlen(name) + strlen(sep) + strlen(st->st.member_names[i]) + 2));
+        sprintf(memname, "%s%s%s", name, sep, st->st.member_names[i]);
 
-            change_indent(1);
+        if (res->comp == BASIC && res->data->base == STRING_T) {
             indent();
-            printf("free(%s%s%s.bytes);\n", name, sep, st->st.member_names[i]);
-
-            change_indent(-1);
-            indent();
-            printf("}\n");
-        } else if (t->comp == STRUCT) {
-            char *memname = malloc(sizeof(char) * (strlen(name) + strlen(sep) + strlen(st->st.member_names[i]) + 2));
-            sprintf(memname, "%s%s%s", name, sep, st->st.member_names[i]);
-
-            int ref = (t->comp == REF || (t->comp == BASIC && t->data->base == BASEPTR_T));
+            printf("free(%s.bytes);\n", memname);
+        } else if (res->comp == STRUCT) {
+            int ref = (res->comp == REF || (res->comp == BASIC && res->data->base == BASEPTR_T));
             emit_free_struct(scope, memname, st->st.member_types[i], ref);
-            free(memname);
+        } else if (res->comp == ARRAY && res->array.owned) {
+            if (is_dynamic(res->array.inner)) {
+                open_block();
+
+                indent();
+                emit_type(res->array.inner);
+                printf("*_0 = %s.data;\n", memname);
+
+                indent();
+                printf("for (int i = 0; i < %s.length; i++) {\n", memname);
+
+                change_indent(1);
+                indent();
+                emit_type(res->array.inner);
+
+                Var *v = make_var("<i>", res->array.inner);
+                v->initialized = 1;
+                printf("_vs_%d = _0[i];\n", v->id);
+
+                emit_free(scope, v);
+                free(v);
+
+                close_block();
+                close_block();
+            }
+            indent();
+            printf("free(%s.data);\n", memname);
+        } else if (res->comp == REF && res->ref.owned) {
+            Type *inner = resolve_alias(res->ref.inner);
+
+            if (inner->comp == STRUCT) {
+
+                emit_free_struct(scope, memname, inner, 1);
+            } else if (inner->comp == BASIC && inner->data->base == STRING_T) { // TODO should this behave this way?
+                indent();
+                printf("free(%s->bytes);\n", memname);
+            }
+
+            indent();
+            printf("free(%s);\n", memname);
         }
+        free(memname);
     }
 }
 
 void emit_free(Scope *scope, Var *var) {
+    char *name_fmt = var->temp ? "_tmp%d" : "_vs_%d";
     Type *t = resolve_alias(var->type);
     if (t->comp == REF) {
-        Type *inner = resolve_alias(var->type->inner);
-        if (inner->comp == STRUCT) {
-            /*char *name = malloc(sizeof(char) * (strlen(var->name) + 5));*/
-            /*sprintf(name, "_vs_%s", var->name);*/
-            int len = snprintf(NULL, 0, "_vs_%d", var->id);
-            char *name = malloc(sizeof(char) * (len + 1));
-            snprintf(name, len+1, "_vs_%d", var->id);
-            emit_free_struct(scope, name, inner, 1);
-            free(name);
-            indent();
-            /*printf("free(_vs_%s);\n", var->name);*/
-            printf("free(_vs_%d);\n", var->id);
-        } else if (inner->comp == BASIC && inner->data->base == STRING_T) { // TODO should this behave this way?
-            indent();
-            /*printf("free(_vs_%s->bytes);\n", var->name);*/
-            printf("free(_vs_%d->bytes);\n", var->id);
+        if (t->ref.owned) {
+            Type *inner = resolve_alias(var->type->ref.inner);
+            if (inner->comp == STRUCT) {
+                int len = snprintf(NULL, 0, name_fmt, var->id);
+                char *name = malloc(sizeof(char) * (len + 1));
+                snprintf(name, len+1, name_fmt, var->id);
+                emit_free_struct(scope, name, inner, 1);
+                free(name);
+                indent();
+                printf("free(");
+                printf(name_fmt, var->id);
+                printf(");\n");
+            } else if (inner->comp == BASIC && inner->data->base == STRING_T) { // TODO should this behave this way?
+                indent();
+                printf("free(");
+                printf(name_fmt, var->id);
+                printf("->bytes);\n");
+            }
         }
     } else if (t->comp == STATIC_ARRAY) {
         if (is_dynamic(t->array.inner)) {
-            indent();
-            printf("{\n");
+            open_block();
 
-            change_indent(1);
             indent();
             emit_type(t->array.inner);
-            /*printf("*_0 = _vs_%s;\n", var->name);*/
-            printf("*_0 = _vs_%d;\n", var->id);
+            printf("*_0 = ");
+            printf(name_fmt, var->id);
+            printf(";\n");
 
             indent();
             printf("for (int i = 0; i < %ld; i++) {\n", t->array.length);
@@ -1427,35 +1540,55 @@ void emit_free(Scope *scope, Var *var) {
             emit_free(scope, v);
             free(v);
 
-            change_indent(-1);
-            indent();
-            printf("}\n");
+            close_block();
+            close_block();
+        }
+    } else if (t->comp == ARRAY) {
+        if (t->array.owned) {
+            if (is_dynamic(t->array.inner)) {
+                open_block();
 
-            change_indent(-1);
-            indent();
-            printf("}\n");
+                indent();
+                emit_type(t->array.inner);
+                printf("*_0 = ");
+                printf(name_fmt, var->id);
+                printf(".data;\n");
+
+                indent();
+                printf("for (int i = 0; i < ");
+                printf(name_fmt, var->id);
+                printf(".length; i++) {\n");
+
+                change_indent(1);
+                indent();
+                emit_type(t->array.inner);
+
+                Var *v = make_var("<i>", t->array.inner);
+                v->initialized = 1;
+                printf("_vs_%d = _0[i];\n", v->id);
+
+                emit_free(scope, v);
+                free(v);
+
+                close_block();
+                close_block();
+            }
+            printf("free(");
+            printf(name_fmt, var->id);
+            printf(".data);\n");
         }
     } else if (t->comp == STRUCT) {
         char *name;
         name = malloc(sizeof(char) * (snprintf(NULL, 0, "%d", var->id) + 5));
-        if (var->temp) {
-            sprintf(name, "_tmp%d", var->id);
-        } else {
-            sprintf(name, "_vs_%d", var->id);
-        }
+        sprintf(name, name_fmt, var->id);
         emit_free_struct(scope, name, var->type, 0);
         free(name);
     } else if (t->comp == BASIC) {
         indent();
         if (t->data->base == STRING_T) {
-            if (var->temp) {
-                printf("free(_tmp%d.bytes);\n", var->id);
-            } else {
-                /*printf("free(_vs_%s.bytes);\n", var->name);*/
-                printf("free(_vs_%d.bytes);\n", var->id);
-            }
-        } else if (t->data->base == BASEPTR_T) {
-            printf("free(_vs_%d);\n", var->id);
+            printf("free(");
+            printf(name_fmt, var->id);
+            printf(".bytes);\n");
         }
     }
 }
@@ -1464,14 +1597,17 @@ void emit_free_locals(Scope *scope) {
     VarList *locals = scope->vars;
     while (locals != NULL) {
         Var *v = locals->item;
-        Type *t = resolve_alias(v->type);
+        /*Type *t = resolve_alias(v->type);*/
 
         locals = locals->next;
-        // TODO got to be a better way to handle this here
-        if (!v->initialized || t->comp == FUNC || t->comp == REF ||
-           (t->comp == BASIC && t->data->base == BASEPTR_T)) {
+        if (v->proxy != NULL) {
             continue;
         }
+        // TODO got to be a better way to handle this here
+        /*if (!v->initialized || t->comp == FUNC || t->comp == REF ||*/
+           /*(t->comp == BASIC && t->data->base == BASEPTR_T)) {*/
+            /*continue;*/
+        /*}*/
         emit_free(scope, v);
     }
 }
@@ -1485,8 +1621,7 @@ void emit_free_temp(Scope *scope) {
         locals = locals->next;
         // TODO got to be a better way to handle this here
         if (!v->temp || !v->initialized ||
-            t->comp == FUNC || t->comp == REF ||
-           (t->comp == BASIC && t->data->base == BASEPTR_T)) {
+            t->comp == FUNC || (t->comp == BASIC && t->data->base == BASEPTR_T)) {
             continue;
         }
         emit_free(scope, v);

@@ -10,6 +10,7 @@ typedef enum {
     TOK_FLOAT,
     TOK_BOOL,
     TOK_COLON,
+    TOK_SQUOTE,
     TOK_DCOLON,
     TOK_ARROW,
     TOK_SEMI,
@@ -35,7 +36,6 @@ typedef enum {
     TOK_RETURN,
     TOK_EXTERN,
     TOK_STRUCT,
-    TOK_HOLD,
     TOK_RELEASE,
     TOK_WHILE,
     TOK_FOR,
@@ -45,7 +45,8 @@ typedef enum {
     TOK_DIRECTIVE,
     TOK_ELLIPSIS,
     TOK_ENUM,
-    TOK_USE
+    TOK_USE,
+    TOK_NEW
 } TokType;
 
 enum {

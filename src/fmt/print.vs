@@ -196,7 +196,11 @@ fn any_to_string(a: Any) -> string {
         return s + "}";
     } else if bt == ARRAY {
         at := a.type as &ArrayType;
-        s := "[";
+        s: string;
+        if at.owned {
+            s += "'";
+        }
+        s += "[";
         if at.is_static {
             s += itoa(at.size);
         }

@@ -75,32 +75,32 @@ fn do_stuff(a:[]int) -> []int {
 }
 
 fn main() -> int {
-    arr := [-]int::{1, 21, 34};
+    /*arr := [-]int::{1, 21, 34};*/
 
-    assert(arr[1] == 21);
+    /*assert(arr[1] == 21);*/
 
     x:[3]int;
     i:int;
-    while i < x.length {
-        /*println("x[" + itoa(i) + "] = " + itoa(x[i]));*/
-        x[i] = i;
-        i = i + 1;
-    }
-    println("Array x:");
-    print_array(do_stuff(x));
-    println("Array x[1:3]:");
-    print_array(x[1:3]);
-    y:[]int = x;
-    do_stuff(x);
-    println("Array y:");
-    print_array(y);
-    i = 0;
+    /*while i < x.length {*/
+        /*[>println("x[" + itoa(i) + "] = " + itoa(x[i]));<]*/
+        /*x[i] = i;*/
+        /*i = i + 1;*/
+    /*}*/
+    /*println("Array x:");*/
+    /*print_array(do_stuff(x));*/
+    /*println("Array x[1:3]:");*/
+    /*print_array(x[1:3]);*/
+    /*y:[]int = x;*/
+    /*do_stuff(x);*/
+    /*println("Array y:");*/
+    /*print_array(y);*/
+    /*i = 0;*/
 
-    x = [-]int::{1, 2, 3};
-    assert(x[2] == 3);
+    /*x = [-]int::{1, 2, 3};*/
+    /*assert(x[2] == 3);*/
 
-    test_array_copy();
-    test_array_with_struct();
+    /*test_array_copy();*/
+    /*test_array_with_struct();*/
     test_array_of_strings();
 
     // multi-dimensional arrays?

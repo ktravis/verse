@@ -336,7 +336,7 @@ void register_type(Type *t) {
         register_type(resolved->array.inner);
         break;
     case REF:
-        register_type(resolved->inner);
+        register_type(resolved->ref.inner);
         break;
     case FUNC:
         for (TypeList *list = resolved->fn.args; list != NULL; list = list->next) {
@@ -374,7 +374,7 @@ int define_polydef_alias(Scope *scope, Type *t) {
         count++;
         break;
     case REF:
-        count += define_polydef_alias(scope, t->inner);
+        count += define_polydef_alias(scope, t->ref.inner);
         break;
     case ARRAY:
     case STATIC_ARRAY:
@@ -522,4 +522,34 @@ Var *find_temp_var(Scope *scope, struct Ast *ast) {
         }
     }
     return NULL;
+}
+
+void remove_temp_var_by_id(Scope *scope, int id) {
+    {
+        TempVarList *last = NULL;
+        for (TempVarList *list = scope->temp_vars; list != NULL; list = list->next) {
+            if (list->var->id == id) {
+                if (last == NULL) {
+                    scope->temp_vars = list->next;
+                    break;
+                }
+
+                last->next = list->next;
+            }
+        }
+    }
+
+    {
+        VarList *last = NULL;
+        for (VarList *list = scope->vars; list != NULL; list = list->next) {
+            if (list->item->id == id) {
+                if (last == NULL) {
+                    scope->vars = list->next;
+                    break;
+                }
+
+                last->next = list->next;
+            }
+        }
+    }
 }

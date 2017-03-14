@@ -38,6 +38,7 @@ int is_string(Type *t);
 int is_bool(Type *t);
 int is_polydef(Type *t);
 int is_concrete(Type *t);
+int is_owned(Type *t);
 int contains_generic_struct(Type *t);
 
 Type *copy_type(Scope *scope, Type *t);

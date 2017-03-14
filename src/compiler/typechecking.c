@@ -28,7 +28,7 @@ int check_type(Type *a, Type *b) {
     case ALIAS:
         return find_type_definition(a) == find_type_definition(b);
     case REF:
-        return check_type(a->inner, b->inner);
+        return check_type(a->ref.inner, b->ref.inner);
     case ARRAY:
         return check_type(a->array.inner, b->array.inner);
     case STATIC_ARRAY:
@@ -172,7 +172,7 @@ int match_polymorph(Scope *scope, Type *expected, Type *got) {
     }
     switch (expected->comp) {
     case REF:
-        return match_polymorph(scope, expected->inner, res->inner);
+        return match_polymorph(scope, expected->ref.inner, res->ref.inner);
     case ARRAY:
         return match_polymorph(scope, expected->array.inner, res->array.inner);
     case FUNC:

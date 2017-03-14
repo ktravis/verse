@@ -195,6 +195,11 @@ typedef struct AstSpread {
     Ast *object;
 } AstSpread;
 
+typedef struct AstNew {
+    Ast *count; // used for array init
+    Type *type;
+} AstNew;
+
 Ast *ast_alloc(AstType type);
 Ast *deep_copy(Ast *ast);
 Ast *copy_ast(Scope *scope, Ast *ast);
