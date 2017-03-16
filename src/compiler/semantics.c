@@ -1840,6 +1840,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
     case AST_CONDITIONAL: {
         AstConditional *c = ast->cond;
         c->condition = parse_semantics(scope, c->condition);
+        c->scope->parent_deferred = c->scope->parent != NULL ? c->scope->parent->deferred : NULL;
 
         // TODO: I don't think typedefs of bool should be allowed here...
         if (!is_bool(c->condition->var_type)) {
@@ -1851,6 +1852,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
 
         if (c->else_body != NULL) {
             c->else_body = parse_block_semantics(c->else_scope, c->else_body, 0);
+            c->else_scope->parent_deferred = c->else_scope->parent != NULL ? c->else_scope->parent->deferred : NULL;
         }
 
         ast->var_type = base_type(VOID_T);
@@ -1859,6 +1861,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
     case AST_WHILE: {
         AstWhile *lp = ast->while_loop;
         lp->condition = parse_semantics(scope, lp->condition);
+        lp->scope->parent_deferred = lp->scope->parent != NULL ? lp->scope->parent->deferred : NULL;
 
         if (!is_bool(lp->condition->var_type)) {
             error(ast->line, ast->file, "Non-boolean ('%s') condition for while loop.",
@@ -1873,6 +1876,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
     case AST_FOR: {
         AstFor *lp = ast->for_loop;
         lp->iterable = parse_semantics(scope, lp->iterable);
+        lp->scope->parent_deferred = lp->scope->parent != NULL ? lp->scope->parent->deferred : NULL;
 
         if (lp->index != NULL) {
             if (!strcmp(lp->index->name, lp->itervar->name)) {
@@ -1914,6 +1918,9 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
     }
     case AST_ANON_SCOPE:
         ast->anon_scope->body = parse_block_semantics(ast->anon_scope->scope, ast->anon_scope->body, 0);
+        if (ast->anon_scope->scope->parent != NULL) {
+            ast->anon_scope->scope->parent_deferred = ast->anon_scope->scope->parent->deferred;
+        }
         break;
     case AST_RETURN: {
         // TODO don't need to copy string being returned?

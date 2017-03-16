@@ -152,6 +152,7 @@ typedef struct Scope {
     unsigned char has_return;
     Var *fn_var;
     Polymorph *polymorph;
+    struct AstList *parent_deferred;
     struct AstList *deferred;
     struct PkgList *packages;
 } Scope;

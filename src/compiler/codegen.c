@@ -1196,7 +1196,7 @@ void compile(Scope *scope, Ast *ast) {
         }
         break;
     }
-    case AST_RETURN:
+    case AST_RETURN: {
         if (ast->ret->expr != NULL) {
             emit_type(ast->ret->expr->var_type);
             printf("_ret = ");
@@ -1211,7 +1211,27 @@ void compile(Scope *scope, Ast *ast) {
         }
         printf("\n");
         emit_deferred(scope);
-        emit_free_locals(scope);
+
+        // emit parent defers
+        Scope *s = scope;
+        while (s->parent != NULL) {
+            emit_free_locals(s);
+            if (s->type == Function) {
+                break;
+            }
+            for (AstList *ast = s->parent_deferred; ast != NULL; ast = ast->next) {
+                indent();
+                if (needs_temp_var(ast->item)) {
+                    Var *v = find_temp_var(s, ast->item);
+                    printf("_tmp%d = ", v->id);
+                }
+                compile(s, ast->item);
+                printf(";\n");
+            }
+            s = s->parent;
+        }
+
+        /*emit_free_locals(scope);*/
 
         indent();
         printf("return");
@@ -1219,6 +1239,7 @@ void compile(Scope *scope, Ast *ast) {
             printf(" _ret");
         }
         break;
+    }
     case AST_BREAK:
         printf("break");
         break;
