@@ -806,12 +806,17 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         // another fix for this (we don't want to do the func decls in global
         // scope).
         in_impl = 1;
+
         for (AstList *list = ast->impl->methods; list != NULL; list = list->next) {
             if (list->item->type != AST_FUNC_DECL) {
                 error(list->item->line, list->item->file, "Only method declarations are valid inside an impl block.");
             }
 
             first_pass(scope, list->item);
+
+            if (list->item->fn_decl->args == NULL) {
+                error(list->item->line, list->item->file, "Method '%s' of type %s must have a receiver argument.", list->item->fn_decl->var->name, type_to_string(ast->impl->type));
+            }
 
             // TODO: check name against struct/enum members (or "builtin members" for string/array)
             Ast *last_decl = define_method(ast->impl->type, list->item);
@@ -1343,14 +1348,6 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
 
 static int verify_arg_count(Scope *scope, Ast *ast, Type *fn_type) {
     int given = ast->call->nargs;
-    if (ast->call->fn->type == AST_METHOD) {
-        if (given == 0) {
-            error(ast->line, ast->file,
-                "Incorrect argument count to method '%s' (expected %d, got %d)",
-                ast->call->fn->method->name, fn_type->fn.nargs, given);
-        }
-        given--; // skip receiver
-    }
 
     if (!fn_type->fn.variadic) {
         if (given != fn_type->fn.nargs) {
@@ -1604,8 +1601,12 @@ static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
         ast->call->nargs += 1;
 
         Ast *recv = m->method->recv;
-        // TODO: there might be a prettier way to do this check
-        if (m->method->decl->args->item->type->comp == REF && resolve_alias(recv->var_type)->comp != REF) {
+        Type *first_arg_type = m->method->decl->args->item->type;
+        if (!check_type(recv->var_type, first_arg_type)) {
+            if (!(first_arg_type->comp == REF && check_type(recv->var_type, first_arg_type->ref.inner))) {
+                error(ast->line, ast->file, "Expected method '%s' receiver of type '%s', but got type '%s'.",
+                    ast->call->fn->method->name, type_to_string(first_arg_type), type_to_string(recv->var_type));
+            }
             Ast *uop = ast_alloc(AST_UOP);
             uop->line = recv->line;
             uop->file = recv->file;
@@ -1984,10 +1985,6 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         for (AstList *list = ast->impl->methods; list != NULL; list = list->next) {
             list->item = parse_semantics(scope, list->item);
             VarList *args = list->item->fn_decl->args;
-
-            if (args == NULL) {
-                error(list->item->line, list->item->file, "Method '%s' of type %s must have a receiver argument.", list->item->fn_decl->var->name, type_to_string(ast->impl->type));
-            }
 
             Type *recv = args->item->type;
             if (!check_type(recv, ast->impl->type)) {
