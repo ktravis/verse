@@ -9,6 +9,48 @@
 #include "types.h"
 #include "typechecking.h"
 
+void check_for_unresolved_with_scope(Ast *ast, Type *t, Scope *scope) {
+    assert(t != NULL);
+    Scope *tmp = t->scope;
+    t->scope = scope;
+    switch (t->comp) {
+    case FUNC:
+        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
+            check_for_unresolved_with_scope(ast, list->item, scope);
+        }
+        if (t->fn.ret != NULL) {
+            check_for_unresolved_with_scope(ast, t->fn.ret, scope);
+        }
+        break;
+    case STRUCT: {
+        // line numbers can be weird on this...
+        for (int i = 0; i < t->st.nmembers; i++) {
+            check_for_unresolved_with_scope(ast, t->st.member_types[i], scope);
+        }
+        break;
+    }
+    case ALIAS:
+        if (resolve_alias(t) == NULL) {
+            error(ast->line, ast->file, "Unknown type '%s'.", t->name, scope);
+        }
+        break;
+    case REF:
+        check_for_unresolved_with_scope(ast, t->ref.inner, scope);
+        break;
+    case ARRAY:
+    case STATIC_ARRAY:
+        check_for_unresolved_with_scope(ast, t->array.inner, scope);
+        break;
+    case BASIC:
+    case POLYDEF:
+    case PARAMS:
+    case EXTERNAL:
+    case ENUM:
+        break;
+    }
+    t->scope = tmp;
+}
+
 void check_for_unresolved(Ast *ast, Type *t) {
     assert(t != NULL);
     switch (t->comp) {
@@ -723,6 +765,8 @@ Ast *first_pass(Scope *scope, Ast *ast) {
             ast->new->count = first_pass(scope, ast->new->count);
         }
         first_pass_type(scope, ast->new->type);
+        break;
+    case AST_IMPL:
         break;
     case AST_BREAK:
     case AST_CONTINUE:
@@ -1523,20 +1567,13 @@ static Ast *parse_func_decl_semantics(Scope *scope, Ast *ast) {
     }
 
     for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
-        Scope *tmp = args->item->type->scope;
-        args->item->type->scope = type_check_scope;
-
-        // TODO: there needs to be a way to do this that handles polydef etc
-        /*check_for_unresolved(ast, args->item->type);*/
-
+        check_for_unresolved_with_scope(ast, args->item->type, type_check_scope);
 
         if (!is_concrete(args->item->type)) {
             error(lineno(), current_file_name(),
                   "Argument '%s' has generic type '%s' (not allowed currently).",
                   args->item->name, type_to_string(args->item->type));
         }
-
-        args->item->type->scope = tmp;
 
         if (args->item->use) {
             // allow polydef here?
@@ -1837,6 +1874,8 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         return parse_call_semantics(scope, ast);
     case AST_INDEX: 
         return parse_index_semantics(scope, ast);
+    case AST_IMPL:
+        break;
     case AST_CONDITIONAL: {
         AstConditional *c = ast->cond;
         c->condition = parse_semantics(scope, c->condition);

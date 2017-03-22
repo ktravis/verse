@@ -41,6 +41,9 @@ int is_concrete(Type *t);
 int is_owned(Type *t);
 int contains_generic_struct(Type *t);
 
+Ast *find_method(Type *t, char *name);
+Ast *define_method(Type *t, Ast *decl);
+
 Type *copy_type(Scope *scope, Type *t);
 Type *make_primitive(int base, int size);
 Type *make_type(Scope *scope, char *name);

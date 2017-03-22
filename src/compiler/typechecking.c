@@ -137,7 +137,10 @@ int can_cast(Type *from, Type *to) {
                 }
             }
         }
-        return from->data->base == to->data->base;
+        if (to->comp == BASIC) {
+            return to->data->base == to->data->base;
+        }
+        return to->comp == from->comp;
     case STATIC_ARRAY: {
         to = resolve_alias(to);
         if (to->comp == ARRAY) {

@@ -1,4 +1,4 @@
-fn doit(x:$T, y:T) -> T {
+fn doit(x:T, y:$T) -> T {
     println("ayyyy... lmao");
     a := #typeof(x);
     if a == #type string {
@@ -9,6 +9,8 @@ fn doit(x:$T, y:T) -> T {
     return x + y;
 }
 
+fn derf(x: $T, y: &T) {}
+
 fn sum(x:[]$T) -> T {
     println("ayyyy lol");
     s:T;
@@ -18,19 +20,19 @@ fn sum(x:[]$T) -> T {
     return s;
 }
 
-fn wow(f: fn($R), stuff: []R) {
-    for x in stuff {
-        println("stuff!");
-        f(x);
-    }
-}
-
 fn var(x:$T...) -> T {
     return x[1];
 }
 
 fn eh(x:$T, f:fn(T) -> T) -> T {
     return f(x);
+}
+
+fn wow(f: fn($R), stuff: []R) {
+    for x in stuff {
+        println("stuff!");
+        f(x);
+    }
 }
 
 fn main() -> int {

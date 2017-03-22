@@ -635,6 +635,8 @@ Tok *check_reserved(char *buf) {
         return make_token(TOK_ENUM);
     } else if (!strcmp(buf, "use")) {
         return make_token(TOK_USE);
+    } else if (!strcmp(buf, "impl")) {
+        return make_token(TOK_IMPL);
     } else if (!strcmp(buf, "as")) {
         Tok *t = make_token(TOK_OP);
         t->op = OP_CAST;
@@ -811,6 +813,8 @@ const char *tok_to_string(Tok *t) {
         return "...";
     case TOK_ENUM:
         return "enum";
+    case TOK_IMPL:
+        return "impl";
     case TOK_USE:
         return "use";
     default:

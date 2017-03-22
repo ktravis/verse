@@ -344,6 +344,11 @@ void register_type(Type *t) {
         }
         register_type(resolved->fn.ret);
         break;
+    case PARAMS:
+        for (TypeList *list = t->params.args; list != NULL; list = list->next) {
+            register_type(list->item);
+        }
+        break;
     default:
         break;
     }
@@ -395,6 +400,13 @@ int define_polydef_alias(Scope *scope, Type *t) {
         }
         if (is_polydef(t->fn.ret)) {
             count += define_polydef_alias(scope, t->fn.ret);
+        }
+        break;
+    case PARAMS:
+        for (TypeList *list = t->params.args; list != NULL; list = list->next) {
+            if (is_polydef(list->item)) {
+                count += define_polydef_alias(scope, list->item);
+            }
         }
         break;
     default:

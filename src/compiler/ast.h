@@ -204,6 +204,14 @@ typedef struct AstDefer {
     Ast *call;
 } AstDefer;
 
+typedef struct AstImpl {
+    Type    *type;
+    AstList *methods;
+} AstImpl;
+
+
+// TODO: make AstPackage, AstType, AstMethod
+
 Ast *ast_alloc(AstType type);
 Ast *deep_copy(Ast *ast);
 Ast *copy_ast(Scope *scope, Ast *ast);

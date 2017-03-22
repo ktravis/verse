@@ -805,6 +805,8 @@ Type *parse_struct_type(int poly_ok) {
     char **member_names = malloc(sizeof(char*) * alloc);
     Type **member_types = malloc(sizeof(Type*) * alloc);
 
+    AstList *methods = NULL;
+
     for (;;) {
         if (nmembers >= alloc) {
             alloc += 6;
@@ -812,23 +814,30 @@ Type *parse_struct_type(int poly_ok) {
             member_types = realloc(member_types, sizeof(char*) * alloc);
         }
 
-        Tok *t = expect(TOK_ID);
-        expect(TOK_COLON);
+        Tok *t = next_token();
+        
+        if (t->type == TOK_ID) {
+            expect(TOK_COLON);
 
-        char *name = t->sval;
+            char *name = t->sval;
 
-        Type *ty = parse_type(next_token(), poly_ok);
+            Type *ty = parse_type(next_token(), poly_ok);
 
-        member_names[nmembers] = name;
-        member_types[nmembers++] = ty;
+            member_names[nmembers] = name;
+            member_types[nmembers++] = ty;
 
-        expect(TOK_SEMI);
-        t = next_token();
+            expect(TOK_SEMI);
+            t = next_token();
 
-        if (t != NULL && t->type == TOK_RBRACE) {
-            break;
+            if (t != NULL && t->type == TOK_RBRACE) {
+                break;
+            } else {
+                unget_token(t);
+            }
+        } else if (t->type == TOK_FN) {
+            methods = astlist_append(methods, parse_func_decl(0));
         } else {
-            unget_token(t);
+            error(lineno(), current_file_name(), "Unexpected token '%s' in struct definition.", tok_to_string(t));
         }
     }
 
@@ -841,11 +850,16 @@ Type *parse_struct_type(int poly_ok) {
         }
     }
 
-    if (generic) {
-        return make_generic_struct_type(nmembers, member_names, member_types, params);
-    }
+    Type *tp;
 
-    return make_struct_type(nmembers, member_names, member_types);
+    if (generic) {
+        tp = make_generic_struct_type(nmembers, member_names, member_types, params);
+    } else {
+        tp = make_struct_type(nmembers, member_names, member_types);
+    }
+    tp->st.methods = methods;
+    
+    return tp;
 }
 
 Ast *parse_anon_scope();

@@ -66,6 +66,7 @@ typedef struct StructType {
     int generic;
     struct TypeList *arg_params;
     struct Type *generic_base;
+    struct AstList *methods;
 } StructType;
 
 typedef struct EnumType {
@@ -191,6 +192,7 @@ typedef enum AstType {
     AST_SPREAD,
     AST_NEW,
     AST_DEFER,
+    AST_IMPL,
 } AstType;
 
 typedef struct Ast {
@@ -229,6 +231,7 @@ typedef struct Ast {
         struct AstSpread        *spread;
         struct AstNew           *new;
         struct AstDefer         *defer;
+        struct AstImpl          *impl;
     };
 } Ast;
 

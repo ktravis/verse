@@ -110,6 +110,9 @@ Ast *ast_alloc(AstType type) {
     case AST_DEFER:
         ast->defer = calloc(sizeof(AstDefer), 1);
         break;
+    case AST_IMPL:
+        ast->impl = calloc(sizeof(AstImpl), 1);
+        break;
     }
     return ast;
 }
@@ -301,6 +304,13 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
     case AST_DEFER:
         cp->defer = calloc(sizeof(AstDefer), 1);
         cp->defer->call = copy_ast(scope, ast->defer->call);
+        break;
+    case AST_IMPL:
+        cp->impl = calloc(sizeof(AstImpl), 1);
+        cp->impl->type = copy_type(scope, ast->impl->type);
+        for (AstList *list = ast->impl->methods; list != NULL; list = list->next) {
+            cp->impl->methods = astlist_append(cp->impl->methods, copy_ast(scope, list->item));
+        }
         break;
     }
     return cp;

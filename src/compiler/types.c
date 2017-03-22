@@ -10,6 +10,42 @@
 
 static int last_type_id = 0;
 
+typedef struct MethodList {
+    Type *type;
+    char *name;
+    Ast *decl;
+    struct MethodList *next;
+} MethodList;
+
+MethodList *all_methods = NULL;
+
+/*Ast *find_method(Type *t, char *name) {*/
+    /*t = resolve_alias(t);*/
+    /*for (MethodList *list = all_methods; list != NULL; list = list->next) {*/
+        /*if (list->type == t && !strcmp(list->name, name)) {*/
+            /*return list->decl;*/
+        /*}*/
+    /*}*/
+    /*return NULL;*/
+/*}*/
+
+/*Ast *define_method(Type *t, Ast *decl) {*/
+    /*assert(decl->type == AST_FUNC_DECL);*/
+    /*t = resolve_alias(t);*/
+    /*for (MethodList *list = all_methods; list != NULL; list = list->next) {*/
+        /*if (list->type == t && !strcmp(list->name, decl->fn_decl->var->name)) {*/
+            /*return NULL;*/
+        /*}*/
+    /*}*/
+    /*MethodList *last = all_methods;*/
+    /*all_methods = calloc(sizeof(MethodList), 1);*/
+    /*all_methods->type = t;*/
+    /*all_methods->name = decl->fn_decl->var->name;*/
+    /*all_methods->decl = decl;*/
+    /*all_methods->next = last;*/
+    /*return decl;*/
+/*}*/
+
 Type *make_primitive(int base, int size) {
     TypeData *data = malloc(sizeof(TypeData));
     data->base = base;
