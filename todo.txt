@@ -5,7 +5,6 @@ TODO
 - Range of numbers iterable
 - Multiple return values
 - Methods
-  - "impl" blocks
   - "static" struct (/type) methods
 - Const!
 - Const members in struct
@@ -24,6 +23,7 @@ TODO
     }
 
 Things to fix:
+  - Make owned reference not initialize automatically
   - Returning a string as Any causes it to not be copied
   - See print_test, converting a reference to Any is acting strange
   - Use on polymorphic types? Should this be allowed? It is weird.

@@ -802,11 +802,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
             error(ast->line, ast->file, "Type impl declarations only valid for named types.");
         }
 
-        // Does this need to be a different type of scope? Maybe there is
-        // another fix for this (we don't want to do the func decls in global
-        // scope).
         in_impl = 1;
-
         for (AstList *list = ast->impl->methods; list != NULL; list = list->next) {
             if (list->item->type != AST_FUNC_DECL) {
                 error(list->item->line, list->item->file, "Only method declarations are valid inside an impl block.");
