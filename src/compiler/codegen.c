@@ -790,7 +790,8 @@ void compile_ref(Scope *scope, Ast *ast) {
 void compile_block(Scope *scope, AstBlock *block) {
     for (AstList *st = block->statements; st != NULL; st = st->next) {
         if (st->item->type == AST_FUNC_DECL || st->item->type == AST_EXTERN_FUNC_DECL ||
-            st->item->type == AST_USE || st->item->type == AST_TYPE_DECL || st->item->type == AST_DEFER || 
+            st->item->type == AST_IMPL || st->item->type == AST_USE ||
+            st->item->type == AST_TYPE_DECL || st->item->type == AST_DEFER || 
             (st->item->type == AST_DECL && st->item->decl->global)) {
             continue;
         }

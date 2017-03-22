@@ -209,6 +209,11 @@ typedef struct AstImpl {
     AstList *methods;
 } AstImpl;
 
+typedef struct AstMethod {
+    Ast       *recv;
+    char      *name;
+    AstFnDecl *decl;
+} AstMethod;
 
 // TODO: make AstPackage, AstType, AstMethod
 
@@ -230,8 +235,9 @@ Ast *make_ast_slice(Ast *inner, Ast *offset, Ast *length);
 
 char *get_varname(Ast *ast);
 
+AstList *astlist_prepend(AstList *list, Ast *ast);
 AstList *astlist_append(AstList *list, Ast *ast);
-AstList *reverse_astlist();
+AstList *reverse_astlist(AstList *list);
 
 int needs_temp_var(Ast *ast);
 int is_lvalue(Ast *ast);

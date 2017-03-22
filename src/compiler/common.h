@@ -193,6 +193,7 @@ typedef enum AstType {
     AST_NEW,
     AST_DEFER,
     AST_IMPL,
+    AST_METHOD,
 } AstType;
 
 typedef struct Ast {
@@ -232,6 +233,7 @@ typedef struct Ast {
         struct AstNew           *new;
         struct AstDefer         *defer;
         struct AstImpl          *impl;
+        struct AstMethod        *method;
     };
 } Ast;
 

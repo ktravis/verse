@@ -113,6 +113,9 @@ Ast *ast_alloc(AstType type) {
     case AST_IMPL:
         ast->impl = calloc(sizeof(AstImpl), 1);
         break;
+    case AST_METHOD:
+        ast->method = calloc(sizeof(AstMethod), 1);
+        break;
     }
     return ast;
 }
@@ -312,6 +315,12 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
             cp->impl->methods = astlist_append(cp->impl->methods, copy_ast(scope, list->item));
         }
         break;
+    case AST_METHOD:
+        cp->method = calloc(sizeof(AstMethod), 1);
+        cp->method->recv = copy_ast(scope, ast->method->recv);
+        cp->method->name = ast->method->name;
+        cp->method->decl = ast->method->decl;
+        break;
     }
     return cp;
 }
@@ -477,6 +486,24 @@ AstList *reverse_astlist(AstList *list) {
         head->next = tail;
     }
     return head;
+}
+
+AstList *astlist_prepend(AstList *list, Ast *ast) {
+    AstList *l = malloc(sizeof(AstList));
+    l->item = ast;
+    l->next = NULL;
+
+    AstList *head = list;
+    if (head == NULL) {
+        // no list
+        return l;
+    }
+
+    while (head->next != NULL) {
+        head = head->next;
+    }
+    head->next = l;
+    return list;
 }
 
 AstList *astlist_append(AstList *list, Ast *ast) {

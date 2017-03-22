@@ -9,6 +9,9 @@
 #include "types.h"
 #include "typechecking.h"
 
+// TODO: do this better
+static int in_impl = 0;
+
 void check_for_unresolved_with_scope(Ast *ast, Type *t, Scope *scope) {
     assert(t != NULL);
     Scope *tmp = t->scope;
@@ -230,6 +233,10 @@ static Ast *parse_uop_semantics(Scope *scope, Ast *ast) {
 
 static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
     if (ast->dot->object->type == AST_IDENTIFIER) {
+        // TODO: need to make sure that an enum or package in outer scope cannot
+        // shadow a locally (or closer to locally) declared variable just
+        // because this is happening before the other resolution
+        //
         // Enum case
         Type *t = make_type(scope, ast->dot->object->ident->varname);
         Type *resolved = resolve_alias(t);
@@ -315,6 +322,23 @@ static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
     // TODO: how much resolving should happen here? does this allow for more
     // indirection than we wanted?
     t = resolve_alias(t);
+
+    Ast *decl = find_method(t, ast->dot->member_name);
+    if (decl != NULL) {
+        // just make "method" a field in AstCall?
+        Ast *m = ast_alloc(AST_METHOD);
+        m->line = ast->dot->object->line;
+        m->file = ast->dot->object->file;
+        m->method->recv = ast->dot->object;
+        m->method->name = ast->dot->member_name;
+        m->method->decl = decl->fn_decl;
+        m->var_type = m->method->decl->var->type;
+
+        if (!is_lvalue(ast->dot->object)) {
+            allocate_ast_temp_var(scope, ast->dot->object);
+        }
+        return m;
+    }
 
     if (t->comp == ARRAY || t->comp == STATIC_ARRAY) {
         if (!strcmp(ast->dot->member_name, "length")) {
@@ -619,7 +643,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         ast->fn_decl->scope = new_fn_scope(scope);
         ast->fn_decl->scope->fn_var = ast->fn_decl->var;
 
-        if (!ast->fn_decl->anon) {
+        if (!ast->fn_decl->anon && !in_impl) {
             if (lookup_local_var(scope, ast->fn_decl->var->name) != NULL) {
                 error(ast->line, ast->file, "Declared function name '%s' already exists in this scope.", ast->fn_decl->var->name);
             }
@@ -767,10 +791,42 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         first_pass_type(scope, ast->new->type);
         break;
     case AST_IMPL:
+        if (scope->parent != NULL) {
+            error(ast->line, ast->file, "Type impl declarations must be at root scope.");
+        }
+
+        first_pass_type(scope, ast->impl->type);
+
+        if (!(ast->impl->type->comp == ALIAS || ast->impl->type->comp == PARAMS)) {
+            // others to do?
+            error(ast->line, ast->file, "Type impl declarations only valid for named types.");
+        }
+
+        // Does this need to be a different type of scope? Maybe there is
+        // another fix for this (we don't want to do the func decls in global
+        // scope).
+        in_impl = 1;
+        for (AstList *list = ast->impl->methods; list != NULL; list = list->next) {
+            if (list->item->type != AST_FUNC_DECL) {
+                error(list->item->line, list->item->file, "Only method declarations are valid inside an impl block.");
+            }
+
+            first_pass(scope, list->item);
+
+            // TODO: check name against struct/enum members (or "builtin members" for string/array)
+            Ast *last_decl = define_method(ast->impl->type, list->item);
+            if (last_decl != NULL) {
+                error(list->item->line, list->item->file, "Method '%s' of type %s already defined at %s:%d.", list->item->fn_decl->var->name, type_to_string(ast->impl->type), last_decl->file, last_decl->line);
+            }
+        }
+        in_impl = 0;
         break;
     case AST_BREAK:
     case AST_CONTINUE:
     case AST_IDENTIFIER:
+        break;
+    case AST_METHOD:
+        error(ast->line, ast->file, "<internal> first_pass on method");
         break;
     }
     return ast;
@@ -1286,19 +1342,29 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
 }
 
 static int verify_arg_count(Scope *scope, Ast *ast, Type *fn_type) {
+    int given = ast->call->nargs;
+    if (ast->call->fn->type == AST_METHOD) {
+        if (given == 0) {
+            error(ast->line, ast->file,
+                "Incorrect argument count to method '%s' (expected %d, got %d)",
+                ast->call->fn->method->name, fn_type->fn.nargs, given);
+        }
+        given--; // skip receiver
+    }
+
     if (!fn_type->fn.variadic) {
-        if (ast->call->nargs != fn_type->fn.nargs) {
+        if (given != fn_type->fn.nargs) {
             error(ast->line, ast->file,
                 "Incorrect argument count to function (expected %d, got %d)",
-                fn_type->fn.nargs, ast->call->nargs);
+                fn_type->fn.nargs, given);
         }
         return -1;
     }
 
-    if (ast->call->nargs < fn_type->fn.nargs - 1) {
+    if (given < fn_type->fn.nargs - 1) {
         error(ast->line, ast->file,
             "Expected at least %d arguments to variadic function, but only got %d.",
-            fn_type->fn.nargs-1, ast->call->nargs);
+            fn_type->fn.nargs-1, given);
         return -1;
     }
 
@@ -1308,7 +1374,7 @@ static int verify_arg_count(Scope *scope, Ast *ast, Type *fn_type) {
             if (list->next != NULL) {
                 error(ast->line, ast->file, "Only the last argument to a function call may be a spread.");
             }
-            if (i != fn_type->fn.nargs - 1) {
+            if (i != given - 1) {
                 error(ast->line, ast->file, "Spread array cannot be combined with other values for variadic function argument.");
             }
             ast->call->has_spread = 1;
@@ -1332,6 +1398,16 @@ static void verify_arg_types(Scope *scope, Ast *ast, TypeList *expected_types, A
     for (int i = 0; arg_vals != NULL; i++) {
         Ast *arg = arg_vals->item;
         Type *expected = expected_types->item;
+
+        if (i == 0 && ast->call->fn->type == AST_METHOD) {
+            Ast *recv = ast->call->fn->method->recv;
+
+            if (!(expected->comp == REF && check_type(recv->var_type, expected->ref.inner))) {
+                error(ast->line, ast->file, "Expected method '%s' receiver of type '%s', but got type '%s'.",
+                    ast->call->fn->method->name, type_to_string(expected), type_to_string(recv->var_type));
+            }
+            continue;
+        }
 
         if (arg->type == AST_SPREAD) {
             // handled by verify_arg_count
@@ -1512,6 +1588,34 @@ static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
     if (resolved->comp != FUNC) {
         error(ast->line, ast->file, "Cannot perform call on non-function type '%s'", type_to_string(orig));
         return NULL;
+    }
+
+    if (ast->call->fn->type == AST_METHOD) {
+        Ast *m = ast->call->fn;
+
+        Ast *id = ast_alloc(AST_IDENTIFIER);
+        id->line = ast->call->fn->line;
+        id->file = ast->call->fn->file;
+        id->ident->var = m->method->decl->var;
+        id->ident->varname = m->method->name;
+        id->var_type = ast->call->fn->var_type;
+
+        ast->call->fn = id;
+        ast->call->nargs += 1;
+
+        Ast *recv = m->method->recv;
+        // TODO: there might be a prettier way to do this check
+        if (m->method->decl->args->item->type->comp == REF && resolve_alias(recv->var_type)->comp != REF) {
+            Ast *uop = ast_alloc(AST_UOP);
+            uop->line = recv->line;
+            uop->file = recv->file;
+            uop->unary->op = OP_REF;
+            uop->unary->object = recv;
+            uop->var_type = m->method->decl->args->item->type;
+            recv = uop;
+        }
+
+        ast->call->args = astlist_prepend(ast->call->args, recv);
     }
 
     if (is_polydef(resolved)) {
@@ -1875,6 +1979,26 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
     case AST_INDEX: 
         return parse_index_semantics(scope, ast);
     case AST_IMPL:
+        check_for_unresolved(ast, ast->impl->type);
+
+        for (AstList *list = ast->impl->methods; list != NULL; list = list->next) {
+            list->item = parse_semantics(scope, list->item);
+            VarList *args = list->item->fn_decl->args;
+
+            if (args == NULL) {
+                error(list->item->line, list->item->file, "Method '%s' of type %s must have a receiver argument.", list->item->fn_decl->var->name, type_to_string(ast->impl->type));
+            }
+
+            Type *recv = args->item->type;
+            if (!check_type(recv, ast->impl->type)) {
+                if (recv->comp != REF || !check_type(recv->ref.inner, ast->impl->type)) {
+                    char *name = type_to_string(ast->impl->type);
+                    error(list->item->line, list->item->file, "Method '%s' of type %s must have type %s or a reference to it as the receiver (first) argument.", list->item->fn_decl->var->name, name, name);
+                }
+            }
+        }
+
+        ast->var_type = base_type(VOID_T);
         break;
     case AST_CONDITIONAL: {
         AstConditional *c = ast->cond;

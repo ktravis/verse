@@ -866,6 +866,7 @@ Ast *parse_anon_scope();
 
 Ast *parse_statement(Tok *t) {
     Ast *ast = NULL;
+    int needs_semi = 1;
 
     switch (t->type) {
     case TOK_ID:
@@ -878,9 +879,11 @@ Ast *parse_statement(Tok *t) {
         break;
     case TOK_TYPE:
         ast = parse_type_decl();
+        needs_semi = 0;
         break;
     case TOK_ENUM:
         ast = parse_enum_decl();
+        needs_semi = 0;
         break;
     case TOK_USE:
         ast = ast_alloc(AST_USE);
@@ -889,6 +892,14 @@ Ast *parse_statement(Tok *t) {
     case TOK_DEFER:
         ast = ast_alloc(AST_DEFER);
         ast->defer->call = parse_expression(next_token(), 0);
+        break;
+    case TOK_IMPL:
+        ast = ast_alloc(AST_IMPL);
+        ast->impl->type = parse_type(next_token(), 0);
+        expect(TOK_LBRACE);
+        ast->impl->methods = parse_statement_list();
+        expect(TOK_RBRACE);
+        needs_semi = 0;
         break;
     case TOK_DIRECTIVE:
         if (!strcmp(t->sval, "include")) {
@@ -1009,7 +1020,9 @@ Ast *parse_statement(Tok *t) {
     default:
         ast = parse_expression(t, 0);
     }
-    expect(TOK_SEMI);
+    if (needs_semi || peek_token()->type == TOK_SEMI) {
+        expect(TOK_SEMI);
+    }
     return ast;
 }
 
