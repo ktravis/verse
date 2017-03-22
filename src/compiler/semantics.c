@@ -861,7 +861,7 @@ AstBlock *parse_block_semantics(Scope *scope, AstBlock *block, int fn_body) {
     // if it's a function that needs return and return wasn't reached, break
     if (!mainline_return_reached && fn_body) {
         Type *rt = fn_scope_return_type(scope);
-        if (rt->data->base != VOID_T) {
+        if (rt != NULL && rt->data->base != VOID_T) {
             error(block->endline, block->file,
                 "Control reaches end of function '%s' without a return statement.",
                 closest_fn_scope(scope)->fn_var->name);
