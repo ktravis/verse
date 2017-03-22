@@ -1396,16 +1396,6 @@ static void verify_arg_types(Scope *scope, Ast *ast, TypeList *expected_types, A
         Ast *arg = arg_vals->item;
         Type *expected = expected_types->item;
 
-        if (i == 0 && ast->call->fn->type == AST_METHOD) {
-            Ast *recv = ast->call->fn->method->recv;
-
-            if (!(expected->comp == REF && check_type(recv->var_type, expected->ref.inner))) {
-                error(ast->line, ast->file, "Expected method '%s' receiver of type '%s', but got type '%s'.",
-                    ast->call->fn->method->name, type_to_string(expected), type_to_string(recv->var_type));
-            }
-            continue;
-        }
-
         if (arg->type == AST_SPREAD) {
             // handled by verify_arg_count
             assert(variadic);
@@ -1616,7 +1606,8 @@ static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
             recv = uop;
         }
 
-        ast->call->args = astlist_prepend(ast->call->args, recv);
+        /*ast->call->args = astlist_prepend(ast->call->args, recv);*/
+        ast->call->args = astlist_append(ast->call->args, recv);
     }
 
     if (is_polydef(resolved)) {
