@@ -30,11 +30,26 @@ impl Guy {
         println("hi it's " + g.name);
         return g.name;
     }
+
+    fn greet(g: Guy, x: $X) -> string {
+        return fmt.sprintf("% greets you, %!", g.name, x);
+    }
 }
 
 type Guy: struct{
     name: string;
     pos:  Vec3;
+}
+
+type Thing: struct(T) {
+    name: string;
+    stuff: T;
+}
+
+impl Thing {
+    fn string(t: Thing($T)) -> string {
+        return fmt.sprintf("thing(%, %)", t.name, t.stuff);
+    }
 }
 
 fn main() -> int {
@@ -66,6 +81,12 @@ fn main() -> int {
         reset(&g.pos);
         assert(pos.length() == 0);
     }
+
+    assert((Thing(int)::{"mork", 2}).string() == "thing(mork, 2)");
+    assert((Thing(Vec3)::{"mindy", Vec3::{0, 1, 2}}).string() == "thing(mindy, Vec3::{x: int = 0, y: int = 1, z: int = 2})");
+
+    g.greet("Steve");
+    assert((Guy::{name = "Steve"}).greet(2) == "Steve greets you, 2!");
 
     return 0;
 }

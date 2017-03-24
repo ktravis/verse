@@ -317,6 +317,9 @@ void emit_copy(Scope *scope, Ast *ast) {
         printf("_copy_%d(", get_struct_type_id(t));
         compile(scope, ast);
         printf(")");
+    /*} else if (t->comp == STATIC_ARRAY) {*/
+        /*emit_static_array_copy(scope, ast->decl->var->type, dname, "_0");*/
+    /*} else if (t->comp == ARRAY) {*/
     } else {
         error(-1, "internal", "wut even");
     }
@@ -714,15 +717,15 @@ void emit_struct_decl(Scope *scope, Type *st) {
     emit_type(st);
     printf("));\n");
 
-    for (int i = 0; i < st->st.nmembers; i++) {
-        Type *t = st->st.member_types[i];
-        if (t->comp == REF && t->ref.owned) {
-            indent();
-            printf("x->%s = calloc(sizeof(", st->st.member_names[i]);
-            emit_type(t->ref.inner);
-            printf("), 1);\n");
-        }
-    }
+    /*for (int i = 0; i < st->st.nmembers; i++) {*/
+        /*Type *t = st->st.member_types[i];*/
+        /*if (t->comp == REF && t->ref.owned) {*/
+            /*indent();*/
+            /*printf("x->%s = calloc(sizeof(", st->st.member_names[i]);*/
+            /*emit_type(t->ref.inner);*/
+            /*printf("), 1);\n");*/
+        /*}*/
+    /*}*/
 
     indent();
     printf("return x;\n");
@@ -1203,6 +1206,8 @@ void compile(Scope *scope, Ast *ast) {
             printf("_ret = ");
             /*if (is_any(ast->ret->expr->var_type) && !is_any(ast->ret->expr->var_type)) {*/
                 /*emit_any_wrapper(scope, ast->ret->expr);*/
+            // TODO: if this doesn't actually need to be copied, we have to make
+            // sure it isn't cleaned up on return
             if (is_lvalue(ast->ret->expr)) {
                 emit_copy(scope, ast->ret->expr);
             } else {

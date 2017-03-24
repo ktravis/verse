@@ -158,9 +158,12 @@ int can_cast(Type *from, Type *to) {
     return 0;
 }
 
+// if you don't want to define, just pass NULL for scope
 int match_polymorph(Scope *scope, Type *expected, Type *got) {
     if (expected->comp == POLYDEF) {
-        define_polymorph(scope, expected, got);
+        if (scope != NULL) {
+            define_polymorph(scope, expected, got);
+        }
         return 1;
     }
     Type *res = resolve_alias(got);

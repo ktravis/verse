@@ -14,16 +14,17 @@ fn new_A() -> 'A {
 fn init_A(a: &A, n: int) {
     blah: [10]u8;
     a.x = new [n] u8;
+    a.y = new B;
     /*a.x = blah[:];*/
 }
 
 fn test_A(a: &A, n: int) {
-    a.y.stuff[n-1] = 26;
-    assert(a.y.stuff[n-1] == 26);
     assert(a.x.length == n);
 
     init_A(a, 2);
     assert(a.x.length == 2);
+    a.y.stuff[n-1] = 26;
+    assert(a.y.stuff[n-1] == 26);
 
     a.y = new B;
 

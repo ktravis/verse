@@ -324,6 +324,10 @@ static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
     t = resolve_alias(t);
 
     Ast *decl = find_method(t, ast->dot->member_name);
+    // TODO: this could be nicer
+    if (decl == NULL && orig->comp == STRUCT && orig->st.generic_base != NULL) {
+        decl = find_method(orig->st.generic_base->params.inner, ast->dot->member_name);
+    }
     if (decl != NULL) {
         // just make "method" a field in AstCall?
         Ast *m = ast_alloc(AST_METHOD);
@@ -1588,7 +1592,16 @@ static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
 
         Ast *recv = m->method->recv;
         Type *first_arg_type = m->method->decl->args->item->type;
-        if (!check_type(recv->var_type, first_arg_type)) {
+        if (is_polydef(first_arg_type)) {
+            if (!match_polymorph(NULL, first_arg_type, recv->var_type)) {
+                if (!(first_arg_type->comp == REF && match_polymorph(NULL, first_arg_type->ref.inner, recv->var_type->ref.inner))) {
+                    error(ast->line, ast->file, "Expected method '%s' receiver of type '%s', but got type '%s'.",
+                        ast->call->fn->method->name, type_to_string(first_arg_type), type_to_string(recv->var_type));
+                }
+                /*error(ast->line, ast->file, "Expected method '%s' receiver of polymorphic type '%s', but got type '%s'.",*/
+                    /*ast->call->fn->method->name, type_to_string(first_arg_type), type_to_string(recv->var_type));*/
+            }
+        } else if (!check_type(recv->var_type, first_arg_type)) {
             if (!(first_arg_type->comp == REF && check_type(recv->var_type, first_arg_type->ref.inner))) {
                 error(ast->line, ast->file, "Expected method '%s' receiver of type '%s', but got type '%s'.",
                     ast->call->fn->method->name, type_to_string(first_arg_type), type_to_string(recv->var_type));
@@ -1974,11 +1987,18 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             VarList *args = list->item->fn_decl->args;
 
             Type *recv = args->item->type;
+
+            if (recv->comp == REF) {
+                recv = recv->ref.inner;
+            }
+
+            if (!is_concrete(ast->impl->type) && recv->comp == PARAMS) {
+                recv = recv->params.inner;
+            }
+
             if (!check_type(recv, ast->impl->type)) {
-                if (recv->comp != REF || !check_type(recv->ref.inner, ast->impl->type)) {
-                    char *name = type_to_string(ast->impl->type);
-                    error(list->item->line, list->item->file, "Method '%s' of type %s must have type %s or a reference to it as the receiver (first) argument.", list->item->fn_decl->var->name, name, name);
-                }
+                char *name = type_to_string(ast->impl->type);
+                error(list->item->line, list->item->file, "Method '%s' of type %s must have type %s or a reference to it as the receiver (first) argument.", list->item->fn_decl->var->name, name, name);
             }
         }
 

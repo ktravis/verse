@@ -23,7 +23,8 @@ TODO
     }
 
 Things to fix:
-  - Make owned reference not initialize automatically
+  - Returning owned arrays/references that are already assigned to variables still frees them -- this is no good,
+    we need to either mark that they are being returned or copy them on return if possible
   - Returning a string as Any causes it to not be copied
   - See print_test, converting a reference to Any is acting strange
   - Use on polymorphic types? Should this be allowed? It is weird.
