@@ -7,6 +7,7 @@
 
 #include "ast.h"
 #include "types.h"
+#include "typechecking.h"
 #include "util.h"
 
 static int last_type_id = 0;
@@ -23,7 +24,8 @@ MethodList *all_methods = NULL;
 Ast *find_method(Type *t, char *name) {
     t = resolve_alias(t);
     for (MethodList *list = all_methods; list != NULL; list = list->next) {
-        if (resolve_alias(list->type) == t && !strcmp(list->name, name)) {
+        /*if (resolve_alias(list->type) == t && !strcmp(list->name, name)) {*/
+        if (check_type(resolve_alias(list->type), t) && !strcmp(list->name, name)) {
             return list->decl;
         }
     }

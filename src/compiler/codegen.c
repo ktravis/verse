@@ -945,6 +945,8 @@ void compile_fn_call(Scope *scope, Ast *ast) {
     printf(")");
 }
 
+void emit_free_locals_except_return(Scope *scope, Var *returned);
+
 void compile(Scope *scope, Ast *ast) {
     switch (ast->type) {
     case AST_LITERAL:
@@ -1201,6 +1203,7 @@ void compile(Scope *scope, Ast *ast) {
         break;
     }
     case AST_RETURN: {
+        Var *ret = NULL;
         if (ast->ret->expr != NULL) {
             emit_type(ast->ret->expr->var_type);
             printf("_ret = ");
@@ -1214,6 +1217,16 @@ void compile(Scope *scope, Ast *ast) {
                 compile(scope, ast->ret->expr);
             }
             printf(";");
+            
+            // TODO: check the type, only do this for owned?
+            if (ast->ret->expr->type == AST_IDENTIFIER) {
+                ret = ast->ret->expr->ident->var;
+            } if (ast->ret->expr->type == AST_CAST && ast->ret->expr->cast->object->type == AST_IDENTIFIER) {
+                // do we even need this part?
+                ret = ast->ret->expr->cast->object->ident->var;
+            } else if (needs_temp_var(ast->ret->expr)) {
+                ret = find_temp_var(scope, ast->ret->expr);
+            }
         }
         printf("\n");
         emit_deferred(scope);
@@ -1221,7 +1234,7 @@ void compile(Scope *scope, Ast *ast) {
         // emit parent defers
         Scope *s = scope;
         while (s->parent != NULL) {
-            emit_free_locals(s);
+            emit_free_locals_except_return(s, ret);
             if (s->type == Function) {
                 break;
             }
@@ -1618,6 +1631,23 @@ void emit_free(Scope *scope, Var *var) {
             printf(name_fmt, var->id);
             printf(".bytes);\n");
         }
+    }
+}
+
+void emit_free_locals_except_return(Scope *scope, Var *returned) {
+    VarList *locals = scope->vars;
+    while (locals != NULL) {
+        Var *v = locals->item;
+
+        locals = locals->next;
+        if (v->proxy != NULL) {
+            continue;
+        }
+        if (returned != NULL && (v == returned || v->id == returned->id)) {
+            continue;
+        }
+
+        emit_free(scope, v);
     }
 }
 

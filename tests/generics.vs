@@ -23,10 +23,11 @@ type Buf: struct(T){
     count: uint;
 };
 
-fn add_to_buf(b: &Buf($T), a: T) -> uint {
+fn add_to_buf(b: &Buf($T), a: T) -> T {
     b.data[b.count] = a;
     b.count += 1;
-    return b.count;
+    /*return b.count;*/
+    return a;
 }
 
 type Wrapper: struct(T){

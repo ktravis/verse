@@ -412,12 +412,16 @@ static Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
         if (!(ast->binary->right->type == AST_NEW/* || ast->binary->right == AST_MOVE*/)) {
             error(ast->line, ast->file, "Owned reference can only be assigned from new or move expression.");
         }
+    } else if (rt->comp == REF && rt->ref.owned) {
+        allocate_ast_temp_var(scope, ast->binary->right);
     }
 
     if (res_l->comp == ARRAY && res_l->array.owned) {
         if (!(ast->binary->right->type == AST_NEW/* || ast->binary->right == AST_MOVE*/)) {
             error(ast->line, ast->file, "Owned array slice can only be assigned from new or move expression.");
         }
+    } else if (rt->comp == ARRAY && rt->array.owned) {
+        allocate_ast_temp_var(scope, ast->binary->right);
     }
 
     if (!check_type(lt, rt)) {
@@ -804,6 +808,9 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         if (!(ast->impl->type->comp == ALIAS || ast->impl->type->comp == PARAMS)) {
             // others to do?
             error(ast->line, ast->file, "Type impl declarations only valid for named types.");
+        }
+        if (contains_generic_struct(ast->impl->type)) {
+            ast->impl->type = reify_struct(scope, ast, ast->impl->type);
         }
 
         in_impl = 1;
@@ -1232,14 +1239,16 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
             // TODO: is there a better way to do this?
             case REF:
                 if (decl->var->type->ref.owned) {
-                    if (!(init->type == AST_NEW /*|| init->type == AST_MOVE*/)) {
+                    if (!(init->type == AST_NEW/* || ast->binary->right == AST_MOVE*/
+                        || init->type == AST_CALL)) {
                         decl->var->type = make_ref_type(decl->var->type->ref.inner);
                     }
                 }
                 break;
             case ARRAY:
                 if (decl->var->type->array.owned) {
-                    if (!(init->type == AST_NEW /*|| init->type == AST_MOVE*/)) {
+                    if (!(init->type == AST_NEW/* || ast->binary->right == AST_MOVE*/
+                        || init->type == AST_CALL)) {
                         decl->var->type = make_array_type(decl->var->type->array.inner);
                     }
                 }
@@ -1253,13 +1262,15 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
             
             // owned references
             if (resolved->comp == REF && resolved->ref.owned) {
-                if (!(init->type == AST_NEW/* || ast->binary->right == AST_MOVE*/)) {
+                if (!(init->type == AST_NEW/* || ast->binary->right == AST_MOVE*/
+                    || (init->type == AST_CALL && init->var_type->comp == REF && init->var_type->ref.owned))) {
                     error(ast->line, ast->file, "Owned reference can only be assigned from new or move expression.");
                 }
             }
 
             if (resolved->comp == ARRAY && resolved->array.owned) {
-                if (!(init->type == AST_NEW/* || ast->binary->right == AST_MOVE*/)) {
+                if (!(init->type == AST_NEW/* || ast->binary->right == AST_MOVE*/
+                    || (init->type == AST_CALL && init->var_type->comp == ARRAY && init->var_type->array.owned))) {
                     error(ast->line, ast->file, "Owned array slice can only be assigned from new or move expression.");
                 }
             }
@@ -1982,6 +1993,9 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
     case AST_IMPL:
         check_for_unresolved(ast, ast->impl->type);
 
+        if (contains_generic_struct(ast->impl->type)) {
+            ast->impl->type = reify_struct(scope, ast, ast->impl->type);
+        }
         for (AstList *list = ast->impl->methods; list != NULL; list = list->next) {
             list->item = parse_semantics(scope, list->item);
             VarList *args = list->item->fn_decl->args;

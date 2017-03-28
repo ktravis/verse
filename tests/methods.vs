@@ -50,6 +50,15 @@ impl Thing {
     fn string(t: Thing($T)) -> string {
         return fmt.sprintf("thing(%, %)", t.name, t.stuff);
     }
+    fn test(t: Thing($T)) -> bool {
+        return true;
+    }
+}
+
+impl Thing(int) {
+    fn test(t: Thing(int)) -> bool {
+        return false;
+    }
 }
 
 fn main() -> int {
@@ -87,6 +96,12 @@ fn main() -> int {
 
     g.greet("Steve");
     assert((Guy::{name = "Steve"}).greet(2) == "Steve greets you, 2!");
+
+    u: Thing(Guy);
+    t: Thing(int);
+
+    assert(u.test());
+    assert(!t.test());
 
     return 0;
 }

@@ -15,7 +15,6 @@ fn init_A(a: &A, n: int) {
     blah: [10]u8;
     a.x = new [n] u8;
     a.y = new B;
-    /*a.x = blah[:];*/
 }
 
 fn test_A(a: &A, n: int) {
@@ -47,6 +46,24 @@ fn test_new_struct() {
     assert(y.stuff[12] == 24);
 }
 
+type Dude: struct{
+    a: string;
+}
+
+fn test_return_owned_array() -> '[]Dude {
+    return new [10] Dude;
+}
+
+fn test_return_owned_variable() -> 'Dude {
+    d := new Dude;
+    return d;
+}
+
+fn test_return_owned_from_function() -> 'Dude {
+    d := test_return_owned_variable();
+    return test_return_owned_variable();
+}
+
 fn main() -> int {
     test_return_owned_ref();
     test_new_struct();
@@ -62,10 +79,18 @@ fn main() -> int {
     assert(arr.length == 12);
     assert(arr[2] == "18");
 
-    // TODO: this is not counting as "owned"
-    /*arr: '[]string = new [n] string;*/
-
     b := arr;
+
+    d := test_return_owned_from_function();
+    a := test_return_owned_array();
+
+    for &dude, i in a {
+        dude.a = itoa(i);
+    }
+
+    for dude, i in a {
+        assert(dude.a == itoa(i));
+    }
 
     println("Tests passed.");
 
