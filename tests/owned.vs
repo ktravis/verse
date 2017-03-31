@@ -61,6 +61,9 @@ fn test_return_owned_variable() -> 'Dude {
 
 fn test_return_owned_from_function() -> 'Dude {
     d := test_return_owned_variable();
+    if false {
+        return d;
+    }
     return test_return_owned_variable();
 }
 

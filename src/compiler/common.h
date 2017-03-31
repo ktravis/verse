@@ -134,6 +134,7 @@ typedef struct Polymorph {
     struct Polymorph *next;
     struct Scope     *scope;
     struct AstBlock  *body;
+    Type             *ret;
 } Polymorph;
 
 typedef enum {

@@ -8,8 +8,11 @@ Polymorph *create_polymorph(AstFnDecl *decl, TypeList *arg_types) {
     p->id = decl->polymorphs == NULL ? 0 : decl->polymorphs->id + 1;
     p->args = arg_types;
     p->next = decl->polymorphs;
-    p->scope = new_scope(decl->scope);
+    p->scope = new_fn_scope(decl->scope);
+    p->scope->fn_var = decl->var;
+    p->scope->polymorph = p;
     p->body = copy_ast_block(p->scope, decl->body); // p->scope or scope?
+    p->ret = NULL;
     decl->polymorphs = p;
     return p;
 }

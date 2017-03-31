@@ -363,7 +363,7 @@ Type *define_polymorph(Scope *s, Type *poly, Type *type) {
 
     TypeDef *td = malloc(sizeof(TypeDef));
     td->name = poly->name;
-    td->type = type;
+    td->type = resolve_polymorph(type);
     td->next = s->polymorph->defs;
 
     s->polymorph->defs = td;

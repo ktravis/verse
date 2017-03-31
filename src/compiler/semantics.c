@@ -182,6 +182,7 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
     }
 
     Type *r = make_struct_type(inner->st.nmembers, inner->st.member_names, member_types);
+    r->scope = t->scope;
     r->st.generic_base = t;
     register_type(r);
 
@@ -664,6 +665,8 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         {
             VarList *vars = ast->fn_decl->args;
             for (TypeList *args = ast->fn_decl->var->type->fn.args; args != NULL; args = args->next) {
+                // TODO: what if the polydef isn't the generic struct? i.e. fn
+                // type, is this okay?
                 if (!is_polydef(args->item) && contains_generic_struct(args->item)) {
                     args->item = reify_struct(ast->fn_decl->scope, ast, args->item);
                     if (ast->fn_decl->var->type->fn.variadic && args->next == NULL) {
@@ -673,6 +676,11 @@ Ast *first_pass(Scope *scope, Ast *ast) {
                     }
                 }
                 vars = vars->next;
+            }
+
+            Type *ret = ast->fn_decl->var->type->fn.ret;
+            if (ret != NULL && !is_polydef(ast->fn_decl->var->type) && contains_generic_struct(ret)) {
+                ast->fn_decl->var->type->fn.ret = reify_struct(ast->fn_decl->scope, ast, ret);
             }
         }
 
@@ -957,6 +965,8 @@ static Ast *_parse_struct_literal_semantics(Scope *scope, Ast *ast, Type *type, 
 }
 
 static Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
+    // TODO: shouldn't we be doing this?
+    /*Type *type = resolve_polymorph(ast->lit->compound_val.type);*/
     Type *type = ast->lit->compound_val.type;
     if (contains_generic_struct(type)) {
         type = reify_struct(scope, ast, type);
@@ -1211,12 +1221,6 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
         if (decl->var->type->comp == STATIC_ARRAY && decl->var->type->array.length == -1) {
             error(ast->line, ast->file, "Cannot use unspecified array type for variable '%s' without initialization.", decl->var->name);
         }
-
-        /*if (decl->var->type->comp == ARRAY) {*/
-            /*error(ast->line, ast->file, "Cannot use array slice type for variable '%s' without initialization.", decl->var->name);*/
-        /*} else if (decl->var->type->comp == REF) {*/
-            /*error(ast->line, ast->file, "Cannot declare variable '%s' as a reference without initialization.", decl->var->name);*/
-        /*}*/
     } else {
         decl->init = parse_semantics(scope, init);
         init = decl->init;
@@ -1523,7 +1527,7 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
     if (match != NULL) {
         // made a match to existing polymorph
         ast->call->polymorph = match;
-        ast->var_type = resolve_polymorph(resolved->fn.ret);
+        ast->var_type = resolve_polymorph(match->ret);
         return ast;
     } else {
         match = create_polymorph(decl, call_arg_types);
@@ -1543,7 +1547,7 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
         Type *expected_type = list->item;
 
         if (is_polydef(expected_type)) {
-            if (!match_polymorph(decl->scope, expected_type, arg_type)) {
+            if (!match_polymorph(match->scope, expected_type, arg_type)) {
                 error(ast->line, ast->file, "Expected polymorphic argument type %s, but got an argument of type %s",
                         type_to_string(expected_type), type_to_string(arg_type));
             }
@@ -1571,9 +1575,28 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
     defined_arg_types = reverse_typelist(defined_arg_types);
     verify_arg_types(scope, ast, defined_arg_types, ast->call->args, resolved->fn.variadic);
 
+    if (contains_generic_struct(resolved->fn.ret)) {
+        resolved->fn.ret = reify_struct(match->scope, ast, resolved->fn.ret);
+    }
+
+    Type *ret = copy_type(match->scope, resolved->fn.ret);
+    if (ret != NULL) {
+        // TODO: check_for_unresolved here?
+        ret = resolve_polymorph(ret);
+        if (contains_generic_struct(ret)) {
+            ret = reify_struct(match->scope, ast, ret);
+        }
+    } else {
+        ret = base_type(VOID_T);
+    }
+    // TODO: I think that this probably shouldn't modify resolved, it should be
+    // maybe adding something to the scope instead?
+    /*resolved->fn.ret = ret;*/
+
+    match->ret = ret; // this is used in the body, must be done before parse_block_semantics
     match->body = parse_block_semantics(match->scope, match->body, 1);
 
-    ast->var_type = resolve_polymorph(resolved->fn.ret);
+    ast->var_type = ret;
 
     return ast;
 }
@@ -1605,12 +1628,19 @@ static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
         Type *first_arg_type = m->method->decl->args->item->type;
         if (is_polydef(first_arg_type)) {
             if (!match_polymorph(NULL, first_arg_type, recv->var_type)) {
-                if (!(first_arg_type->comp == REF && match_polymorph(NULL, first_arg_type->ref.inner, recv->var_type->ref.inner))) {
+                if (!(first_arg_type->comp == REF && match_polymorph(NULL, first_arg_type->ref.inner, recv->var_type))) {
                     error(ast->line, ast->file, "Expected method '%s' receiver of type '%s', but got type '%s'.",
                         ast->call->fn->method->name, type_to_string(first_arg_type), type_to_string(recv->var_type));
                 }
                 /*error(ast->line, ast->file, "Expected method '%s' receiver of polymorphic type '%s', but got type '%s'.",*/
                     /*ast->call->fn->method->name, type_to_string(first_arg_type), type_to_string(recv->var_type));*/
+                Ast *uop = ast_alloc(AST_UOP);
+                uop->line = recv->line;
+                uop->file = recv->file;
+                uop->unary->op = OP_REF;
+                uop->unary->object = recv;
+                uop->var_type = make_ref_type(recv->var_type);
+                recv = uop;
             }
         } else if (!check_type(recv->var_type, first_arg_type)) {
             if (!(first_arg_type->comp == REF && check_type(recv->var_type, first_arg_type->ref.inner))) {
@@ -1622,7 +1652,7 @@ static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
             uop->file = recv->file;
             uop->unary->op = OP_REF;
             uop->unary->object = recv;
-            uop->var_type = m->method->decl->args->item->type;
+            uop->var_type = make_ref_type(recv->var_type);
             recv = uop;
         }
 
@@ -2115,9 +2145,17 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         Type *fn_ret_t = fn_scope->fn_var->type->fn.ret;
         Type *ret_t = base_type(VOID_T);
 
+        if (fn_scope->polymorph != NULL) {
+            fn_ret_t = fn_scope->polymorph->ret;
+        }
+
         if (ast->ret->expr != NULL) {
+            // TODO: this is wrong in test.vs, why? even after doing
+            // resolve_polymorph, the type is still Array(T). Is the scope not
+            // being set to the proper one (with the polymorph on it), so that
+            // at this point there is nothing to resolve to?
             ast->ret->expr = parse_semantics(scope, ast->ret->expr);
-            ret_t = ast->ret->expr->var_type;
+            ret_t = resolve_polymorph(ast->ret->expr->var_type);
         }
 
         if (ret_t->comp == STATIC_ARRAY) {

@@ -23,13 +23,25 @@ MethodList *all_methods = NULL;
 
 Ast *find_method(Type *t, char *name) {
     t = resolve_alias(t);
+    Ast *possible = NULL;
+    // TODO: NEED TO ALLOW FOR list->type to be an alias (Array) and t be struct
+    // (reified Array(string)
     for (MethodList *list = all_methods; list != NULL; list = list->next) {
         /*if (resolve_alias(list->type) == t && !strcmp(list->name, name)) {*/
-        if (check_type(resolve_alias(list->type), t) && !strcmp(list->name, name)) {
-            return list->decl;
+        if (!strcmp(list->name, name)) {
+            if (check_type(resolve_alias(list->type), t)) {
+                return list->decl;
+            } else if (t->comp == STRUCT && t->st.generic_base != NULL) {
+                assert(t->st.generic_base->comp == PARAMS);
+                if (check_type(list->type, t->st.generic_base->params.inner)) {
+                    // not an exact match, so don't return yet in case there is
+                    // a specific one
+                    possible = list->decl;
+                }
+            }
         }
     }
-    return NULL;
+    return possible;
 }
 
 Ast *define_method(Type *t, Ast *decl) {
@@ -331,7 +343,7 @@ Type *lookup_type(Scope *s, char *name);
 Type *lookup_local_type(Scope *s, char *name);
 Package *lookup_imported_package(Scope *s, char *name);
 
-Type *resolve_polymorph(Type *type) {
+Type *_resolve_polymorph(Type *type) {
     for (;;) {
         if (type->comp == POLYDEF) {
             Type *t = lookup_type(type->scope, type->name);
@@ -359,6 +371,45 @@ Type *resolve_polymorph(Type *type) {
     return type;
 }
 
+Type *resolve_polymorph(Type *type) {
+    switch (type->comp) {
+    case POLYDEF:
+    case ALIAS:
+        type = _resolve_polymorph(type);
+        break;
+    case REF:
+        type->ref.inner = resolve_polymorph(type->ref.inner);
+        break;
+    case ARRAY:
+    case STATIC_ARRAY:
+        type->array.inner = resolve_polymorph(type->array.inner);
+        break;
+    case STRUCT:
+        for (int i = 0; i < type->st.nmembers; i++) {
+            type->st.member_types[i] = resolve_polymorph(type->st.member_types[i]);
+        }
+        break;
+    case FUNC:
+        for (TypeList *args = type->fn.args; args != NULL; args = args->next) {
+            args->item = resolve_polymorph(args->item);
+        }
+        if (type->fn.ret != NULL) {
+            type->fn.ret = resolve_polymorph(type->fn.ret);
+        }
+        break;
+    case PARAMS:
+        for (TypeList *list = type->params.args; list != NULL; list = list->next) {
+            list->item = resolve_polymorph(list->item);
+        }
+        type->params.inner = resolve_polymorph(type->params.inner);
+        break;
+    case BASIC:
+    default:
+        break;
+    }
+    return type;
+}
+
 Type *resolve_external(Type *type) {
     assert(type->comp == EXTERNAL);
     assert(type->scope != NULL);
@@ -379,7 +430,7 @@ Type *resolve_alias(Type *type) {
     if (type == NULL) {
         return NULL;
     }
-    type = resolve_polymorph(type);
+    type = _resolve_polymorph(type);
     Scope *s = type->scope;
     if (type->comp == EXTERNAL) {
         return resolve_alias(resolve_external(type));

@@ -141,7 +141,7 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
             cp->lit->compound_val.type = copy_type(scope, cp->lit->compound_val.type);
             cp->lit->compound_val.member_exprs = malloc(sizeof(Ast*) * cp->lit->compound_val.nmembers);
             for (int i = 0; i < cp->lit->compound_val.nmembers; i++) {
-                cp->lit->compound_val.member_exprs[i] = copy_ast(scope, cp->lit->compound_val.member_exprs[i]);
+                cp->lit->compound_val.member_exprs[i] = copy_ast(scope, ast->lit->compound_val.member_exprs[i]);
             }
             break;
         case ENUM_LIT:
@@ -250,8 +250,12 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
     case AST_FOR:
         cp->for_loop = calloc(sizeof(AstFor), 1);
         cp->for_loop->itervar = copy_var(scope, ast->for_loop->itervar);
+        if (ast->for_loop->index != NULL) {
+            cp->for_loop->index = copy_var(scope, ast->for_loop->index);
+        }
         cp->for_loop->iterable = copy_ast(scope, ast->for_loop->iterable);
         cp->for_loop->body = copy_ast_block(scope, ast->for_loop->body);
+        cp->for_loop->by_reference = ast->for_loop->by_reference;
         break;
     case AST_ANON_SCOPE:
         cp->anon_scope->body = copy_ast_block(scope, ast->anon_scope->body);
