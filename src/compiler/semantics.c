@@ -1706,6 +1706,10 @@ static Ast *parse_func_decl_semantics(Scope *scope, Ast *ast) {
         // argument using its type, as in fn (T, $T) -> T
         for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
             if (is_polydef(args->item->type)) {
+                if (args->next == NULL && ast->fn_decl->var->type->fn.variadic) {
+                    // variadic is polydef
+                    error(ast->line, ast->file, "Variadic function argument cannot define a polymorphic type.");
+                }
                 // get alias
                 define_polydef_alias(type_check_scope, args->item->type);
             }
@@ -1716,8 +1720,7 @@ static Ast *parse_func_decl_semantics(Scope *scope, Ast *ast) {
         check_for_unresolved_with_scope(ast, args->item->type, type_check_scope);
 
         if (!is_concrete(args->item->type)) {
-            error(lineno(), current_file_name(),
-                  "Argument '%s' has generic type '%s' (not allowed currently).",
+            error(ast->line, ast->file, "Argument '%s' has generic type '%s' (not allowed currently).",
                   args->item->name, type_to_string(args->item->type));
         }
 
@@ -1740,11 +1743,11 @@ static Ast *parse_func_decl_semantics(Scope *scope, Ast *ast) {
             for (int i = 0; i < t->st.nmembers; i++) {
                 char *name = t->st.member_names[i];
                 if (lookup_local_var(ast->fn_decl->scope, name) != NULL) {
-                    error(lineno(), current_file_name(),
+                    error(ast->line, ast->file,
                         "'use' statement on struct type '%s' conflicts with existing argument named '%s'.",
                         type_to_string(orig), name);
                 } else if (local_type_name_conflict(scope, name)) {
-                    error(lineno(), current_file_name(),
+                    error(ast->line, ast->file,
                         "'use' statement on struct type '%s' conflicts with builtin type named '%s'.",
                         type_to_string(orig), name);
                 }
