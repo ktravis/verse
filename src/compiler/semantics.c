@@ -1409,7 +1409,7 @@ static void verify_arg_types(Scope *scope, Ast *ast, TypeList *expected_types, A
 
     for (int i = 0; arg_vals != NULL; i++) {
         Ast *arg = arg_vals->item;
-        Type *expected = expected_types->item;
+        Type *expected = resolve_polymorph(expected_types->item);
 
         if (arg->type == AST_SPREAD) {
             // handled by verify_arg_count
