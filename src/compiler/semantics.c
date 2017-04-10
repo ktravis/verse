@@ -397,8 +397,8 @@ static Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
         error(ast->line, ast->file, "Cannot reassign constant '%s'.", ast->binary->left->ident->var->name);
     }
 
-    Type *lt = ast->binary->left->var_type;
-    Type *rt = ast->binary->right->var_type;
+    Type *lt = resolve_polymorph(ast->binary->left->var_type); // TODO: this is a temporary fix
+    Type *rt = resolve_polymorph(ast->binary->right->var_type);
 
     if (needs_temp_var(ast->binary->right) || is_dynamic(ast->binary->left->var_type)) {
     /*if(needs_temp_var(ast->binary->right)) {*/
@@ -1543,8 +1543,23 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
     TypeList *defined_arg_types = NULL;
 
     for (TypeList *list = resolved->fn.args; list != NULL; list = list->next) {
-        Type *arg_type = call_args->item->var_type;
         Type *expected_type = list->item;
+        if (call_args == NULL) {
+            // we should only get to this point if verify_arg_counts has passed already
+            assert(resolved->fn.variadic);
+            assert(list->next == NULL); // last argument
+
+            defined_arg_types = typelist_append(defined_arg_types, expected_type);
+
+            Var *v = copy_var(match->scope, arg_vars->item);
+            v->type = defined_arg_types->item;
+            if (resolved->fn.variadic && list->next == NULL) {
+                v->type = make_array_type(v->type);
+            }
+            attach_var(match->scope, v);
+            break;
+        }
+        Type *arg_type = call_args->item->var_type;
 
         if (is_polydef(expected_type)) {
             if (!match_polymorph(match->scope, expected_type, arg_type)) {

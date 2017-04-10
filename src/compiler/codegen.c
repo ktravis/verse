@@ -541,7 +541,9 @@ void emit_func_decl(Scope *scope, Ast *fn) {
                     printf(",");
                 }
                 args = args->next;
-                arg_types = arg_types->next;
+                if (arg_types != NULL) {
+                    arg_types = arg_types->next;
+                }
             }
             printf(") ");
             
@@ -1775,6 +1777,7 @@ void emit_var_decl(Scope *scope, Var *v) {
     }
     printf(";\n");
 }
+
 void emit_forward_decl(Scope *scope, AstFnDecl *decl) {
     if (decl->polymorphs != NULL) {
         scope = decl->scope;
@@ -1792,18 +1795,22 @@ void emit_forward_decl(Scope *scope, AstFnDecl *decl) {
 
             printf("_poly_%d_vs_%d(", p->id, decl->var->id);
 
-            TypeList *args = p->args;
-            for (int i = 0; args != NULL; i++) {
-                if (t->fn.variadic && args->next == NULL) {
+            VarList *args = decl->args;
+            TypeList *arg_types = p->args;
+            while (args != NULL) {
+                if (decl->var->type->fn.variadic && args->next == NULL) {
                     printf("struct array_type ");
                 } else {
-                    emit_type(args->item);
+                    emit_type(arg_types->item);
                 }
-                printf("a%d", i);
+                printf("_vs_%d", args->item->id);
                 if (args->next != NULL) {
                     printf(",");
                 }
                 args = args->next;
+                if (arg_types != NULL) {
+                    arg_types = arg_types->next;
+                }
             }
             printf(");\n");
             scope->polymorph = NULL;

@@ -441,7 +441,7 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from) {
             return number_cast(scope, from, to);
         } else {
             if (is_string(from->var_type) &&
-              t->data->base == UINT_T && t->data->size == 1 &&
+              t->comp == BASIC && t->data->base == UINT_T && t->data->size == 1 &&
               strlen(from->lit->string_val) == 1) {
                 Ast *c = ast_alloc(AST_LITERAL);
                 c->lit->int_val = from->lit->string_val[0];

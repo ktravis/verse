@@ -448,7 +448,10 @@ TypeDef *find_type_definition(Type *t) {
         if (scope->polymorph != NULL) {
             for (TypeDef *td = scope->polymorph->defs; td != NULL; td = td->next) {
                 if (!strcmp(td->name, t->name)) {
-                    return find_type_definition(td->type);
+                    if (td->type->comp == ALIAS || td->type->comp == POLYDEF) {
+                        return find_type_definition(td->type);
+                    }
+                    return td;
                 }
             }
         }
