@@ -20,8 +20,8 @@ fn sum(x:[]$T) -> T {
     return s;
 }
 
-fn var(x:$T...) -> T {
-    return x[1];
+fn var(x:$T, rest: T...) -> T {
+    return rest[0];
 }
 
 fn eh(x:$T, f:fn(T) -> T) -> T {
