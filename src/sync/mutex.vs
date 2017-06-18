@@ -51,8 +51,7 @@ fn futex_wait(addr:&s64, waiters:&s64, val:s64, priv:s64) {
         priv = FUTEX_PRIVATE as s64;
     }
     // TODO: Cannot perform logical negation on type '&s64' or 's64'
-    //while (!waiters || !*waiters) {
-    while (*waiters != 0) {
+    while (!validptr(waiters as ptr) || *waiters == 0) {
         spins -= 1;
         if spins == 0 {
             break;

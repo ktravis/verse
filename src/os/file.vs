@@ -1,5 +1,5 @@
-#import "syscall"
 #import "os"
+#import "syscall"
 
 Stdout := 1;
 Stderr := 2;
@@ -51,13 +51,26 @@ F_GETOWN_EX := 16;
 
 F_GETOWNER_UIDS := 17;
 
+AT_FDCWD            := -100;
+AT_SYMLINK_NOFOLLOW := 0x100;
+AT_REMOVEDIR        := 0x200;
+AT_SYMLINK_FOLLOW   := 0x400;
+AT_EACCESS          := 0x200;
 
-fn open(filename:string, flags:int, mode:int) -> int {
-    fd := syscall.syscall3(syscall.sys_open, filename.bytes, flags|os.O_CLOEXEC, mode) as int; 
+fn open(path: string, flags: int, mode: int) -> int {
+    fd := syscall.syscall3(syscall.sys_open, path.bytes, flags|os.O_CLOEXEC, mode) as int;
     if (fd < 0 || flags & os.O_CLOEXEC) {
         syscall.syscall3(syscall.sys_fcntl, fd, os.F_SETFD, os.FD_CLOEXEC);
     }
     return fd;
+}
+
+fn remove(path: string) -> int {
+    r := syscall.syscall3(syscall.sys_unlinkat, AT_FDCWD, path.bytes, 0) as int;
+    if (r == -syscall.EISDIR) {
+        r = syscall.syscall3(syscall.sys_unlinkat, AT_FDCWD, path.bytes, AT_REMOVEDIR) as int;
+    }
+    return r;
 }
 
 fn write(fd:int, s:string) {

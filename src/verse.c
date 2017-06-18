@@ -18,6 +18,9 @@ int main(int argc, char **argv) {
     if (argc == 2) {
         // TODO some sort of util function for opening a file and gracefully
         // handling errors (needs to be different for here vs. from #import
+        // TODO: the previous message is probably referring to this but just
+        // in case, if an invalid filename string is passed in, the compiler
+        // will segfault.
         set_file_source(argv[1], fopen(argv[1], "r"));
     } else if (argc == 1) {
         set_file_source("<stdin>", stdin);
