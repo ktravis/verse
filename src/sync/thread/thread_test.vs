@@ -1,34 +1,25 @@
 #import "fmt"
 #import "os"
 #import "sync"
+#import "sync/thread"
 #import "syscall"
 #import "time"
 
 m:sync.Mutex;
 
-fn func1() {
-    sync.lock(&m);
-    fmt.printf("func1(): Nice\n");
-    sync.unlock(&m);
-    // TODO: sys_exit is required for the thread to clean up but
-    // clone function appears to be calling sys_exit in some cases.
-    // should probably get a better handle on what it is doing.
-    syscall.syscall1(syscall.sys_exit, 0);
-}
-
-fn func2() {
-    sync.lock(&m);
-    fmt.printf("func2(): Dawg\n");
-    sync.unlock(&m);
-    // TODO: sys_exit is required for the thread to clean up but
-    // clone function appears to be calling sys_exit in some cases.
-    // should probably get a better handle on what it is doing.
-    syscall.syscall1(syscall.sys_exit, 0);
-}
-
 fn testThreads() {
-    t1 := sync.threadCreate(func1);
-    t2 := sync.threadCreate(func2);
+    t1 := thread.New(fn() {
+        sync.lock(&m);
+        fmt.printf("thread-1\n");
+        sync.unlock(&m);
+        syscall.syscall1(syscall.sys_exit, 0);
+    });
+    t2 := thread.New(fn() {
+        sync.lock(&m);
+        fmt.printf("thread-2\n");
+        sync.unlock(&m);
+        syscall.syscall1(syscall.sys_exit, 0);
+    });
     // now we "join" ...
     time.sleep(1);
 

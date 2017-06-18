@@ -1,26 +1,5 @@
-MAP_SHARED     := 0x01;
-MAP_PRIVATE    := 0x02;
-MAP_TYPE       := 0x0f;
-MAP_FIXED      := 0x10;
-MAP_ANON       := 0x20;
-MAP_ANONYMOUS  := MAP_ANON;
-MAP_NORESERVE  := 0x4000;
-MAP_GROWSDOWN  := 0x0100;
-MAP_DENYWRITE  := 0x0800;
-MAP_EXECUTABLE := 0x1000;
-MAP_LOCKED     := 0x2000;
-MAP_POPULATE   := 0x8000;
-MAP_NONBLOCK   := 0x10000;
-MAP_STACK      := 0x20000;
-MAP_HUGETLB    := 0x40000;
-MAP_FILE       := 0;
-
-PROT_NONE      := 0;
-PROT_READ      := 1;
-PROT_WRITE     := 2;
-PROT_EXEC      := 4;
-PROT_GROWSDOWN := 0x01000000;
-PROT_GROWSUP   := 0x02000000;
+#import "os"
+#import "syscall"
 
 CSIGNAL               :=  0x000000ff;
 CLONE_VM              :=  0x00000100;
@@ -88,21 +67,26 @@ type Thread: struct {
     args:[]Any;
 };
 
-extern fn __clone(fn(), #autocast ptr, #autocast ptr, #autocast ptr);
+extern fn clone(fn(), #autocast ptr, #autocast ptr, #autocast ptr);
 
 STACK_SIZE := 4096;
 
-fn threadCreate(start:fn()) -> &Thread {
+fn New(start: fn()) -> &Thread {
+    // TODO: use here causes a segfault in the compiler at
+    // compiler/semantics:235 in function parse_dot_op_semantics
+    // use syscall;
     t:Thread;
     // TODO: using MAP_GROWSDOWN causes a segfault ONLY when using `make`
-    //t.stack = syscall.mmap(0, STACK_SIZE, PROT_READ | PROT_WRITE,
-        //MAP_PRIVATE | MAP_ANON | MAP_GROWSDOWN, -1, 0);
-    t.stack = syscall.mmap(0, STACK_SIZE, PROT_READ | PROT_WRITE,
-        MAP_PRIVATE | MAP_ANON, -1, 0);
+    // TODO: this may not still be the case, but for now appears to work as
+    // expected. using mmap with MAP_GROWSDOWN and a smaller STACK_SIZE (like
+    // 256) runs successfully, however, without MAP_GROWSDOWN it causes a
+    // segfault
+    t.stack = syscall.mmap(0, STACK_SIZE, syscall.PROT_READ | syscall.PROT_WRITE,
+        syscall.MAP_PRIVATE | syscall.MAP_ANON | syscall.MAP_GROWSDOWN, -1, 0);
     flags := CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_PARENT|CLONE_THREAD|CLONE_IO;
     // TODO: is this necessary? or does the presence of certain flags return the
     // top of the stack already from mmap?
     s := t.stack as int + STACK_SIZE;
-    __clone(start, s, flags, 0);
+    clone(start, s, flags, 0);
     return &t;
 }
