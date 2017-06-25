@@ -42,4 +42,4 @@ test: build
 
 unit-test:
 	# Unit tests:
-	@for f in src/*/*_test.vs; do echo "Testing $$f..."; ./verse $$f >/dev/null; done;
+	@for f in src/*/*_test.vs src/*/*/*_test.vs; do echo "Testing $$f..."; ./verse $$f >/dev/null; done;
