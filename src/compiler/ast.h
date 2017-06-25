@@ -6,11 +6,6 @@
 #include "scope.h"
 #include "types.h"
 
-typedef struct AstList {
-    Ast *item;
-    struct AstList *next;
-} AstList;
-
 typedef enum {
     INTEGER,
     CHAR,
@@ -38,11 +33,10 @@ typedef struct AstLiteral {
         char      *string_val;
         struct {
             Type  *type;
-            int    nmembers;
             int    named;
             char **member_names;
             Ast  **member_exprs;
-            Var   *array_tempvar;
+            TempVar   *array_tempvar;
         } compound_val; // array or struct
         struct {
             long enum_index;
@@ -89,9 +83,8 @@ typedef struct AstDot {
 
 typedef struct AstCall {
     Ast *fn; // obj?
-    int nargs;
-    struct AstList *args;
-    Var *variadic_tempvar;
+    struct Ast **args;
+    TempVar *variadic_tempvar;
     Polymorph *polymorph;
     char has_spread;
 } AstCall;
@@ -108,7 +101,7 @@ typedef struct AstIndex {
 } AstIndex;
 
 typedef struct AstBlock {
-    struct AstList *statements;
+    struct Ast **statements;
     char           *file;
     int             startline;
     int             endline;
@@ -117,10 +110,10 @@ typedef struct AstBlock {
 typedef struct AstFnDecl {
     Var       *var;
     int        anon;
-    VarList   *args;
+    Var      **args;
     Scope     *scope;
     AstBlock  *body;
-    Polymorph *polymorphs;
+    Polymorph **polymorphs;
     // TODO: sloppy, clean this up
     int        ext_autocast;
 } AstFnDecl;
@@ -206,7 +199,7 @@ typedef struct AstDefer {
 
 typedef struct AstImpl {
     Type    *type;
-    AstList *methods;
+    Ast    **methods;
 } AstImpl;
 
 typedef struct AstMethod {
@@ -234,10 +227,6 @@ Ast *make_ast_binop(int op, Ast *left, Ast *right);
 Ast *make_ast_slice(Ast *inner, Ast *offset, Ast *length);
 
 char *get_varname(Ast *ast);
-
-AstList *astlist_prepend(AstList *list, Ast *ast);
-AstList *astlist_append(AstList *list, Ast *ast);
-AstList *reverse_astlist(AstList *list);
 
 int needs_temp_var(Ast *ast);
 int is_lvalue(Ast *ast);

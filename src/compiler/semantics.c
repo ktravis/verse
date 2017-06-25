@@ -2,9 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../array/array.h"
 #include "semantics.h"
 #include "eval.h"
 #include "parse.h"
+#include "package.h"
 #include "polymorph.h"
 #include "types.h"
 #include "typechecking.h"
@@ -13,13 +15,12 @@
 static int in_impl = 0;
 
 void check_for_unresolved_with_scope(Ast *ast, Type *t, Scope *scope) {
-    assert(t != NULL);
     Scope *tmp = t->scope;
     t->scope = scope;
     switch (t->comp) {
     case FUNC:
-        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
-            check_for_unresolved_with_scope(ast, list->item, scope);
+        for (int i = 0; i < array_len(t->fn.args); i++) {
+            check_for_unresolved_with_scope(ast, t->fn.args[i], scope);
         }
         if (t->fn.ret != NULL) {
             check_for_unresolved_with_scope(ast, t->fn.ret, scope);
@@ -27,7 +28,7 @@ void check_for_unresolved_with_scope(Ast *ast, Type *t, Scope *scope) {
         break;
     case STRUCT: {
         // line numbers can be weird on this...
-        for (int i = 0; i < t->st.nmembers; i++) {
+        for (int i = 0; i < array_len(t->st.member_types); i++) {
             check_for_unresolved_with_scope(ast, t->st.member_types[i], scope);
         }
         break;
@@ -55,11 +56,10 @@ void check_for_unresolved_with_scope(Ast *ast, Type *t, Scope *scope) {
 }
 
 void check_for_unresolved(Ast *ast, Type *t) {
-    assert(t != NULL);
     switch (t->comp) {
     case FUNC:
-        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
-            check_for_unresolved(ast, list->item);
+        for (int i = 0; i < array_len(t->fn.args); i++) {
+            check_for_unresolved(ast, t->fn.args[i]);
         }
         if (t->fn.ret != NULL) {
             check_for_unresolved(ast, t->fn.ret);
@@ -67,7 +67,7 @@ void check_for_unresolved(Ast *ast, Type *t) {
         break;
     case STRUCT: {
         // line numbers can be weird on this...
-        for (int i = 0; i < t->st.nmembers; i++) {
+        for (int i = 0; i < array_len(t->st.member_types); i++) {
             check_for_unresolved(ast, t->st.member_types[i]);
         }
         break;
@@ -99,9 +99,9 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
 
     switch (t->comp) {
     case FUNC:
-        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
-            if (contains_generic_struct(list->item)) {
-                list->item = reify_struct(scope, ast, list->item);
+        for (int i = 0; i < array_len(t->fn.args); i++) {
+            if (contains_generic_struct(t->fn.args[i])) {
+                t->fn.args[i] = reify_struct(scope, ast, t->fn.args[i]);
             }
         }
         if (t->fn.ret != NULL && contains_generic_struct(t->fn.ret)) {
@@ -109,7 +109,7 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
         }
         return t;
     case STRUCT: {
-        for (int i = 0; i < t->st.nmembers; i++) {
+        for (int i = 0; i < array_len(t->st.member_types); i++) {
             if (contains_generic_struct(t->st.member_types[i])) {
                 t->st.member_types[i] = reify_struct(scope, ast, t->st.member_types[i]);
             }
@@ -135,9 +135,9 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
         error(-1, "<internal>", "what are you even");
         break;
     case PARAMS:
-        for (TypeList *list = t->params.args; list != NULL; list = list->next) {
-            if (contains_generic_struct(list->item)) {
-                list->item = reify_struct(scope, ast, list->item);
+        for (int i = 0; i < array_len(t->params.args); i++) {
+            if (contains_generic_struct(t->params.args[i])) {
+                t->params.args[i] = reify_struct(scope, ast, t->params.args[i]);
             }
         }
         break;
@@ -151,37 +151,26 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
         error(ast->line, ast->file, "Invalid parameterization, type '%s' is not a generic struct.", type_to_string(t->params.inner));
     }
 
-    TypeList *given = t->params.args;
-    TypeList *expected = inner->st.arg_params;
+    Type **given = t->params.args;
+    Type **expected = inner->st.arg_params;
     
-    int given_len = 0;
-    for (TypeList *list = given; list != NULL; list = list->next) {
-        check_for_unresolved(ast, list->item);
-        given_len++;
-    }
-    int expected_len = 0;
-    for (TypeList *list = expected; list != NULL; list = list->next) {
-        expected_len++;
+    for (int i = 0; i < array_len(given); i++) {
+        check_for_unresolved(ast, given[i]);
     }
 
-    if (given_len != expected_len) {
+    if (array_len(given) != array_len(expected)) {
         error(ast->line, ast->file, "Invalid parameterization, type '%s' expects %d parameters but received %d.",
-              type_to_string(t->params.inner), expected_len, given_len);
+              type_to_string(t->params.inner), array_len(expected), array_len(given));
     }
 
-    Type **member_types = malloc(sizeof(Type*) * t->ref.inner->st.nmembers);
-    for (int i = 0; i < inner->st.nmembers; i++) {
-        member_types[i] = inner->st.member_types[i]; 
-    }
-    for (; given != NULL; given = given->next) {
-        for (int i = 0; i < inner->st.nmembers; i++) {
-            member_types[i] = replace_type(copy_type(member_types[i]->scope, member_types[i]), expected->item, given->item);
+    Type **member_types = array_copy(inner->st.member_types);
+    for (int i = 0; i < array_len(given); i++) {
+        for (int j = 0; j < array_len(inner->st.member_types); j++) {
+            member_types[j] = replace_type(copy_type(member_types[j]->scope, member_types[j]), expected[i], given[i]);
         }
-
-        expected = expected->next; 
     }
 
-    Type *r = make_struct_type(inner->st.nmembers, inner->st.member_names, member_types);
+    Type *r = make_struct_type(inner->st.member_names, member_types);
     r->scope = t->scope;
     r->st.generic_base = t;
     register_type(r);
@@ -189,8 +178,8 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
     return r;
 }
 
-static Ast *parse_uop_semantics(Scope *scope, Ast *ast) {
-    ast->unary->object = parse_semantics(scope, ast->unary->object);
+static Ast *check_uop_semantics(Scope *scope, Ast *ast) {
+    ast->unary->object = check_semantics(scope, ast->unary->object);
     Ast *o = ast->unary->object;
     switch (ast->unary->op) {
     case OP_NOT:
@@ -232,7 +221,7 @@ static Ast *parse_uop_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
+static Ast *check_dot_op_semantics(Scope *scope, Ast *ast) {
     if (ast->dot->object->type == AST_IDENTIFIER) {
         // TODO: need to make sure that an enum or package in outer scope cannot
         // shadow a locally (or closer to locally) declared variable just
@@ -243,7 +232,7 @@ static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
         Type *resolved = resolve_alias(t);
         if (resolved != NULL) {
             if (resolved->comp == ENUM) {
-                for (int i = 0; i < resolved->en.nmembers; i++) {
+                for (int i = 0; i < array_len(resolved->en.member_names); i++) {
                     if (!strcmp(resolved->en.member_names[i], ast->dot->member_name)) {
                         Ast *a = ast_alloc(AST_LITERAL);
                         a->lit->lit_type = ENUM_LIT;
@@ -266,7 +255,7 @@ static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
         }
 
         // Package case
-        // maybe change this to have parse_semantics on the object return an
+        // maybe change this to have check_semantics on the object return an
         // "AST_PACKAGE" type? That way more can be done with it, more
         // versatile?
         Package *p = lookup_imported_package(scope, ast->dot->object->ident->varname);
@@ -311,7 +300,7 @@ static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
             return ast;
         }
     } 
-    ast->dot->object = parse_semantics(scope, ast->dot->object);
+    ast->dot->object = check_semantics(scope, ast->dot->object);
 
     Type *orig = ast->dot->object->var_type;
     Type *t = orig;
@@ -364,7 +353,7 @@ static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
                     "Cannot dot access member '%s' on string (only length or bytes).", ast->dot->member_name);
         }
     } else if (t->comp == STRUCT) {
-        for (int i = 0; i < t->st.nmembers; i++) {
+        for (int i = 0; i < array_len(t->st.member_names); i++) {
             if (!strcmp(ast->dot->member_name, t->st.member_names[i])) {
                 ast->var_type = t->st.member_types[i];
                 return ast;
@@ -379,9 +368,9 @@ static Ast *parse_dot_op_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-static Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
-    ast->binary->left = parse_semantics(scope, ast->binary->left);
-    ast->binary->right = parse_semantics(scope, ast->binary->right);
+static Ast *check_assignment_semantics(Scope *scope, Ast *ast) {
+    ast->binary->left = check_semantics(scope, ast->binary->left);
+    ast->binary->right = check_semantics(scope, ast->binary->right);
 
     if (!is_lvalue(ast->binary->left)) {
         error(ast->line, ast->file, "LHS of assignment is not an lvalue.");
@@ -438,9 +427,9 @@ static Ast *parse_assignment_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-static Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
-    ast->binary->left = parse_semantics(scope, ast->binary->left);
-    ast->binary->right = parse_semantics(scope, ast->binary->right);
+static Ast *check_binop_semantics(Scope *scope, Ast *ast) {
+    ast->binary->left = check_semantics(scope, ast->binary->left);
+    ast->binary->right = check_semantics(scope, ast->binary->right);
 
     Ast *l = ast->binary->left;
     Ast *r = ast->binary->right;
@@ -517,16 +506,16 @@ static Ast *parse_binop_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-static Ast *parse_enum_decl_semantics(Scope *scope, Ast *ast) {
+static Ast *check_enum_decl_semantics(Scope *scope, Ast *ast) {
     Type *et = ast->enum_decl->enum_type; 
     et = resolve_alias(et);
     assert(et->comp == ENUM);
     Ast **exprs = ast->enum_decl->exprs;
 
     long val = 0;
-    for (int i = 0; i < et->en.nmembers; i++) {
+    for (int i = 0; i < array_len(et->en.member_names); i++) {
         if (exprs[i] != NULL) {
-            exprs[i] = parse_semantics(scope, exprs[i]);
+            exprs[i] = check_semantics(scope, exprs[i]);
             Type *t = resolve_alias(exprs[i]->var_type);
             // TODO allow const other stuff in here
             if (exprs[i]->type != AST_LITERAL) {
@@ -545,7 +534,7 @@ static Ast *parse_enum_decl_semantics(Scope *scope, Ast *ast) {
             }
             val = exprs[i]->lit->int_val;
         }
-        et->en.member_values[i] = val;
+        array_push(et->en.member_values, val);
         val += 1;
         for (int j = 0; j < i; j++) {
             if (!strcmp(et->en.member_names[i], et->en.member_names[j])) {
@@ -571,25 +560,25 @@ void first_pass_type(Scope *scope, Type *t) {
     case EXTERNAL:
         break;
     case PARAMS:
-        for (TypeList *list = t->params.args; list != NULL; list = list->next) {
-            first_pass_type(scope, list->item);
+        for (int i = 0; i < array_len(t->params.args); i++) {
+            first_pass_type(scope, t->params.args[i]);
         }
         first_pass_type(scope, t->params.inner);
         break;
     case FUNC:
-        for (TypeList *list = t->fn.args; list != NULL; list = list->next) {
-            first_pass_type(scope, list->item);
+        for (int i = 0; i < array_len(t->fn.args); i++) {
+            first_pass_type(scope, t->fn.args[i]);
         }
         // register type?
         first_pass_type(scope, t->fn.ret);
         break;
     case STRUCT:
         // TODO: owned references need to check for circular type declarations
-        for (int i = 0; i < t->st.nmembers; i++) {
+        for (int i = 0; i < array_len(t->st.member_types); i++) {
             first_pass_type(scope, t->st.member_types[i]);
         }
-        for (TypeList *list = t->st.arg_params; list != NULL; list = list->next) {
-            first_pass_type(scope, list->item);
+        for (int i = 0; i < array_len(t->st.arg_params); i++) {
+            first_pass_type(scope, t->st.arg_params[i]);
         }
         if (!t->st.generic) {
             register_type(t);
@@ -623,7 +612,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
     case AST_LITERAL:
         if (ast->lit->lit_type == STRUCT_LIT || ast->lit->lit_type == COMPOUND_LIT) {
             first_pass_type(scope, ast->lit->compound_val.type);
-            for (int i = 0; i < ast->lit->compound_val.nmembers; i++) {
+            for (int i = 0; i < array_len(ast->lit->compound_val.member_exprs); i++) {
                 ast->lit->compound_val.member_exprs[i] = first_pass(scope, ast->lit->compound_val.member_exprs[i]);
             }
 
@@ -657,25 +646,27 @@ Ast *first_pass(Scope *scope, Ast *ast) {
                 error(ast->line, ast->file, "Declared function name '%s' already exists in this scope.", ast->fn_decl->var->name);
             }
 
-            attach_var(scope, ast->fn_decl->var);
-            attach_var(ast->fn_decl->scope, ast->fn_decl->var);
+            array_push(scope->vars, ast->fn_decl->var);
+            array_push(ast->fn_decl->scope->vars, ast->fn_decl->var);
         }
 
         first_pass_type(ast->fn_decl->scope, ast->fn_decl->var->type);
         {
-            VarList *vars = ast->fn_decl->args;
-            for (TypeList *args = ast->fn_decl->var->type->fn.args; args != NULL; args = args->next) {
+            Type *fn_type = ast->fn_decl->var->type;
+            Type **fn_args = fn_type->fn.args;
+            for (int i = 0; i < array_len(fn_args); i++) {
+                Type *a = fn_args[i];
                 // TODO: what if the polydef isn't the generic struct? i.e. fn
                 // type, is this okay?
-                if (!is_polydef(args->item) && contains_generic_struct(args->item)) {
-                    args->item = reify_struct(ast->fn_decl->scope, ast, args->item);
-                    if (ast->fn_decl->var->type->fn.variadic && args->next == NULL) {
-                        vars->item->type = make_array_type(args->item);
+                if (!is_polydef(a) && contains_generic_struct(a)) {
+                    a = reify_struct(ast->fn_decl->scope, ast, a);
+                    if (fn_type->fn.variadic && i == array_len(fn_args) - 1) {
+                        ast->fn_decl->args[i]->type = make_array_type(a);
                     } else {
-                        vars->item->type = args->item;
+                        ast->fn_decl->args[i]->type = a;
                     }
+                    fn_args[i] = a;
                 }
-                vars = vars->next;
             }
 
             Type *ret = ast->fn_decl->var->type->fn.ret;
@@ -686,8 +677,8 @@ Ast *first_pass(Scope *scope, Ast *ast) {
 
         // TODO handle case where arg has same name as func
         if (!is_polydef(ast->fn_decl->var->type)) {
-            for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
-                attach_var(ast->fn_decl->scope, args->item);
+            for (int i = 0; i < array_len(ast->fn_decl->args); i++) {
+                array_push(ast->fn_decl->scope->vars, ast->fn_decl->args[i]);
             }
         }
         break;
@@ -721,11 +712,11 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         break;
     case AST_CALL:
         ast->call->fn = first_pass(scope, ast->call->fn);
-        for (AstList *args = ast->call->args; args != NULL; args = args->next) {
-            args->item = first_pass(scope, args->item);
+        for (int i = 0; i < array_len(ast->call->args); i++) {
+            ast->call->args[i] = first_pass(scope, ast->call->args[i]);
         }
-        if (ast->call->variadic_tempvar != NULL) {
-            first_pass_type(scope, ast->call->variadic_tempvar->type);
+        if (ast->call->variadic_tempvar) {
+            first_pass_type(scope, ast->call->variadic_tempvar->var->type);
         }
         break;
     case AST_SLICE:
@@ -822,21 +813,21 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         }
 
         in_impl = 1;
-        for (AstList *list = ast->impl->methods; list != NULL; list = list->next) {
-            if (list->item->type != AST_FUNC_DECL) {
-                error(list->item->line, list->item->file, "Only method declarations are valid inside an impl block.");
+        for (int i = 0; i < array_len(ast->impl->methods); i++) {
+            Ast *meth = ast->impl->methods[i];
+            if (meth->type != AST_FUNC_DECL) {
+                error(meth->line, meth->file, "Only method declarations are valid inside an impl block.");
             }
 
-            first_pass(scope, list->item);
+            first_pass(scope, meth);
 
-            if (list->item->fn_decl->args == NULL) {
-                error(list->item->line, list->item->file, "Method '%s' of type %s must have a receiver argument.", list->item->fn_decl->var->name, type_to_string(ast->impl->type));
+            if (meth->fn_decl->args == NULL) {
+                error(meth->line, meth->file, "Method '%s' of type %s must have a receiver argument.", meth->fn_decl->var->name, type_to_string(ast->impl->type));
             }
-
             // TODO: check name against struct/enum members (or "builtin members" for string/array)
-            Ast *last_decl = define_method(ast->impl->type, list->item);
+            Ast *last_decl = define_method(ast->impl->type, meth);
             if (last_decl != NULL) {
-                error(list->item->line, list->item->file, "Method '%s' of type %s already defined at %s:%d.", list->item->fn_decl->var->name, type_to_string(ast->impl->type), last_decl->file, last_decl->line);
+                error(meth->line, meth->file, "Method '%s' of type %s already defined at %s:%d.", meth->fn_decl->var->name, type_to_string(ast->impl->type), last_decl->file, last_decl->line);
             }
         }
         in_impl = 0;
@@ -852,25 +843,25 @@ Ast *first_pass(Scope *scope, Ast *ast) {
     return ast;
 }
 
-AstBlock *parse_block_semantics(Scope *scope, AstBlock *block, int fn_body) {
-    for (AstList *list = block->statements; list != NULL; list = list->next) {
-        list->item = first_pass(scope, list->item);
+AstBlock *check_block_semantics(Scope *scope, AstBlock *block, int fn_body) {
+    for (int i = 0; i < array_len(block->statements); i++) {
+        block->statements[i] = first_pass(scope, block->statements[i]);
     }
 
-    Ast *last = NULL;
     int mainline_return_reached = 0;
-    for (AstList *list = block->statements; list != NULL; list = list->next) {
-        if (last != NULL && last->type == AST_RETURN) {
-            error(list->item->line, list->item->file, "Unreachable statements following return.");
+    for (int i = 0; i < array_len(block->statements); i++) {
+        Ast *stmt = block->statements[i];
+        if (i > 0 && block->statements[i-1]->type == AST_RETURN) {
+            error(stmt->line, stmt->file, "Unreachable statements following return.");
         }
-        list->item = parse_semantics(scope, list->item);
-        if (needs_temp_var(list->item)) {
-            allocate_ast_temp_var(scope, list->item);
+        stmt = check_semantics(scope, stmt);
+        if (needs_temp_var(stmt)) {
+            allocate_ast_temp_var(scope, stmt);
         }
-        if (list->item->type == AST_RETURN) {
+        if (stmt->type == AST_RETURN) {
             mainline_return_reached = 1;
         }
-        last = list->item;
+        block->statements[i] = stmt;
     }
 
     // if it's a function that needs return and return wasn't reached, break
@@ -886,12 +877,12 @@ AstBlock *parse_block_semantics(Scope *scope, AstBlock *block, int fn_body) {
     return block;
 }
 
-static Ast *parse_directive_semantics(Scope *scope, Ast *ast) {
+static Ast *check_directive_semantics(Scope *scope, Ast *ast) {
     // TODO does this checking need to happen in the first pass? may be a
     // reason to do this later!
     char *n = ast->directive->name;
     if (!strcmp(n, "typeof")) {
-        ast->directive->object = parse_semantics(scope, ast->directive->object);
+        ast->directive->object = check_semantics(scope, ast->directive->object);
         // TODO should this only be acceptible on identifiers? That would be
         // more consistent (don't have to explain that #type does NOT evaluate
         // arguments -- but is that too restricted / unnecessary?
@@ -912,7 +903,7 @@ static Ast *parse_directive_semantics(Scope *scope, Ast *ast) {
     return NULL;
 }
 
-static Ast *_parse_struct_literal_semantics(Scope *scope, Ast *ast, Type *type, Type *resolved) {
+static Ast *_check_struct_literal_semantics(Scope *scope, Ast *ast, Type *type, Type *resolved) {
     assert(resolved->comp == STRUCT);
 
     ast->var_type = type;
@@ -920,21 +911,21 @@ static Ast *_parse_struct_literal_semantics(Scope *scope, Ast *ast, Type *type, 
     AstLiteral *lit = ast->lit;
 
     // if not named, check that there are enough members
-    if (!lit->compound_val.named && lit->compound_val.nmembers != 0) {
-        if (lit->compound_val.nmembers != resolved->st.nmembers) {
+    if (!lit->compound_val.named && array_len(lit->compound_val.member_exprs) != 0) {
+        if (array_len(lit->compound_val.member_exprs) != array_len(resolved->st.member_names)) {
             error(ast->line, ast->file, "Wrong number of members for struct '%s', expected %d but received %d.",
-                type_to_string(type), resolved->st.nmembers, lit->compound_val.nmembers);
+                type_to_string(type), array_len(resolved->st.member_names), array_len(lit->compound_val.member_exprs));
         }
     }
 
-    for (int i = 0; i < lit->compound_val.nmembers; i++) {
-        Ast *expr = parse_semantics(scope, lit->compound_val.member_exprs[i]);
+    for (int i = 0; i < array_len(lit->compound_val.member_exprs); i++) {
+        Ast *expr = check_semantics(scope, lit->compound_val.member_exprs[i]);
         Type *t = resolved->st.member_types[i];
         char *name = resolved->st.member_names[i];
 
         if (lit->compound_val.named) {
             int found = -1;
-            for (int j = 0; j < resolved->st.nmembers; j++) {
+            for (int j = 0; j < array_len(resolved->st.member_names); j++) {
                 if (!strcmp(lit->compound_val.member_names[i], resolved->st.member_names[j])) {
                     found = j;
                     break;
@@ -964,7 +955,7 @@ static Ast *_parse_struct_literal_semantics(Scope *scope, Ast *ast, Type *type, 
     return ast;
 }
 
-static Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
+static Ast *check_struct_literal_semantics(Scope *scope, Ast *ast) {
     // TODO: shouldn't we be doing this?
     /*Type *type = resolve_polymorph(ast->lit->compound_val.type);*/
     Type *type = ast->lit->compound_val.type;
@@ -973,21 +964,21 @@ static Ast *parse_struct_literal_semantics(Scope *scope, Ast *ast) {
     }
 
     Type *resolved = resolve_alias(type);
-    return _parse_struct_literal_semantics(scope, ast, type, resolved);
+    return _check_struct_literal_semantics(scope, ast, type, resolved);
 }
 
-static Ast *parse_compound_literal_semantics(Scope *scope, Ast *ast) {
+static Ast *check_compound_literal_semantics(Scope *scope, Ast *ast) {
     Type *type = ast->lit->compound_val.type;
     if (contains_generic_struct(type)) {
         type = reify_struct(scope, ast, type);
     }
 
-    long nmembers = ast->lit->compound_val.nmembers;
+    long nmembers = array_len(ast->lit->compound_val.member_exprs);
 
     Type *resolved = resolve_alias(type);
     if (resolved->comp == STRUCT) {
         ast->lit->lit_type = STRUCT_LIT;
-        return _parse_struct_literal_semantics(scope, ast, type, resolved);
+        return _check_struct_literal_semantics(scope, ast, type, resolved);
     } else if (resolved->comp == STATIC_ARRAY) {
         // validate length
         if (resolved->array.length == -1) {
@@ -1009,7 +1000,7 @@ static Ast *parse_compound_literal_semantics(Scope *scope, Ast *ast) {
     Type *inner = type->array.inner;
 
     for (int i = 0; i < nmembers; i++) {
-        Ast *expr = parse_semantics(scope, ast->lit->compound_val.member_exprs[i]);
+        Ast *expr = check_semantics(scope, ast->lit->compound_val.member_exprs[i]);
 
         if (!check_type(inner, expr->var_type)) {
             expr = coerce_type(scope, inner, expr);
@@ -1027,7 +1018,7 @@ static Ast *parse_compound_literal_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-static Ast *parse_use_semantics(Scope *scope, Ast *ast) {
+static Ast *check_use_semantics(Scope *scope, Ast *ast) {
     if (scope->type == Root) {
         error(ast->line, ast->file, "'use' is not permitted in global scope.");
     }
@@ -1041,7 +1032,7 @@ static Ast *parse_use_semantics(Scope *scope, Ast *ast) {
                     "'use' is not valid on non-enum type '%s'.", type_to_string(t));
             }
 
-            for (int i = 0; i < resolved->en.nmembers; i++) {
+            for (int i = 0; i < array_len(resolved->en.member_names); i++) {
                 char *name = resolved->en.member_names[i];
 
                 if (lookup_local_var(scope, name) != NULL) {
@@ -1064,43 +1055,41 @@ static Ast *parse_use_semantics(Scope *scope, Ast *ast) {
                 a->lit->enum_val.enum_type = resolved;
                 a->var_type = t;
                 v->proxy = a;
-                attach_var(scope, v);
+                array_push(scope->vars, v);
             }
             return ast;
         }
 
         Package *p = lookup_imported_package(scope, used_name);
-        if (p != NULL) {
-            for (VarList *list = p->scope->vars; list != NULL; list = list->next) {
-                if (list->item->proxy != NULL) {
+        if (p) {
+            for (int i = 0; i < array_len(p->scope->vars); i++) {
+                Var *v = p->scope->vars[i];
+                if (v->proxy) {
                     // skip use aliases
                     continue;
                 }
-
-                char *name = list->item->name;
-
-                if (lookup_local_var(scope, name) != NULL) {
+                if (lookup_local_var(scope, v->name) != NULL) {
                     error(ast->use->object->line, ast->file,
-                        "'use' statement on package '%s' conflicts with local variable named '%s'.", used_name, name);
+                        "'use' statement on package '%s' conflicts with local variable named '%s'.", used_name, v->name);
                 }
 
-                if (find_builtin_var(name) != NULL) {
+                if (find_builtin_var(v->name) != NULL) {
                     error(ast->use->object->line, ast->file,
-                        "'use' statement on enum '%s' conflicts with builtin variable named '%s'.", used_name, name);
+                        "'use' statement on enum '%s' conflicts with builtin variable named '%s'.", used_name, v->name);
                 }
 
-                Var *v = make_var(name, list->item->type);
-                Ast *dot = make_ast_dot_op(ast->use->object, name);
+                Var *new_v = make_var(v->name, v->type);
+                Ast *dot = make_ast_dot_op(ast->use->object, v->name);
                 dot->line = ast->line;
                 dot->file = ast->file;
-                v->proxy = dot;
-                attach_var(scope, v);
+                new_v->proxy = dot;
+                array_push(scope->vars, new_v);
             }
             return ast;
         }
     }
 
-    ast->use->object = parse_semantics(scope, ast->use->object);
+    ast->use->object = check_semantics(scope, ast->use->object);
 
     Type *orig = ast->use->object->var_type;
     Type *t = orig;
@@ -1120,7 +1109,7 @@ static Ast *parse_use_semantics(Scope *scope, Ast *ast) {
         error(ast->use->object->line, ast->use->object->file, "Can't 'use' a non-variable.");
     }
 
-    for (int i = 0; i < resolved->st.nmembers; i++) {
+    for (int i = 0; i < array_len(resolved->st.member_names); i++) {
         char *member_name = resolved->st.member_names[i];
         if (lookup_local_var(scope, member_name) != NULL) {
             error(ast->use->object->line, ast->file,
@@ -1137,16 +1126,16 @@ static Ast *parse_use_semantics(Scope *scope, Ast *ast) {
         Ast *dot = make_ast_dot_op(ast->use->object, member_name);
         dot->line = ast->line;
         dot->file = ast->file;
-        v->proxy = parse_semantics(scope, dot);
-        attach_var(scope, v);
+        v->proxy = check_semantics(scope, dot);
+        array_push(scope->vars, v);
     }
     return ast;
 }
 
-static Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
+static Ast *check_slice_semantics(Scope *scope, Ast *ast) {
     AstSlice *slice = ast->slice;
 
-    slice->object = parse_semantics(scope, slice->object);
+    slice->object = check_semantics(scope, slice->object);
     if (needs_temp_var(slice->object)) {
         allocate_ast_temp_var(scope, slice->object);
     }
@@ -1164,7 +1153,7 @@ static Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
     }
 
     if (slice->offset != NULL) {
-        slice->offset = parse_semantics(scope, slice->offset);
+        slice->offset = check_semantics(scope, slice->offset);
 
         // TODO: checks here for string literal
         if (slice->offset->type == AST_LITERAL && resolved->comp == STATIC_ARRAY) {
@@ -1181,7 +1170,7 @@ static Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
     }
 
     if (slice->length != NULL) {
-        slice->length = parse_semantics(scope, slice->length);
+        slice->length = check_semantics(scope, slice->length);
 
         if (slice->length->type == AST_LITERAL && resolved->comp == STATIC_ARRAY) {
             // TODO check that it's an int?
@@ -1196,7 +1185,7 @@ static Ast *parse_slice_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
+static Ast *check_declaration_semantics(Scope *scope, Ast *ast) {
     AstDecl *decl = ast->decl;
     Ast *init = decl->init;
 
@@ -1222,14 +1211,14 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file, "Cannot use unspecified array type for variable '%s' without initialization.", decl->var->name);
         }
     } else {
-        decl->init = parse_semantics(scope, init);
+        decl->init = check_semantics(scope, init);
         init = decl->init;
 
         if (decl->init->type == AST_LITERAL &&
                 resolve_alias(init->var_type)->comp == STATIC_ARRAY) {
-            Var *tmp = decl->init->lit->compound_val.array_tempvar;
+            TempVar *tmp = decl->init->lit->compound_val.array_tempvar;
             if (tmp != NULL) {
-                remove_temp_var_by_id(scope, tmp->id);
+                remove_temp_var_by_id(scope, tmp->var->id);
             }
         }
 
@@ -1338,7 +1327,7 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
     if (scope->parent == NULL) {
         ast->decl->global = 1;
         define_global(decl->var);
-        attach_var(scope, ast->decl->var); // should this be after the init parsing?
+        array_push(scope->vars, ast->decl->var); // should this be after the init parsing?
 
         if (decl->init != NULL) {
             Ast *id = ast_alloc(AST_IDENTIFIER);
@@ -1347,7 +1336,7 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
             id->ident->varname = decl->var->name;
             id->ident->var = decl->var;
 
-            id = parse_semantics(scope, id);
+            id = check_semantics(scope, id);
 
             ast = make_ast_assign(id, decl->init);
             ast->line = id->line;
@@ -1355,35 +1344,36 @@ static Ast *parse_declaration_semantics(Scope *scope, Ast *ast) {
             return ast;
         }
     } else {
-        attach_var(scope, ast->decl->var); // should this be after the init parsing?
+        array_push(scope->vars, ast->decl->var); // should this be after the init parsing?
     }
 
     return ast;
 }
 
 static int verify_arg_count(Scope *scope, Ast *ast, Type *fn_type) {
-    int given = ast->call->nargs;
+    int given = array_len(ast->call->args);
+    int defined_arg_count = array_len(fn_type->fn.args);
 
     if (!fn_type->fn.variadic) {
-        if (given != fn_type->fn.nargs) {
+        if (given != defined_arg_count) {
             error(ast->line, ast->file,
                 "Incorrect argument count to function (expected %d, got %d)",
-                fn_type->fn.nargs, given);
+                defined_arg_count, given);
         }
         return -1;
     }
 
-    if (given < fn_type->fn.nargs - 1) {
+    if (given < defined_arg_count - 1) {
         error(ast->line, ast->file,
             "Expected at least %d arguments to variadic function, but only got %d.",
-            fn_type->fn.nargs-1, given);
+            defined_arg_count-1, given);
         return -1;
     }
 
-    int i = 0;
-    for (AstList *list = ast->call->args; list != NULL; list = list->next) {
-        if (list->item->type == AST_SPREAD) {
-            if (list->next != NULL) {
+    for (int i = 0; i < array_len(ast->call->args); i++) {
+        Ast *arg = ast->call->args[i];
+        if (arg->type == AST_SPREAD) {
+            if (i != array_len(ast->call->args)-1) {
                 error(ast->line, ast->file, "Only the last argument to a function call may be a spread.");
             }
             if (i != given - 1) {
@@ -1391,13 +1381,11 @@ static int verify_arg_count(Scope *scope, Ast *ast, Type *fn_type) {
             }
             ast->call->has_spread = 1;
         }
-        i++;
     }
-
-    return i;
+    return array_len(ast->call->args);
 }
 
-static void verify_arg_types(Scope *scope, Ast *ast, TypeList *expected_types, AstList *arg_vals, int variadic) {
+static void verify_arg_types(Scope *scope, Ast *ast, Type **expected_types, Ast **arg_vals, int variadic) {
     AstFnDecl *decl = NULL;
     int ext = 0;
     if (ast->call->fn->type == AST_IDENTIFIER) {
@@ -1407,15 +1395,16 @@ static void verify_arg_types(Scope *scope, Ast *ast, TypeList *expected_types, A
         }
     }
 
-    for (int i = 0; arg_vals != NULL; i++) {
-        Ast *arg = arg_vals->item;
-        Type *expected = resolve_polymorph(expected_types->item);
+    int j = 0;
+    for (int i = 0; i < array_len(arg_vals); i++) {
+        Ast *arg = arg_vals[i];
+        Type *expected = resolve_polymorph(expected_types[j]);
 
         if (arg->type == AST_SPREAD) {
             // handled by verify_arg_count
             assert(variadic);
             assert(ast->call->has_spread);
-            assert(expected_types->next == NULL);
+            assert(j == array_len(expected_types) - 1);
             assert(!ext);
 
             arg = arg->spread->object;
@@ -1431,7 +1420,7 @@ static void verify_arg_types(Scope *scope, Ast *ast, TypeList *expected_types, A
             }
 
             // TODO: decide if we want to not hide the AST_SPREAD part of this
-            arg_vals->item = arg;
+            arg_vals[i] = arg;
             break;
         }
 
@@ -1444,20 +1433,19 @@ static void verify_arg_types(Scope *scope, Ast *ast, TypeList *expected_types, A
             c->line = arg->line;
             c->file = arg->file;
             c->var_type = expected;
-            arg_vals->item = c;
+            arg_vals[i] = c;
         } else if (!check_type(arg->var_type, expected)) {
             Ast* a = coerce_type(scope, expected, arg);
             if (a == NULL) {
                 error(ast->line, ast->file, "Expected argument (%d) of type '%s', but got type '%s'.",
                     i, type_to_string(expected), type_to_string(arg->var_type));
             }
-            arg_vals->item = a;
+            arg_vals[i] = a;
         }
 
-        if (!(variadic && expected_types->next == NULL)) {
-            expected_types = expected_types->next;
+        if (!(variadic && j == array_len(expected_types) - 1)) {
+            j++;
         }
-        arg_vals = arg_vals->next;
     }
 }
 
@@ -1475,49 +1463,42 @@ static AstFnDecl *get_fn_decl(Ast *ast) {
     return decl;
 }
 
-static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
-    AstList *call_args = ast->call->args;
-
+static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
     // collect call arg types
-    TypeList *call_arg_types = NULL;
-    for (int i = 0; call_args != NULL; i++) {
-        Ast *arg = call_args->item;
+    Type **call_arg_types = NULL;
+    for (int i = 0; i < array_len(ast->call->args); i++) {
+        Ast *arg = ast->call->args[i];
 
         if (arg->type == AST_SPREAD) {
-            arg->spread->object = parse_semantics(scope, arg->spread->object);
+            arg->spread->object = check_semantics(scope, arg->spread->object);
             arg->var_type = arg->spread->object->var_type;
             // TODO: there may be an issue here if this is arg->var_type is
             // a STATIC_ARRAY
-            call_arg_types = typelist_append(call_arg_types, arg->var_type);
+            array_push(call_arg_types, arg->var_type);
         } else {
-            arg = parse_semantics(scope, call_args->item);
+            arg = check_semantics(scope, ast->call->args[i]);
 
             Type *t = arg->var_type;
             if (t->comp == STATIC_ARRAY) {
                 t = make_array_type(t->array.inner);
             }
-            if (!(resolved->fn.variadic && i >= resolved->fn.nargs)) {
-                call_arg_types = typelist_append(call_arg_types, t);
+            if (!(resolved->fn.variadic && i >= array_len(resolved->fn.args))) {
+                array_push(call_arg_types, t);
             }
         }
 
-        call_args->item = arg;
-        call_args = call_args->next;
+        ast->call->args[i] = arg;
     }
-    call_arg_types = reverse_typelist(call_arg_types);
 
     int given_count = verify_arg_count(scope, ast, resolved);
 
     // create variadic temp var if necessary (variadic, no spread, more than
     // 0 args to variadic "slot")
-    if (resolved->fn.variadic && !ast->call->has_spread && given_count >= resolved->fn.nargs) {
-        for (TypeList *list = call_arg_types; list != NULL; list = list->next) {
-            // if last one
-            if (list->next == NULL) {
-                long length = ast->call->nargs - (resolved->fn.nargs - 1);
-                Type *a = make_static_array_type(list->item, length);
-                ast->call->variadic_tempvar = make_temp_var(scope, a, ast->id);
-            }
+    if (resolved->fn.variadic && !ast->call->has_spread && given_count >= array_len(resolved->fn.args)) {
+        if (array_len(call_arg_types) > 0) {
+            long length = array_len(ast->call->args) - (array_len(resolved->fn.args) - 1);
+            Type *a = make_static_array_type(call_arg_types[array_len(call_arg_types)-1], length);
+            ast->call->variadic_tempvar = make_temp_var(scope, a, -1);
         }
     }
 
@@ -1537,29 +1518,26 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
     ast->call->polymorph = match;
     
     // reset call_args
-    call_args = ast->call->args;
+    Type **defined_arg_types = NULL;
 
-    VarList *arg_vars = decl->args;
-    TypeList *defined_arg_types = NULL;
-
-    for (TypeList *list = resolved->fn.args; list != NULL; list = list->next) {
-        Type *expected_type = list->item;
-        if (call_args == NULL) {
+    for (int i = 0; i < array_len(resolved->fn.args); i++) {
+        Type *expected_type = resolved->fn.args[i];
+        if (i >= array_len(ast->call->args)) {
             // we should only get to this point if verify_arg_counts has passed already
             assert(resolved->fn.variadic);
-            assert(list->next == NULL); // last argument
+            assert(i == array_len(resolved->fn.args)-1); // last argument
 
-            defined_arg_types = typelist_append(defined_arg_types, expected_type);
+            array_push(defined_arg_types, expected_type);
 
-            Var *v = copy_var(match->scope, arg_vars->item);
-            v->type = defined_arg_types->item;
-            if (resolved->fn.variadic && list->next == NULL) {
+            Var *v = copy_var(match->scope, decl->args[i]);
+            v->type = expected_type;
+            if (resolved->fn.variadic && i == array_len(resolved->fn.args) - 1) {
                 v->type = make_array_type(v->type);
             }
-            attach_var(match->scope, v);
+            array_push(match->scope->vars, v);
             break;
         }
-        Type *arg_type = call_args->item->var_type;
+        Type *arg_type = ast->call->args[i]->var_type;
 
         if (is_polydef(expected_type)) {
             if (!match_polymorph(match->scope, expected_type, arg_type)) {
@@ -1574,20 +1552,16 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
             }
         }
 
-        defined_arg_types = typelist_append(defined_arg_types, expected_type);
+        array_push(defined_arg_types, expected_type);
 
-        Var *v = copy_var(match->scope, arg_vars->item);
-        v->type = defined_arg_types->item;
-        if (resolved->fn.variadic && list->next == NULL) {
+        Var *v = copy_var(match->scope, decl->args[i]);
+        v->type = expected_type;
+        if (resolved->fn.variadic && i == array_len(resolved->fn.args) - 1) {
             v->type = make_array_type(v->type);
         }
-        attach_var(match->scope, v);
-
-        call_args = call_args->next;
-        arg_vars = arg_vars->next;
+        array_push(match->scope->vars, v);
     }
 
-    defined_arg_types = reverse_typelist(defined_arg_types);
     verify_arg_types(scope, ast, defined_arg_types, ast->call->args, resolved->fn.variadic);
 
     if (contains_generic_struct(resolved->fn.ret)) {
@@ -1608,16 +1582,16 @@ static Ast *parse_poly_call_semantics(Scope *scope, Ast *ast, Type *resolved) {
     // maybe adding something to the scope instead?
     /*resolved->fn.ret = ret;*/
 
-    match->ret = ret; // this is used in the body, must be done before parse_block_semantics
-    match->body = parse_block_semantics(match->scope, match->body, 1);
+    match->ret = ret; // this is used in the body, must be done before check_block_semantics
+    match->body = check_block_semantics(match->scope, match->body, 1);
 
     ast->var_type = ret;
 
     return ast;
 }
 
-static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
-    ast->call->fn = parse_semantics(scope, ast->call->fn);
+static Ast *check_call_semantics(Scope *scope, Ast *ast) {
+    ast->call->fn = check_semantics(scope, ast->call->fn);
 
     Type *orig = ast->call->fn->var_type;
     Type *resolved = resolve_alias(orig);
@@ -1637,10 +1611,12 @@ static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
         id->var_type = ast->call->fn->var_type;
 
         ast->call->fn = id;
-        ast->call->nargs += 1;
+        // TODO: we may need to modify the args array for a method call
+        // separately
+        /*ast->call->nargs += 1;*/
 
         Ast *recv = m->method->recv;
-        Type *first_arg_type = m->method->decl->args->item->type;
+        Type *first_arg_type = m->method->decl->args[0]->type;
         if (is_polydef(first_arg_type)) {
             if (!match_polymorph(NULL, first_arg_type, recv->var_type)) {
                 if (!(first_arg_type->comp == REF && match_polymorph(NULL, first_arg_type->ref.inner, recv->var_type))) {
@@ -1671,34 +1647,37 @@ static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
             recv = uop;
         }
 
-        /*ast->call->args = astlist_prepend(ast->call->args, recv);*/
-        ast->call->args = astlist_append(ast->call->args, recv);
+        // "prepend" the receiver to the array
+        array_push(ast->call->args, ast->call->args[0]);
+        ast->call->args[0] = recv;
     }
 
     if (is_polydef(resolved)) {
-        return parse_poly_call_semantics(scope, ast, resolved);
+        return check_poly_call_semantics(scope, ast, resolved);
     }
     
     int given_count = verify_arg_count(scope, ast, resolved);
 
     // create variadic temp var if necessary
-    if (resolved->fn.variadic && !ast->call->has_spread && resolved->fn.nargs <= given_count) {
-        for (TypeList *list = resolved->fn.args; list != NULL; list = list->next) {
-            if (list->next == NULL) {
-                long length = ast->call->nargs - (resolved->fn.nargs - 1);
-                Type *a = make_static_array_type(list->item, length);
-                ast->call->variadic_tempvar = make_temp_var(scope, a, ast->id);
+    if (resolved->fn.variadic && !ast->call->has_spread && array_len(resolved->fn.args) <= given_count) {
+        for (int i = 0; i < array_len(resolved->fn.args); i++) {
+            if (i == array_len(resolved->fn.args) - 1) {
+                long length = array_len(ast->call->args) - (array_len(resolved->fn.args) - 1);
+                Type *a = make_static_array_type(resolved->fn.args[i], length);
+                ast->call->variadic_tempvar = make_temp_var(scope, a, -1); // using -1 here because the arg may already have a tempvar defined, with the same ID
             }
         }
     }
     
-    for (AstList *args = ast->call->args; args != NULL; args = args->next) {
-        if (args->item->type == AST_SPREAD) {
-            args->item->spread->object = parse_semantics(scope, args->item->spread->object);
-            args->item->var_type = args->item->spread->object->var_type;
+    for (int i = 0; i < array_len(ast->call->args); i++) {
+        Ast *arg = ast->call->args[i];
+        if (arg->type == AST_SPREAD) {
+            arg->spread->object = check_semantics(scope, arg->spread->object);
+            arg->var_type = arg->spread->object->var_type;
+            ast->call->args[i] = arg;
             continue;
         }
-        args->item = parse_semantics(scope, args->item);
+        ast->call->args[i] = check_semantics(scope, arg);
     }
 
     // check types and allocate tempvars for "Any"
@@ -1709,7 +1688,7 @@ static Ast *parse_call_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-static Ast *parse_func_decl_semantics(Scope *scope, Ast *ast) {
+static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
     int poly = 0;
     Scope *type_check_scope = scope;
 
@@ -1719,29 +1698,30 @@ static Ast *parse_func_decl_semantics(Scope *scope, Ast *ast) {
 
         // this is prior to the below loop in case the polydef is after another
         // argument using its type, as in fn (T, $T) -> T
-        for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
-            if (is_polydef(args->item->type)) {
-                if (args->next == NULL && ast->fn_decl->var->type->fn.variadic) {
+        for (int i = 0; i < array_len(ast->fn_decl->args); i++) {
+            if (is_polydef(ast->fn_decl->args[i]->type)) {
+                if (i == array_len(ast->fn_decl->args) - 1 && ast->fn_decl->var->type->fn.variadic) {
                     // variadic is polydef
                     error(ast->line, ast->file, "Variadic function argument cannot define a polymorphic type.");
                 }
                 // get alias
-                define_polydef_alias(type_check_scope, args->item->type);
+                define_polydef_alias(type_check_scope, ast->fn_decl->args[i]->type);
             }
         }
     }
 
-    for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
-        check_for_unresolved_with_scope(ast, args->item->type, type_check_scope);
+    for (int i = 0; i < array_len(ast->fn_decl->args); i++) {
+        Var *arg = ast->fn_decl->args[i];
+        check_for_unresolved_with_scope(ast, arg->type, type_check_scope);
 
-        if (!is_concrete(args->item->type)) {
+        if (!is_concrete(arg->type)) {
             error(ast->line, ast->file, "Argument '%s' has generic type '%s' (not allowed currently).",
-                  args->item->name, type_to_string(args->item->type));
+                  arg->name, type_to_string(arg->type));
         }
 
-        if (args->item->use) {
+        if (arg->use) {
             // allow polydef here?
-            Type *orig = args->item->type;
+            Type *orig = arg->type;
             Type *t = resolve_alias(orig);
             while (t->comp == REF) {
                 t = resolve_alias(t->ref.inner);
@@ -1751,11 +1731,11 @@ static Ast *parse_func_decl_semantics(Scope *scope, Ast *ast) {
                     "'use' is not allowed on args of non-struct type '%s'.",
                     type_to_string(orig));
             }
-            Ast *lhs = make_ast_id(args->item, args->item->name);
+            Ast *lhs = make_ast_id(arg, arg->name);
             lhs->line = ast->line;
             lhs->file = ast->file;
 
-            for (int i = 0; i < t->st.nmembers; i++) {
+            for (int i = 0; i < array_len(t->st.member_names); i++) {
                 char *name = t->st.member_names[i];
                 if (lookup_local_var(ast->fn_decl->scope, name) != NULL) {
                     error(ast->line, ast->file,
@@ -1771,14 +1751,14 @@ static Ast *parse_func_decl_semantics(Scope *scope, Ast *ast) {
                 Ast *dot = make_ast_dot_op(lhs, name);
                 dot->line = ast->line;
                 dot->file = ast->file;
-                v->proxy = parse_semantics(ast->fn_decl->scope, first_pass(ast->fn_decl->scope, dot));
-                attach_var(ast->fn_decl->scope, v);
+                v->proxy = check_semantics(ast->fn_decl->scope, first_pass(ast->fn_decl->scope, dot));
+                array_push(ast->fn_decl->scope->vars, v);
             }
         }
     }
 
     if (!poly) {
-        ast->fn_decl->body = parse_block_semantics(ast->fn_decl->scope, ast->fn_decl->body, 1);
+        ast->fn_decl->body = check_block_semantics(ast->fn_decl->scope, ast->fn_decl->body, 1);
     }
 
     Scope *tmp = ast->fn_decl->var->type->fn.ret->scope;
@@ -1796,9 +1776,9 @@ static Ast *parse_func_decl_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-static Ast *parse_index_semantics(Scope *scope, Ast *ast) {
-    ast->index->object = parse_semantics(scope, ast->index->object);
-    ast->index->index = parse_semantics(scope, ast->index->index);
+static Ast *check_index_semantics(Scope *scope, Ast *ast) {
+    ast->index->object = check_semantics(scope, ast->index->object);
+    ast->index->index = check_semantics(scope, ast->index->index);
     if (needs_temp_var(ast->index->object)) {
         allocate_ast_temp_var(scope, ast->index->object);
     }
@@ -1847,7 +1827,7 @@ static Ast *parse_index_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
-Ast *parse_semantics(Scope *scope, Ast *ast) {
+Ast *check_semantics(Scope *scope, Ast *ast) {
     switch (ast->type) {
     case AST_LITERAL: {
         switch (ast->lit->lit_type) {
@@ -1868,13 +1848,13 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             break;
         case STRUCT_LIT:
             check_for_unresolved(ast, ast->lit->compound_val.type);
-            ast = parse_struct_literal_semantics(scope, ast);
+            ast = check_struct_literal_semantics(scope, ast);
             register_type(ast->var_type);
             break;
         case ARRAY_LIT:
         case COMPOUND_LIT:
             check_for_unresolved(ast, ast->lit->compound_val.type);
-            ast = parse_compound_literal_semantics(scope, ast);
+            ast = check_compound_literal_semantics(scope, ast);
             register_type(ast->var_type);
             break;
         case ENUM_LIT: // eh?
@@ -1889,10 +1869,10 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             // TODO better error for an enum here
         }
 
-        if (v->proxy != NULL) { // USE-proxy
+        if (v->proxy) { // USE-proxy
             Type *resolved = resolve_alias(v->type);
             if (resolved->comp == ENUM) { // proxy for enum
-                for (int i = 0; i < resolved->en.nmembers; i++) {
+                for (int i = 0; i < array_len(resolved->en.member_names); i++) {
                     if (!strcmp(resolved->en.member_names[i], v->name)) {
                         Ast *a = ast_alloc(AST_LITERAL);
                         a->lit->lit_type = ENUM_LIT;
@@ -1906,7 +1886,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             } else { // proxy for normal var
                 // TODO: this may not be needed again, semantics already
                 // checked?
-                return parse_semantics(scope, v->proxy);
+                return check_semantics(scope, v->proxy);
             }
         }
         ast->ident->var = v;
@@ -1914,17 +1894,17 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         break;
     }
     case AST_DOT:
-        return parse_dot_op_semantics(scope, ast);
+        return check_dot_op_semantics(scope, ast);
     case AST_ASSIGN:
-        return parse_assignment_semantics(scope, ast);
+        return check_assignment_semantics(scope, ast);
     case AST_BINOP:
-        return parse_binop_semantics(scope, ast);
+        return check_binop_semantics(scope, ast);
     case AST_UOP:
-        return parse_uop_semantics(scope, ast);
+        return check_uop_semantics(scope, ast);
     case AST_USE:
-        return parse_use_semantics(scope, ast);
+        return check_use_semantics(scope, ast);
     case AST_SLICE:
-        return parse_slice_semantics(scope, ast);
+        return check_slice_semantics(scope, ast);
     case AST_DEFER:
         if (ast->defer->call->type != AST_CALL) {
             error(ast->line, ast->file, "Defer statement must be a function call.");
@@ -1932,7 +1912,8 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         if (scope->parent == NULL) {
             error(ast->line, ast->file, "Defer statement cannot be at root scope.");
         }
-        scope->deferred = astlist_append(scope->deferred, parse_semantics(scope, ast->defer->call));
+        array_push(scope->deferred, check_semantics(scope, ast->defer->call));
+        // TODO: TODO: TODO: TODO: make sure the order is reversed in codegen!!!
         break;
     case AST_NEW: {
         ast->var_type = ast->new->type;
@@ -1949,7 +1930,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
                 error(ast->line, ast->file, "Cannot call 'new' on array type '%s' without specifying a count.", type_to_string(ast->var_type));
             }
 
-            ast->new->count = parse_semantics(scope, ast->new->count);
+            ast->new->count = check_semantics(scope, ast->new->count);
             Type *r = resolve_alias(ast->new->count->var_type);
             if (r->comp != BASIC || !(r->data->base == INT_T || r->data->base == UINT_T)) {
                 error(ast->line, ast->file, "Count for a new array must be an integer type, not '%s'", type_to_string(ast->new->count->var_type));
@@ -1975,7 +1956,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
     }
     case AST_CAST: {
         AstCast *cast = ast->cast;
-        cast->object = parse_semantics(scope, cast->object);
+        cast->object = check_semantics(scope, cast->object);
         if (resolve_alias(cast->cast_type) == NULL) {
             error(ast->line, ast->file, "Unknown cast result type '%s'", type_to_string(cast->cast_type));
         }
@@ -1998,7 +1979,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         break;
     }
     case AST_DECL:
-        return parse_declaration_semantics(scope, ast);
+        return check_declaration_semantics(scope, ast);
     case AST_TYPE_DECL: {
         if (lookup_local_var(scope, ast->type_decl->type_name) != NULL) {
             error(ast->line, ast->file, "Type name '%s' already exists as variable.", ast->type_decl->type_name);
@@ -2019,57 +2000,54 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         if (scope->parent != NULL) {
             error(ast->line, ast->file, "Cannot declare an extern inside scope ('%s').", ast->fn_decl->var->name);
         }
-        for (VarList *args = ast->fn_decl->args; args != NULL; args = args->next) {
-            if (resolve_alias(args->item->type) == NULL) {
-                error(ast->line, ast->file, "Unknown type '%s' in declaration of extern function '%s'", type_to_string(args->item->type), ast->fn_decl->var->name);
+        for (int i = 0; i < array_len(ast->fn_decl->args); i++) {
+            if (!resolve_alias(ast->fn_decl->args[i]->type)) {
+                error(ast->line, ast->file, "Unknown type '%s' in declaration of extern function '%s'", type_to_string(ast->fn_decl->args[i]->type), ast->fn_decl->var->name);
             }
         }
-        if (resolve_alias(ast->fn_decl->var->type->fn.ret) == NULL) {
+        if (!resolve_alias(ast->fn_decl->var->type->fn.ret)) {
             error(ast->line, ast->file, "Unknown type '%s' in declaration of extern function '%s'", type_to_string(ast->fn_decl->var->type->fn.ret), ast->fn_decl->var->name);
         }
 
-        attach_var(scope, ast->fn_decl->var);
+        array_push(scope->vars, ast->fn_decl->var);
         define_global(ast->fn_decl->var);
         break;
     case AST_ANON_FUNC_DECL:
     case AST_FUNC_DECL:
-        return parse_func_decl_semantics(scope, ast);
+        return check_func_decl_semantics(scope, ast);
     case AST_CALL:
-        return parse_call_semantics(scope, ast);
+        return check_call_semantics(scope, ast);
     case AST_INDEX: 
-        return parse_index_semantics(scope, ast);
+        return check_index_semantics(scope, ast);
     case AST_IMPL:
         check_for_unresolved(ast, ast->impl->type);
 
         if (contains_generic_struct(ast->impl->type)) {
             ast->impl->type = reify_struct(scope, ast, ast->impl->type);
         }
-        for (AstList *list = ast->impl->methods; list != NULL; list = list->next) {
-            list->item = parse_semantics(scope, list->item);
-            VarList *args = list->item->fn_decl->args;
-
-            Type *recv = args->item->type;
-
+        for (int i = 0; i < array_len(ast->impl->methods); i++) {
+            Ast *m = check_semantics(scope, ast->impl->methods[i]);
+            Type *recv = m->fn_decl->args[0]->type;
             if (recv->comp == REF) {
                 recv = recv->ref.inner;
             }
-
             if (!is_concrete(ast->impl->type) && recv->comp == PARAMS) {
                 recv = recv->params.inner;
             }
 
             if (!check_type(recv, ast->impl->type)) {
                 char *name = type_to_string(ast->impl->type);
-                error(list->item->line, list->item->file, "Method '%s' of type %s must have type %s or a reference to it as the receiver (first) argument.", list->item->fn_decl->var->name, name, name);
+                error(m->line, m->file, "Method '%s' of type %s must have type %s or a reference to it as the receiver (first) argument.", m->fn_decl->var->name, name, name);
             }
+            ast->impl->methods[i] = m;
         }
 
         ast->var_type = base_type(VOID_T);
         break;
     case AST_CONDITIONAL: {
         AstConditional *c = ast->cond;
-        c->condition = parse_semantics(scope, c->condition);
-        c->scope->parent_deferred = c->scope->parent != NULL ? c->scope->parent->deferred : NULL;
+        c->condition = check_semantics(scope, c->condition);
+        c->scope->parent_deferred = c->scope->parent != NULL ? array_len(c->scope->parent->deferred)-1 : -1;
 
         // TODO: I don't think typedefs of bool should be allowed here...
         if (!is_bool(c->condition->var_type)) {
@@ -2077,11 +2055,11 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
                 type_to_string(c->condition->var_type));
         }
         
-        c->if_body = parse_block_semantics(c->scope, c->if_body, 0);
+        c->if_body = check_block_semantics(c->scope, c->if_body, 0);
 
         if (c->else_body != NULL) {
-            c->else_body = parse_block_semantics(c->else_scope, c->else_body, 0);
-            c->else_scope->parent_deferred = c->else_scope->parent != NULL ? c->else_scope->parent->deferred : NULL;
+            c->else_body = check_block_semantics(c->else_scope, c->else_body, 0);
+            c->else_scope->parent_deferred = c->else_scope->parent != NULL ? array_len(c->else_scope->parent->deferred)-1 : -1;
         }
 
         ast->var_type = base_type(VOID_T);
@@ -2089,23 +2067,23 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
     }
     case AST_WHILE: {
         AstWhile *lp = ast->while_loop;
-        lp->condition = parse_semantics(scope, lp->condition);
-        lp->scope->parent_deferred = lp->scope->parent != NULL ? lp->scope->parent->deferred : NULL;
+        lp->condition = check_semantics(scope, lp->condition);
+        lp->scope->parent_deferred = lp->scope->parent != NULL ? array_len(lp->scope->parent->deferred)-1 : -1;
 
         if (!is_bool(lp->condition->var_type)) {
             error(ast->line, ast->file, "Non-boolean ('%s') condition for while loop.",
                     type_to_string(lp->condition->var_type));
         }
 
-        lp->body = parse_block_semantics(lp->scope, lp->body, 0);
+        lp->body = check_block_semantics(lp->scope, lp->body, 0);
 
         ast->var_type = base_type(VOID_T);
         break;
     }
     case AST_FOR: {
         AstFor *lp = ast->for_loop;
-        lp->iterable = parse_semantics(scope, lp->iterable);
-        lp->scope->parent_deferred = lp->scope->parent != NULL ? lp->scope->parent->deferred : NULL;
+        lp->iterable = check_semantics(scope, lp->iterable);
+        lp->scope->parent_deferred = lp->scope->parent != NULL ? array_len(lp->scope->parent->deferred)-1 : -1;
 
         if (lp->index != NULL) {
             if (!strcmp(lp->index->name, lp->itervar->name)) {
@@ -2121,7 +2099,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
 
             }
             // TODO: check for overflow of index type on static array
-            attach_var(lp->scope, lp->index);
+            array_push(lp->scope->vars, lp->index);
         }
 
         Type *it_type = lp->iterable->var_type;
@@ -2139,16 +2117,16 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             lp->itervar->type = make_ref_type(lp->itervar->type);
         }
         // TODO type check for when type of itervar is explicit
-        attach_var(lp->scope, lp->itervar);
-        lp->body = parse_block_semantics(lp->scope, lp->body, 0);
+        array_push(lp->scope->vars, lp->itervar);
+        lp->body = check_block_semantics(lp->scope, lp->body, 0);
 
         ast->var_type = base_type(VOID_T);
         break;
     }
     case AST_ANON_SCOPE:
-        ast->anon_scope->body = parse_block_semantics(ast->anon_scope->scope, ast->anon_scope->body, 0);
+        ast->anon_scope->body = check_block_semantics(ast->anon_scope->scope, ast->anon_scope->body, 0);
         if (ast->anon_scope->scope->parent != NULL) {
-            ast->anon_scope->scope->parent_deferred = ast->anon_scope->scope->parent->deferred;
+            ast->anon_scope->scope->parent_deferred = array_len(ast->anon_scope->scope->parent->deferred)-1;
         }
         break;
     case AST_RETURN: {
@@ -2172,7 +2150,7 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             // resolve_polymorph, the type is still Array(T). Is the scope not
             // being set to the proper one (with the polymorph on it), so that
             // at this point there is nothing to resolve to?
-            ast->ret->expr = parse_semantics(scope, ast->ret->expr);
+            ast->ret->expr = check_semantics(scope, ast->ret->expr);
             ret_t = resolve_polymorph(ast->ret->expr->var_type);
         }
 
@@ -2205,12 +2183,12 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
         ast->var_type = base_type(VOID_T);
         break;
     case AST_BLOCK:
-        ast->block = parse_block_semantics(scope, ast->block, 0);
+        ast->block = check_block_semantics(scope, ast->block, 0);
         break;
     case AST_DIRECTIVE:
-        return parse_directive_semantics(scope, ast);
+        return check_directive_semantics(scope, ast);
     case AST_ENUM_DECL:
-        return parse_enum_decl_semantics(scope, ast);
+        return check_enum_decl_semantics(scope, ast);
     case AST_TYPEINFO:
         break;
     case AST_IMPORT:
@@ -2219,8 +2197,8 @@ Ast *parse_semantics(Scope *scope, Ast *ast) {
             p->semantics_checked = 1;
             push_current_package(p);
             /*p->pkg_name = package_name(p->path);*/
-            for (PkgFileList *list = p->files; list != NULL; list = list->next) {
-                list->item->root = parse_semantics(p->scope, list->item->root);
+            for (int i = 0; i < array_len(p->files); i++) {
+                p->files[i]->root = check_semantics(p->scope, p->files[i]->root);
             }
             pop_current_package();
         }

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../array/array.h"
 #include "var.h"
 
 static int last_var_id = 0;
@@ -40,71 +41,17 @@ void init_struct_var(Var *var) {
     assert(type->comp == STRUCT);
 
     var->initialized = 1;
-    var->members = malloc(sizeof(Var*)*type->st.nmembers);
+    var->members = NULL;
 
-    for (int i = 0; i < type->st.nmembers; i++) {
+    for (int i = 0; i < array_len(type->st.member_names); i++) {
         int l = strlen(var->name)+strlen(type->st.member_names[i])+1;
         char *member_name;
         member_name = malloc((l+1)*sizeof(char));
         sprintf(member_name, "%s.%s", var->name, type->st.member_names[i]);
         member_name[l] = 0;
 
-        var->members[i] = make_var(member_name, type->st.member_types[i]); // TODO
-        var->members[i]->initialized = 1; // maybe wrong?
+        Var *v = make_var(member_name, type->st.member_types[i]); // TODO
+        v->initialized = 1; // maybe wrong?
+        array_push(var->members, v);
     }
-}
-
-VarList *varlist_append(VarList *list, Var *v) {
-    VarList *vl = malloc(sizeof(VarList));
-    vl->item = v;
-    vl->next = list;
-    return vl;
-}
-
-VarList *varlist_remove(VarList *list, char *name) {
-    if (list != NULL) {
-        if (!strcmp(list->item->name, name)) {
-            return list->next;
-        }
-        VarList *curr = NULL;
-        VarList *last = list;
-        while (last->next != NULL) {
-            curr = last->next;
-            if (!strcmp(curr->item->name, name)) {
-                last->next = curr->next;
-                break;
-            }
-            last = curr;
-        }
-    }
-    return list;
-}
-
-Var *varlist_find(VarList *list, char *name) {
-    Var *v = NULL;
-    while (list != NULL) {
-        if (!strcmp(list->item->name, name)) {
-            v = list->item;
-            break;
-        }
-        list = list->next;
-    }
-    return v;
-}
-
-VarList *reverse_varlist(VarList *list) {
-    VarList *tail = list;
-    if (tail == NULL) {
-        return NULL;
-    }
-    VarList *head = tail;
-    VarList *tmp = head->next;
-    head->next = NULL;
-    while (tmp != NULL) {
-        tail = head;
-        head = tmp;
-        tmp = tmp->next;
-        head->next = tail;
-    }
-    return head;
 }

@@ -51,7 +51,7 @@ typedef enum {
     TOK_IMPL
 } TokType;
 
-enum {
+typedef enum {
     OP_PLUS,
     OP_MINUS,
     OP_MUL,
@@ -76,7 +76,7 @@ enum {
     OP_REF,
     OP_DEREF,
     OP_CAST
-};
+} OpType;
 
 typedef struct Tok {
     TokType type;
@@ -88,14 +88,6 @@ typedef struct Tok {
     };
 } Tok;
 
-typedef struct TokList {
-    Tok *item;
-    struct TokList *next;
-} TokList;
-
-TokList *toklist_append(TokList *list, Tok *t);
-TokList *reverse_toklist(TokList *list);
-
 void skip_spaces();
 int is_id_char(char c);
 
@@ -103,6 +95,7 @@ Tok *make_token(int t);
 Tok *next_token();
 Tok *next_token_or_newline();
 Tok *peek_token();
+Tok *try_eat_token(TokType t);
 
 void unget_token(Tok *tok);
 
@@ -114,12 +107,12 @@ Tok *check_reserved(char *buf);
 
 int priority_of(Tok *t);
 const char *tok_to_string(Tok *t);
-const char *token_type(int type);
+const char *token_type(TokType type);
 const char *op_to_str(int op);
 int is_comparison(int op);
 int valid_unary_op(int op);
 
-void set_file_source(char *name, FILE *f);
+void push_file_source(char *name, FILE *f);
 void pop_file_source();
 
 Tok *expect(int type);

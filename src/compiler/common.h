@@ -1,31 +1,21 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#include "../hashmap/hashmap.h"
+
 typedef struct Package {
     char *path;
     char *name;
     struct Scope *scope;
-    struct VarList *globals;
-    struct PkgFileList *files;
+    struct Var **globals;
+    struct PkgFile **files;
     int semantics_checked;
 } Package;
-
-typedef struct PkgList {
-    Package *item;
-    struct PkgList *next;
-    struct PkgList *prev;
-} PkgList;
 
 typedef struct PkgFile {
     char *name;
     struct Ast *root;
 } PkgFile;
-
-typedef struct PkgFileList {
-    PkgFile *item;
-    struct PkgFileList *next;
-    struct PkgFileList *prev;
-} PkgFileList;
 
 typedef enum TypeComp {
     BASIC,
@@ -53,24 +43,21 @@ typedef struct ArrayType {
 } ArrayType;
 
 typedef struct FnType {
-    int nargs;
-    struct TypeList *args;
+    struct Type **args;
     struct Type *ret;
     int variadic;
 } FnType;
 
 typedef struct StructType {
-    int nmembers;
     char **member_names;
     struct Type **member_types;
     int generic;
-    struct TypeList *arg_params;
+    struct Type **arg_params;
     struct Type *generic_base;
-    struct AstList *methods;
+    struct Ast **methods;
 } StructType;
 
 typedef struct EnumType {
-    int nmembers;
     char **member_names;
     long *member_values;
     struct Type *inner;
@@ -87,7 +74,7 @@ typedef struct Type {
         char *name;
 
         struct {
-            struct TypeList *args;
+            struct Type **args;
             struct Type *inner;
         } params;
 
@@ -108,8 +95,7 @@ typedef struct Type {
 typedef struct TypeDef {
     char *name;
     Type *type;
-    Type *defined_type;
-    struct TypeDef *next;
+    //Type *defined_type;
 } TypeDef;
 
 typedef struct Var {
@@ -127,11 +113,15 @@ typedef struct Var {
     struct AstFnDecl *fn_decl;
 } Var;
 
+typedef struct TempVar {
+    Var *var;
+    int ast_id;
+} TempVar;
+
 typedef struct Polymorph {
     int               id;
-    struct TypeList  *args;
-    TypeDef          *defs;
-    struct Polymorph *next;
+    Type            **args;
+    hashmap_t(TypeDef*)  defs;
     struct Scope     *scope;
     struct AstBlock  *body;
     Type             *ret;
@@ -147,16 +137,16 @@ typedef enum {
 typedef struct Scope {
     struct Scope *parent;
     ScopeType type;
-    struct VarList *vars;
-    struct TempVarList *temp_vars;
-    TypeDef *types;
-    struct TypeList *used_types;
+    struct Var **vars;
+    struct TempVar **temp_vars;
+    hashmap_t(TypeDef*) types;
+    Type **used_types;
     unsigned char has_return;
     Var *fn_var;
     Polymorph *polymorph;
-    struct AstList *parent_deferred;
-    struct AstList *deferred;
-    struct PkgList *packages;
+    int parent_deferred;
+    struct Ast **deferred;
+    struct Package **imported_packages;
 } Scope;
 
 typedef enum AstType {

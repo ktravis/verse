@@ -17,7 +17,7 @@ typedef struct FileStack {
 static FileStack *source_stack = NULL;
 static Tok *_last_token = NULL;
 
-void set_file_source(char *name, FILE *f) {
+void push_file_source(char *name, FILE *f) {
     FileStack *stack = malloc(sizeof(struct FileStack));
     stack->name = name;
     stack->line = 1;
@@ -94,29 +94,6 @@ char read_non_space() {
     return c;
 }
 
-TokList *toklist_append(TokList *list, Tok *t) {
-    TokList *out = malloc(sizeof(TokList));
-    out->next = list;
-    out->item = t;
-    return out;
-}
-TokList *reverse_toklist(TokList *list) {
-    TokList *tail = list;
-    if (tail == NULL) {
-        return NULL;
-    }
-    TokList *head = tail;
-    TokList *tmp = head->next;
-    head->next = NULL;
-    while (tmp != NULL) {
-        tail = head;
-        head = tmp;
-        tmp = tmp->next;
-        head->next = tail;
-    }
-    return head;
-}
-
 int is_id_char(char c) {
     return isalpha(c) || isdigit(c) || c == '_';
 }
@@ -150,11 +127,6 @@ int expect_line_break_or_semicolon() {
     unget_char(c);
     return 0;
 }
-
-struct TokListList {
-    TokList *list;
-    struct TokListList *next;
-};
 
 Tok *_next_token(int nl_ok) {
     if (_last_token != NULL) {
@@ -411,6 +383,18 @@ Tok *peek_token() {
     Tok *t = next_token();
     unget_token(t);
     return t;
+}
+
+Tok *try_eat_token(TokType t) {
+    Tok *tok = next_token();
+    if (tok == NULL) {
+        error(lineno(), current_file_name(), "Expected token '%s', but got EOF", token_type(t));
+    }
+    if (tok->type == t) {
+        return tok;
+    }
+    unget_token(tok);
+    return NULL;
 }
 
 void unget_token(Tok *tok) {
@@ -822,7 +806,7 @@ const char *tok_to_string(Tok *t) {
     }
 }
 
-const char *token_type(int type) {
+const char *token_type(TokType type) {
     switch (type) {
     case TOK_STR:
         return "STR";

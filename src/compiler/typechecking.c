@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <string.h>
 
+#include "../array/array.h"
 #include "ast.h"
 #include "typechecking.h"
 #include "scope.h"
@@ -34,10 +35,10 @@ int check_type(Type *a, Type *b) {
     case STATIC_ARRAY:
         return a->array.length == b->array.length && check_type(a->array.inner, b->array.inner);
     case STRUCT:
-        if (a->st.nmembers != b->st.nmembers) {
+        if (array_len(a->st.member_names) != array_len(b->st.member_names)) {
             return 0;
         }
-        for (int i = 0; i < a->st.nmembers; i++) {
+        for (int i = 0; i < array_len(a->st.member_names); i++) {
             if (strcmp(a->st.member_names[i], b->st.member_names[i])) {
                 return 0;
             }
@@ -50,19 +51,13 @@ int check_type(Type *a, Type *b) {
         if (a->fn.variadic != b->fn.variadic) {
             return 0;
         }
-        TypeList *aargs = a->fn.args;
-        TypeList *bargs = b->fn.args;
-        for (;;) {
-            if (aargs == NULL && bargs == NULL) {
-                break;
-            } else if (aargs == NULL || bargs == NULL) {
+        if (array_len(a->fn.args) != array_len(b->fn.args)) {
+            return 0;
+        }
+        for (int i = 0; i < array_len(a->fn.args); i++) {
+            if (!check_type(a->fn.args[i], b->fn.args[i])) {
                 return 0;
             }
-            if (!check_type(aargs->item, bargs->item)) {
-                return 0;
-            }
-            aargs = aargs->next;
-            bargs = bargs->next;
         }
         return check_type(a->fn.ret, b->fn.ret);
     default:
@@ -185,48 +180,36 @@ int match_polymorph(Scope *scope, Type *expected, Type *got) {
         if (expected->fn.variadic != res->fn.variadic) {
             return 0;
         }
-        TypeList *exp_args = expected->fn.args;
-        TypeList *got_args = res->fn.args;
-        for (;;) {
-            if (exp_args == NULL && got_args == NULL) {
-                break;
-            } else if (exp_args == NULL || got_args == NULL) {
-                return 0;
-            }
+        if (array_len(expected->fn.args) != array_len(res->fn.args)) {
+            return 0;
+        }
+        for (int i = 0; i < array_len(expected->fn.args); i++) {
             // TODO: not sure this was right
-            if (is_polydef(exp_args->item)) {
-                if (!match_polymorph(scope, exp_args->item, got_args->item)) {
+            if (is_polydef(expected->fn.args[i])) {
+                if (!match_polymorph(scope, expected->fn.args[i], res->fn.args[i])) {
                     return 0;
                 }
-            } else if (!check_type(exp_args->item, got_args->item)) {
+            } else if (!check_type(expected->fn.args[i], res->fn.args[i])) {
                 return 0;
             }
-            exp_args = exp_args->next;
-            got_args = got_args->next;
         }
         return check_type(expected->fn.ret, res->fn.ret);
     case PARAMS: {
         if (!check_type(expected->params.inner, res->params.inner)) {
             return 0;
         }
-        TypeList *exp_params = expected->params.args;
-        TypeList *got_params = res->params.args;
-        for (;;) {
-            if (exp_params == NULL && got_params == NULL) {
-                break;
-            } else if (exp_params == NULL || got_params == NULL) {
-                return 0;
-            }
+        if (array_len(expected->params.args) != array_len(res->params.args)) {
+            return 0;
+        }
+        for (int i = 0; i < array_len(expected->params.args); i++) {
             // TODO: not sure this was right
-            if (is_polydef(exp_params->item)) {
-                if (!match_polymorph(scope, exp_params->item, got_params->item)) {
+            if (is_polydef(expected->params.args[i])) {
+                if (!match_polymorph(scope, expected->params.args[i], res->params.args[i])) {
                     return 0;
                 }
-            } else if (!check_type(exp_params->item, got_params->item)) {
+            } else if (!check_type(expected->params.args[i], res->params.args[i])) {
                 return 0;
             }
-            exp_params = exp_params->next;
-            got_params = got_params->next;
         }
         return 1;
     }

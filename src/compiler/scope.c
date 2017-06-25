@@ -3,39 +3,25 @@
 #include <string.h>
 #include <dirent.h>
 
+#include "../array/array.h"
+#include "../hashmap/hashmap.h"
 #include "scope.h"
 #include "parse.h"
 #include "semantics.h"
 
-// TODO: put these guys in a "compiler" section
-//
-
-static Package *main_package = NULL;
-static Package *current_package = NULL;
-static PkgList *pkg_stack = NULL;
-
-Package *init_main_package(char *path) {
-    assert(main_package == NULL);
-    main_package = calloc(sizeof(Package), 1);
-    main_package->path = path;
-    main_package->name = "<main>";
-    main_package->scope = new_scope(NULL);
-    push_current_package(main_package);
-    return main_package;
-}
-
-void define_global(Var *v) {
-    current_package->globals = varlist_append(current_package->globals, v);
-}
-
-static VarList *builtin_vars = NULL;
+static Var **builtin_vars = NULL;
 
 void define_builtin(Var *v) {
-    builtin_vars = varlist_append(builtin_vars, v);
+    array_push(builtin_vars, v);
 }
 
 Var *find_builtin_var(char *name) {
-    return varlist_find(builtin_vars, name);
+    for (int i = 0; i < array_len(builtin_vars); i++) {
+        if (!strcmp(builtin_vars[i]->name, name)) {
+            return builtin_vars[i];
+        }
+    }
+    return NULL;
 }
 
 static Scope *builtin_types_scope = NULL;
@@ -43,185 +29,29 @@ void init_builtin_types() {
     builtin_types_scope = new_scope(NULL);
     init_types(builtin_types_scope);
 }
-TypeList *builtin_types() {
-    assert(builtin_types_scope != NULL);
-    TypeList *out = NULL;
-    for (TypeList *list = builtin_types_scope->used_types; list != NULL; list = list->next) {
-        out = typelist_append(out, list->item);
-    }
-    return out;
-}
 
-static PkgList *all_packages = NULL;
-
-static Package *pkglist_find(PkgList *list, char *path);
-
-static Package *package_previously_loaded(char *path) {
-    return pkglist_find(all_packages, path);
-}
-
-static Package *pkglist_find(PkgList *list, char *path) {
-    for (; list != NULL; list = list->next) {
-        if (!strcmp(list->item->path, path)) {
-            return list->item;
-        }
-    }
-    return NULL;
-}
-
-static Package *pkglist_find_by_name(PkgList *list, char *name) {
-    for (; list != NULL; list = list->next) {
-        if (!strcmp(list->item->name, name)) {
-            return list->item;
-        }
-    }
-    return NULL;
-}
-static PkgList *pkglist_append(PkgList *list, Package *p) {
-    PkgList *l = malloc(sizeof(PkgList));
-    l->item = p;
-    l->next = list;
-    if (list != NULL) {
-        list->prev = l;
-    }
-    list = l;
-    return list;
-}
-
-// TODO: change this
-PkgList *all_loaded_packages() {
-    return all_packages;
-    /*PkgList *head = NULL;*/
-    /*while (all_packages != NULL) {*/
-        /*head = pkglist_append(head, all_packages->item);*/
-        /*all_packages = all_packages->next;*/
+Type **builtin_types() {
+    return builtin_types_scope->used_types;
+    /*Type **out = NULL;*/
+    /*iter_t iter = hashmap_iter();*/
+    /*TypeDef **x;*/
+    /*while ((x = hashmap_next(&builtin_types_scope->types, iter))) {*/
+        /*array_push(out, (*x)->type);*/
     /*}*/
-    /*return head;*/
+    /*return out;*/
 }
 
-void push_current_package(Package *p) {
-    pkg_stack = pkglist_append(pkg_stack, p);
-    current_package = p;
+static Type **used_types = NULL;
+
+Type **all_used_types() {
+    return used_types;
 }
-
-Package *pop_current_package() {
-    pkg_stack = pkg_stack->next;
-    current_package = pkg_stack->item;
-    return current_package;
-}
-
-static char *verse_root = NULL;
-
-// TODO: error when path is NULL
-Package *load_package(char *current_file, Scope *scope, char *path) {
-    // TODO: hardcoded, this should also read env var if available
-    if (verse_root == NULL) {
-        // if env var is set, use that
-        // else:
-        verse_root = root_from_binary();
-    }
-    if (path[0] != '/') {
-        int dirlen = strlen(verse_root) + 4; // + "src/"
-        int pathlen = strlen(path);
-        char *tmp = malloc(sizeof(char) * (dirlen + pathlen + 1));
-        snprintf(tmp, dirlen + pathlen + 1, "%ssrc/%s", verse_root, path);
-        path = tmp;
-    }
-    Package *p = package_previously_loaded(path);
-    if (p != NULL) {
-        if (pkglist_find(scope->packages, path) == NULL) {
-            scope->packages = pkglist_append(scope->packages, p);
-        }
-        return p;
-    }
-
-    p = malloc(sizeof(Package));
-    p->globals = NULL;
-    p->path = path;
-    p->scope = new_scope(NULL);
-    p->semantics_checked = 0;
-    p->name = package_name(path);
-
-    p->files = NULL;
-
-    DIR *d = opendir(path);
-    // TODO: better error
-    if (d == NULL) {
-        error(lineno(), current_file, "Could not load package with path: '%s'", path);
-    }
-
-    // push package stack
-    push_current_package(p);
-
-    struct dirent *ent = NULL;
-    while ((ent = readdir(d)) != NULL) {
-        if (ent->d_type != DT_REG) {
-            continue;
-        }
-        int namelen = strlen(ent->d_name);
-        if (namelen < 4) {
-            continue;
-        }
-        if (strcmp(ent->d_name + namelen - 3, ".vs")) {
-            continue;
-        }
-        if (namelen > 9 && !strcmp(ent->d_name + namelen - 8, "_test.vs")) {
-            continue;
-        }
-
-        int len = strlen(path) + namelen;
-        char *filepath = malloc(sizeof(char) * (len + 2));
-        snprintf(filepath, len + 2, "%s/%s", path, ent->d_name);
-
-        Ast *file_ast = parse_source_file(filepath);
-        pop_file_source();
-        file_ast = first_pass(p->scope, file_ast);
-        PkgFile *f = malloc(sizeof(PkgFile));
-        f->name = filepath;
-        f->root = file_ast;
-        PkgFileList *list = malloc(sizeof(PkgFileList));
-        list->item = f;
-        if (p->files != NULL) {
-            p->files->prev = list;
-        }
-        list->next = p->files;
-        p->files = list;
-    }
-    if (p->files == NULL) {
-        error(lineno(), current_file, "No verse source files found in package '%s' ('%s').", p->name, p->path);
-    }
-    closedir(d);
-
-    pop_current_package();
-
-    all_packages = pkglist_append(all_packages, p);
-    scope->packages = pkglist_append(scope->packages, p);
-    return p;
-}
-
-Package *lookup_imported_package(Scope *scope, char *name) {
-    // go to root
-    while (scope->parent != NULL) {
-        scope = scope->parent;
-    }
-    return pkglist_find_by_name(scope->packages, name);
-}
-
-static TypeList *used_types = NULL;
-
-TypeList *all_used_types() {
-    TypeList *out = NULL;
-    for (TypeList *list = used_types; list != NULL; list = list->next) {
-        out = typelist_append(out, list->item);
-    }
-    return out;
-}
-// --
 
 Scope *new_scope(Scope *parent) {
     Scope *s = calloc(sizeof(Scope), 1);
     s->parent = parent;
     s->type = parent != NULL ? Simple : Root;
+    hashmap_init(&s->types);
     return s;
 }
 
@@ -261,17 +91,14 @@ Type *fn_scope_return_type(Scope *scope) {
 }
 
 Type *lookup_local_type(Scope *s, char *name) {
-    if (s->polymorph != NULL) {
-        for (TypeDef *td = s->polymorph->defs; td != NULL; td = td->next) {
-            if (!strcmp(td->name, name)) {
-                return td->type;
-            }
+    TypeDef **tmp = NULL;
+    if (s->polymorph) {
+        if ((tmp = hashmap_get(&s->polymorph->defs, name))) {
+            return (*tmp)->type;
         }
     }
-    for (TypeDef *td = s->types; td != NULL; td = td->next) {
-        if (!strcmp(td->name, name)) {
-            return td->type;
-        }
+    if ((tmp = hashmap_get(&s->types, name))) {
+        return (*tmp)->type;
     }
     return NULL;
 }
@@ -288,13 +115,13 @@ Type *lookup_type(Scope *s, char *name) {
 
 int check_type(Type *a, Type *b);
 int get_type_id(Type *t) {
-    for (TypeList *list = used_types; list != NULL; list = list->next) {
-        if (check_type(list->item, t)) {
-
+    for (int i = 0; i < array_len(used_types); i++) {
+        if (check_type(used_types[i], t)) {
             /*errlog("get type id for %d %s %d %s", t->id, type_to_string(t), list->item->id, type_to_string(list->item));*/
-            return list->item->id;
+            return used_types[i]->id;
         }
     }
+    assert(0);
     return -1;
 }
 
@@ -303,28 +130,32 @@ void register_type(Type *t) {
     if (t->comp == ENUM) {
         return;
     }
-    for (TypeList *list = used_types; list != NULL; list = list->next) {
-        if (check_type(list->item, t)) {
+    for (int i = 0; i < array_len(used_types); i++) {
+        if (check_type(used_types[i], t)) {
             return;
         }
     }
-    for (TypeList *list = builtin_types_scope->used_types; list != NULL; list = list->next) {
-        if (check_type(list->item, t)) {
-            return;
-        }
-    }
+    /*iter_t iter = hashmap_iter();*/
+    /*TypeDef **x;*/
+    /*while ((x = hashmap_next(&builtin_types_scope->types, iter))) {*/
+    /*for (int i = 0; i < array_len(builtin_types_scope->used_types); i++) {*/
+        /*if (check_type(builtin_types_scope->used_types[i], t)) {*/
+            /*return;*/
+        /*}*/
+    /*}*/
 
-    used_types = typelist_append(used_types, t);
-    /*errlog("Registering %d %s", t->id, type_to_string(t));*/
+    /*fprintf(stderr, "testing register_type: %s\n", type_to_string(t));*/
+
+    array_push(used_types, t);
 
     Type *resolved = resolve_alias(t);
-    if (resolved == NULL) {
+    if (!resolved) {
         return;
     }
 
     switch (resolved->comp) {
     case STRUCT:
-        for (int i = 0; i < resolved->st.nmembers; i++) {
+        for (int i = 0; i < array_len(resolved->st.member_types); i++) {
             register_type(resolved->st.member_types[i]);
         }
         break;
@@ -339,14 +170,14 @@ void register_type(Type *t) {
         register_type(resolved->ref.inner);
         break;
     case FUNC:
-        for (TypeList *list = resolved->fn.args; list != NULL; list = list->next) {
-            register_type(list->item);
+        for (int i = 0; i < array_len(resolved->fn.args); i++) {
+            register_type(resolved->fn.args[i]);
         }
         register_type(resolved->fn.ret);
         break;
     case PARAMS:
-        for (TypeList *list = t->params.args; list != NULL; list = list->next) {
-            register_type(list->item);
+        for (int i = 0; i < array_len(t->params.args); i++) {
+            register_type(t->params.args[i]);
         }
         break;
     default:
@@ -360,14 +191,10 @@ Type *define_polymorph(Scope *s, Type *poly, Type *type) {
     if (lookup_local_type(s, poly->name) != NULL) {
         error(-1, "internal", "Type '%s' already declared within this scope.", poly->name);
     }
-
     TypeDef *td = malloc(sizeof(TypeDef));
     td->name = poly->name;
     td->type = resolve_polymorph(type);
-    td->next = s->polymorph->defs;
-
-    s->polymorph->defs = td;
-
+    hashmap_put(&s->polymorph->defs, poly->name, td);
     return make_type(s, poly->name);
 }
 
@@ -386,16 +213,16 @@ int define_polydef_alias(Scope *scope, Type *t) {
         count += define_polydef_alias(scope, t->array.inner);
         break;
     case STRUCT:
-        for (int i = 0; i < t->st.nmembers; i++) {
+        for (int i = 0; i < array_len(t->st.member_types); i++) {
             if (is_polydef(t->st.member_types[i])) {
                 count += define_polydef_alias(scope, t->st.member_types[i]);
             }
         }
         break;
     case FUNC:
-        for (TypeList *args = t->fn.args; args != NULL; args = args->next) {
-            if (is_polydef(args->item)) {
-                count += define_polydef_alias(scope, args->item);
+        for (int i = 0; i < array_len(t->fn.args); i++) {
+            if (is_polydef(t->fn.args[i])) {
+                count += define_polydef_alias(scope, t->fn.args[i]);
             }
         }
         if (is_polydef(t->fn.ret)) {
@@ -403,9 +230,9 @@ int define_polydef_alias(Scope *scope, Type *t) {
         }
         break;
     case PARAMS:
-        for (TypeList *list = t->params.args; list != NULL; list = list->next) {
-            if (is_polydef(list->item)) {
-                count += define_polydef_alias(scope, list->item);
+        for (int i = 0; i < array_len(t->params.args); i++) {
+            if (is_polydef(t->params.args[i])) {
+                count += define_polydef_alias(scope, t->params.args[i]);
             }
         }
         break;
@@ -419,21 +246,17 @@ Type *define_type(Scope *s, char *name, Type *type) {
     if (lookup_local_type(s, name) != NULL) {
         error(-1, "internal", "Type '%s' already declared within this scope.", name);
     }
-
     TypeDef *td = malloc(sizeof(TypeDef));
     td->name = name;
     td->type = type;
-    td->next = s->types;
+    hashmap_put(&s->types, name, td);
 
-    s->types = td;
-
-    type = make_type(s, name);
-    td->defined_type = type;
-
-    if (!(td->type->comp == STRUCT && td->type->st.generic)) {
-        register_type(type);
+    Type *named = make_type(s, name);
+    /*array_push(s->used_types, named);*/
+    if (!(type->comp == STRUCT && type->st.generic)) {
+        register_type(named);
     }
-    return type;
+    return named;
 }
 
 int local_type_name_conflict(Scope *scope, char *name) {
@@ -443,39 +266,37 @@ int local_type_name_conflict(Scope *scope, char *name) {
 TypeDef *find_type_definition(Type *t) {
     assert(t->comp == ALIAS || t->comp == POLYDEF);
     Scope *scope = t->scope;
-    while (scope != NULL) {
+    TypeDef **tmp = NULL;
+    while (scope) {
         // eh?
-        if (scope->polymorph != NULL) {
-            for (TypeDef *td = scope->polymorph->defs; td != NULL; td = td->next) {
-                if (!strcmp(td->name, t->name)) {
-                    if (td->type->comp == ALIAS || td->type->comp == POLYDEF) {
-                        return find_type_definition(td->type);
-                    }
-                    return td;
+        if (scope->polymorph) {
+            if ((tmp = hashmap_get(&scope->polymorph->defs, t->name))) {
+                TypeDef *td = *tmp;
+                if (td->type->comp == ALIAS || td->type->comp == POLYDEF) {
+                    return find_type_definition(td->type);
                 }
-            }
-        }
-        for (TypeDef *td = scope->types; td != NULL; td = td->next) {
-            if (!strcmp(td->name, t->name)) {
                 return td;
             }
         }
+        if ((tmp = hashmap_get(&scope->types, t->name))) {
+            return *tmp;
+        }
         scope = scope->parent;
     }
-    for (TypeDef *td = builtin_types_scope->types; td != NULL; td = td->next) {
-        if (!strcmp(td->name, t->name)) {
-            return td;
-        }
+    if ((tmp = hashmap_get(&builtin_types_scope->types, t->name))) {
+        return *tmp;
     }
     return NULL;
 }
 
-void attach_var(Scope *scope, Var *var) {
-    scope->vars = varlist_append(scope->vars, var);
-}
-
 Var *lookup_local_var(Scope *scope, char *name) {
-    return varlist_find(scope->vars, name);
+    for (int i = 0; i < array_len(scope->vars); i++) {
+        Var *v = scope->vars[i];
+        if (!strcmp(v->name, name)) {
+            return v;
+        }
+    }
+    return NULL;
 }
 
 static Var *_lookup_var(Scope *scope, char *name) {
@@ -497,43 +318,46 @@ static Var *_lookup_var(Scope *scope, char *name) {
 
 Var *lookup_var(Scope *scope, char *name) {
     Var *v = _lookup_var(scope, name);
-    if (v != NULL) {
+    if (v) {
         return v;
     }
-
     // package global
     while (scope->parent != NULL) {
         scope = scope->parent;
     }
     v = lookup_local_var(scope, name);
-    if (v != NULL) {
+    if (v) {
         return v;
     }
-
-    v = varlist_find(builtin_vars, name);
-    return v;
+    for (int i = 0; i < array_len(builtin_vars); i++) {
+        if (!strcmp(builtin_vars[i]->name, name)) {
+            return builtin_vars[i];
+        }
+    }
+    return NULL;
 }
 
-Var *allocate_ast_temp_var(Scope *scope, struct Ast *ast) {
+TempVar *allocate_ast_temp_var(Scope *scope, struct Ast *ast) {
     return make_temp_var(scope, ast->var_type, ast->id);
 }
 
-Var *make_temp_var(Scope *scope, Type *t, int id) {
+TempVar *make_temp_var(Scope *scope, Type *t, int id) {
     Var *v = make_var("", t);
     v->temp = 1;
-    TempVarList *list = malloc(sizeof(TempVarList));
-    list->id = id;
-    list->var = v;
-    list->next = scope->temp_vars;
-    scope->temp_vars = list;
-    attach_var(scope, v);
-    return v;
+    array_push(scope->vars, v);
+
+    TempVar *tv = malloc(sizeof(TempVar));
+    tv->var = v;
+    tv->ast_id = id;
+    array_push(scope->temp_vars, tv);
+    return tv;
 }
 
 Var *find_temp_var(Scope *scope, struct Ast *ast) {
-    for (TempVarList *list = scope->temp_vars; list != NULL; list = list->next) {
-        if (list->id == ast->id) {
-            return list->var;
+    /*for (int i = 0; i < array_len(scope->temp_vars); i++) {*/
+    for (int i = array_len(scope->temp_vars)-1; i >= 0; --i) {
+        if (scope->temp_vars[i]->ast_id == ast->id) {
+            return scope->temp_vars[i]->var;
         }
     }
     return NULL;
@@ -541,29 +365,31 @@ Var *find_temp_var(Scope *scope, struct Ast *ast) {
 
 void remove_temp_var_by_id(Scope *scope, int id) {
     {
-        TempVarList *last = NULL;
-        for (TempVarList *list = scope->temp_vars; list != NULL; list = list->next) {
-            if (list->var->id == id) {
-                if (last == NULL) {
-                    scope->temp_vars = list->next;
-                    break;
-                }
-
-                last->next = list->next;
+        int found = -1;
+        for (int i = 0; i < array_len(scope->temp_vars); i++) {
+            if (scope->temp_vars[i]->var->id == id) {
+                found = i;
+                break;
+            }
+        }
+        if (found != -1) {
+            for (int i = found; i < array_len(scope->temp_vars)-1; i++) {
+                scope->temp_vars[i] = scope->temp_vars[i+1];
             }
         }
     }
 
     {
-        VarList *last = NULL;
-        for (VarList *list = scope->vars; list != NULL; list = list->next) {
-            if (list->item->id == id) {
-                if (last == NULL) {
-                    scope->vars = list->next;
-                    break;
-                }
-
-                last->next = list->next;
+        int found = -1;
+        for (int i = 0; i < array_len(scope->vars); i++) {
+            if (scope->vars[i]->id == id) {
+                found = i;
+                break;
+            }
+        }
+        if (found != -1) {
+            for (int i = found; i < array_len(scope->vars)-1; i++) {
+                scope->vars[i] = scope->vars[i+1];
             }
         }
     }

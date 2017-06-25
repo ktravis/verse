@@ -19,12 +19,6 @@ typedef struct TypeData {
     //long length;
 } TypeData;
 
-typedef struct TypeList {
-    struct Type *item;
-    struct TypeList *next;
-    struct TypeList *prev;
-} TypeList;
-
 void init_types();
 
 Type *typeinfo_ref();
@@ -50,13 +44,13 @@ Type *make_type(Scope *scope, char *name);
 Type *make_polydef(Scope *scope, char *name);
 Type *make_poly(Scope *scope, char *name, int id);
 Type *make_ref_type(Type *inner);
-Type *make_fn_type(int nargs, TypeList *args, Type *ret, int variadic);
+Type *make_fn_type(Type **args, Type *ret, int variadic);
 Type *make_static_array_type(Type *inner, long length);
 Type *make_array_type(Type *inner);
-Type *make_enum_type(Type *inner, int nmembers, char **member_names, long *member_values);
-Type *make_params_type(Type *inner, TypeList *params);
-Type *make_struct_type(int nmembers, char **member_names, Type **member_types);
-Type *make_generic_struct_type(int nmembers, char **member_names, Type **member_types, TypeList *params);
+Type *make_enum_type(Type *inner, char **member_names, long *member_values);
+Type *make_params_type(Type *inner, Type **params);
+Type *make_struct_type(char **member_names, Type **member_types);
+Type *make_generic_struct_type(char **member_names, Type **member_types, Type **params);
 Type *make_external_type(char *pkg, char *name);
 
 Type *resolve_polymorph(Type *type);
@@ -77,8 +71,5 @@ int precision_loss_float(Type *t, double ival);
 
 void emit_typeinfo_decl(Scope *scope, Type *t);
 void emit_typeinfo_init(Scope *scope, Type *t);
-
-TypeList *reverse_typelist(TypeList *list);
-TypeList *typelist_append(TypeList *list, Type *t);
 
 #endif

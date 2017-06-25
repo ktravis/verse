@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../array/array.h"
 #include "ast.h"
 #include "token.h"
 #include "util.h"
@@ -135,13 +136,12 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         case STRUCT_LIT:
         case COMPOUND_LIT:
             if (cp->lit->compound_val.array_tempvar != NULL) {
-                cp->lit->compound_val.array_tempvar = copy_var(scope, cp->lit->compound_val.array_tempvar);
+                cp->lit->compound_val.array_tempvar->var = copy_var(scope, cp->lit->compound_val.array_tempvar->var);
             }
-
             cp->lit->compound_val.type = copy_type(scope, cp->lit->compound_val.type);
-            cp->lit->compound_val.member_exprs = malloc(sizeof(Ast*) * cp->lit->compound_val.nmembers);
-            for (int i = 0; i < cp->lit->compound_val.nmembers; i++) {
-                cp->lit->compound_val.member_exprs[i] = copy_ast(scope, ast->lit->compound_val.member_exprs[i]);
+            cp->lit->compound_val.member_exprs = NULL;
+            for (int i = 0; i < array_len(ast->lit->compound_val.member_exprs); i++) {
+                array_push(cp->lit->compound_val.member_exprs, copy_ast(scope, ast->lit->compound_val.member_exprs[i]));
             }
             break;
         case ENUM_LIT:
@@ -190,22 +190,19 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         cp->fn_decl = calloc(sizeof(AstFnDecl), 1);
         cp->fn_decl->var = copy_var(scope, ast->fn_decl->var);
         cp->fn_decl->anon = ast->fn_decl->anon;
-        for (VarList *list = ast->fn_decl->args; list != NULL; list = list->next) {
-            cp->fn_decl->args = varlist_append(cp->fn_decl->args, copy_var(scope, list->item));
+        for (int i = 0; i < array_len(ast->fn_decl->args); i++) {
+            array_push(cp->fn_decl->args, copy_var(scope, ast->fn_decl->args[i]));
         }
-        cp->fn_decl->args = reverse_varlist(cp->fn_decl->args);
         cp->fn_decl->body = copy_ast_block(scope, ast->fn_decl->body);
         break;
     case AST_CALL:
         cp->call = calloc(sizeof(AstCall), 1);
         cp->call->fn = copy_ast(scope, ast->call->fn);
-        cp->call->nargs = ast->call->nargs;
-        for (AstList *list = ast->call->args; list != NULL; list = list->next) {
-            cp->call->args = astlist_append(cp->call->args, copy_ast(scope, list->item));
+        for (int i = 0; i < array_len(ast->call->args); i++) {
+            array_push(cp->call->args, copy_ast(scope, ast->call->args[i]));
         }
-        cp->call->args = reverse_astlist(cp->call->args);
         if (ast->call->variadic_tempvar != NULL) {
-            cp->call->variadic_tempvar = copy_var(scope, ast->call->variadic_tempvar);
+            cp->call->variadic_tempvar->var = copy_var(scope, ast->call->variadic_tempvar->var);
         }
         break;
     case AST_INDEX:
@@ -315,8 +312,8 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
     case AST_IMPL:
         cp->impl = calloc(sizeof(AstImpl), 1);
         cp->impl->type = copy_type(scope, ast->impl->type);
-        for (AstList *list = ast->impl->methods; list != NULL; list = list->next) {
-            cp->impl->methods = astlist_append(cp->impl->methods, copy_ast(scope, list->item));
+        for (int i = 0; i < array_len(ast->impl->methods); i++) {
+            array_push(cp->impl->methods, copy_ast(scope, ast->impl->methods[i]));
         }
         break;
     case AST_METHOD:
@@ -334,10 +331,9 @@ AstBlock *copy_ast_block(Scope *scope, AstBlock *block) {
     b->startline = block->startline;
     b->endline = block->endline;
     b->file = block->file;
-    for (AstList *list = block->statements; list != NULL; list = list->next) {
-        b->statements = astlist_append(b->statements, copy_ast(scope, list->item));
+    for (int i = 0; i < array_len(block->statements); i++) {
+        array_push(b->statements, copy_ast(scope, block->statements[i]));
     }
-    b->statements = reverse_astlist(b->statements);
     return b;
 }
 
@@ -447,7 +443,7 @@ char *get_varname(Ast *ast) {
         }
         Type *orig = ast->dot->object->var_type;
         Type *t = resolve_alias(orig);
-        for (int i = 0; i < t->st.nmembers; i++) {
+        for (int i = 0; i < array_len(t->st.member_names); i++) {
             char *member_name = t->st.member_names[i];
             if (!strcmp(t->st.member_names[i], ast->dot->member_name)) {
                 char *proxy_name;
@@ -473,46 +469,4 @@ char *get_varname(Ast *ast) {
         break;
     }
     return NULL;
-}
-
-AstList *reverse_astlist(AstList *list) {
-    AstList *tail = list;
-    if (tail == NULL) {
-        return NULL;
-    }
-    AstList *head = tail;
-    AstList *tmp = head->next;
-    head->next = NULL;
-    while (tmp != NULL) {
-        tail = head;
-        head = tmp;
-        tmp = tmp->next;
-        head->next = tail;
-    }
-    return head;
-}
-
-AstList *astlist_prepend(AstList *list, Ast *ast) {
-    AstList *l = malloc(sizeof(AstList));
-    l->item = ast;
-    l->next = NULL;
-
-    AstList *head = list;
-    if (head == NULL) {
-        // no list
-        return l;
-    }
-
-    while (head->next != NULL) {
-        head = head->next;
-    }
-    head->next = l;
-    return list;
-}
-
-AstList *astlist_append(AstList *list, Ast *ast) {
-    AstList *l = malloc(sizeof(AstList));
-    l->item = ast;
-    l->next = list;
-    return l;
 }

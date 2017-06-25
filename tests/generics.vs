@@ -10,11 +10,11 @@ fn test(a:derp(s64,$V)) {
     a.a[0] = 12;
 }
 
-fn test_non_poly_use(use arg:derp(string,float)) -> string {
+fn test_non_poly_use(use arg: derp(string,float)) -> string {
     return n;
 }
 
-fn test_non_poly(arg:derp(string,float)) -> string {
+fn test_non_poly(arg: derp(string,float)) -> string {
     return arg.a[1];
 }
 

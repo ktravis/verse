@@ -1,36 +1,37 @@
 #include <stdlib.h>
 
+#include "../array/array.h"
+#include "../hashmap/hashmap.h"
+
 #include "polymorph.h"
 #include "typechecking.h"
 
-Polymorph *create_polymorph(AstFnDecl *decl, TypeList *arg_types) {
+Polymorph *create_polymorph(AstFnDecl *decl, Type **arg_types) {
     Polymorph *p = malloc(sizeof(Polymorph));
-    p->id = decl->polymorphs == NULL ? 0 : decl->polymorphs->id + 1;
+    p->id = array_len(decl->polymorphs);
     p->args = arg_types;
-    p->next = decl->polymorphs;
     p->scope = new_fn_scope(decl->scope);
     p->scope->fn_var = decl->var;
     p->scope->polymorph = p;
     p->body = copy_ast_block(p->scope, decl->body); // p->scope or scope?
     p->ret = NULL;
-    decl->polymorphs = p;
+    hashmap_init(&p->defs);
+    array_push(decl->polymorphs, p);
     return p;
 }
 
-Polymorph *check_for_existing_polymorph(AstFnDecl *decl, TypeList *arg_types) {
+Polymorph *check_for_existing_polymorph(AstFnDecl *decl, Type **arg_types) {
     Polymorph *match = NULL;
-    for (Polymorph *p = decl->polymorphs; p != NULL; p = p->next) {
-        TypeList *types = arg_types;
-
-        for (TypeList *list = p->args; list != NULL; list = list->next) {
+    for (int i = 0; i < array_len(decl->polymorphs); i++) {
+        Polymorph *p = decl->polymorphs[i];
+        for (int j = 0; j < array_len(p->args); j++) {
             match = p;
-            if (!check_type(list->item, types->item)) {
+            if (!check_type(p->args[j], arg_types[j])) {
                 match = NULL;
                 break;
             }
-            types = types->next;
         }
-        if (match != NULL) {
+        if (match) {
             return match;
         }
     }

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../array/array.h"
 #include "eval.h"
 #include "parse.h"
 #include "semantics.h"
@@ -11,7 +12,7 @@
 
 static int last_tmp_fn_id = 0;
 
-static AstList *global_fn_decls = NULL;
+static Ast **global_fn_decls = NULL;
 
 Type *can_be_type_object(Ast *ast) {
     switch (ast->type) {
@@ -34,13 +35,13 @@ Type *can_be_type_object(Ast *ast) {
         if (lt == NULL) {
             return NULL;
         }
-        TypeList *params = NULL;
-        for (AstList *list = ast->call->args; list != NULL; list = list->next) {
-            Type *t = can_be_type_object(list->item);
-            if (t == NULL) {
-                return t;
+        Type **params = NULL;
+        for (int i = 0; i < array_len(ast->call->args); i++) {
+            Type *t = can_be_type_object(ast->call->args[i]);
+            if (!t) {
+                return NULL;
             }
-            params = typelist_append(params, t);
+            array_push(params, t);
         }
         return make_params_type(lt, params);
     }
@@ -95,7 +96,6 @@ Ast *parse_arg_list(Ast *left) {
     func->call->args = NULL;
     func->call->fn = left;
 
-    int n = 0;
     Tok *t;
     for (;;) {
         t = next_token();
@@ -103,8 +103,7 @@ Ast *parse_arg_list(Ast *left) {
             break;
         }
 
-        func->call->args = astlist_append(func->call->args, parse_expression(t, 0));
-        n++;
+        array_push(func->call->args, parse_expression(t, 0));
 
         t = next_token();
         if (t->type == TOK_RPAREN) {
@@ -113,9 +112,6 @@ Ast *parse_arg_list(Ast *left) {
             error(lineno(), current_file_name(), "Unexpected token '%s' in argument list.", tok_to_string(t));
         }
     }
-
-    func->call->args = reverse_astlist(func->call->args);
-    func->call->nargs = n;
     return func; 
 }
 
@@ -149,7 +145,6 @@ Ast *parse_compound_literal(Type *type) {
     ast->lit->compound_val.type = type;
 
     int named = 1;
-    int n = 0;
 
     if (peek_token()->type == TOK_RBRACE) {
         next_token();
@@ -159,7 +154,6 @@ Ast *parse_compound_literal(Type *type) {
     char **member_names = NULL;
     Ast **member_exprs = NULL;
     Tok *t = NULL;
-    int alloc = 0;
     for (;;) {
         t = next_token();
         if (t == NULL) {
@@ -168,13 +162,7 @@ Ast *parse_compound_literal(Type *type) {
             break;
         }
 
-        // make sure we have space
-        if (n >= alloc) {
-            alloc += 4;
-            member_names = realloc(member_names, sizeof(char *)*alloc);
-            member_exprs = realloc(member_exprs, sizeof(Ast *)*alloc);
-        }
-
+        char *field_name = NULL;
         if (t->type == TOK_ID) {
             // if the first item is an id, check to see if the next is a colon
             Tok *next = next_token();
@@ -184,26 +172,27 @@ Ast *parse_compound_literal(Type *type) {
                 if (!named) {
                     error(lineno(), current_file_name(), "Cannot mix named and non-named fields in a struct-literal.");
                 }
-                member_names[n] = t->sval;
+                field_name = t->sval;
                 t = next_token();
             } else {
                 // undo our peek otherwise
                 unget_token(next);
 
                 // if we have seen members with names, this is invalid
-                if (named && n > 0) {
+                if (named && member_exprs) {
                     error(lineno(), current_file_name(), "Unexpected token '%s' while parsing compound literal (cannot mix named and non-named fields in a struct-literal).", tok_to_string(t));
                 }
                 named = 0;
             }
         } else {
-            if (named && n > 0) {
+            if (named && member_exprs) {
                 error(lineno(), current_file_name(), "Unexpected token '%s' while parsing compound literal (cannot mix named and non-named fields in a struct-literal).", tok_to_string(t));
             }
             named = 0;
         }
 
-        member_exprs[n++] = parse_expression(t, 0);
+        array_push(member_names, field_name);
+        array_push(member_exprs, parse_expression(t, 0));
 
         t = next_token();
         if (t == NULL) {
@@ -218,8 +207,7 @@ Ast *parse_compound_literal(Type *type) {
     if (named) {
         ast->lit->lit_type = STRUCT_LIT;
     }
-    ast->lit->compound_val.nmembers = n;
-    ast->lit->compound_val.named = n == 0 ? 0 : named;
+    ast->lit->compound_val.named = (named && member_names != NULL);
     ast->lit->compound_val.member_names = member_names;
     ast->lit->compound_val.member_exprs = member_exprs;
 
@@ -300,8 +288,7 @@ Ast *parse_expression(Tok *t, int priority) {
 }
 
 Type *parse_fn_type(int poly_ok) {
-    TypeList *args = NULL;
-    int nargs = 0;
+    Type **args = NULL;
     int variadic = 0;
 
     expect(TOK_LPAREN);
@@ -311,9 +298,7 @@ Type *parse_fn_type(int poly_ok) {
         error(lineno(), current_file_name(), "Unexpected EOF while parsing type.");
     } else if (t->type != TOK_RPAREN) {
         for (;;) {
-            args = typelist_append(args, parse_type(t, poly_ok));
-
-            nargs++;
+            array_push(args, parse_type(t, poly_ok));
             t = next_token();
             if (t == NULL) {
                 error(lineno(), current_file_name(), "Unexpected EOF while parsing type.");
@@ -332,8 +317,6 @@ Type *parse_fn_type(int poly_ok) {
                 error(lineno(), current_file_name(), "Unexpected token '%s' while parsing type.", tok_to_string(t));
             }
         }
-
-        args = reverse_typelist(args);
     }
 
     Type *ret = base_type(VOID_T);
@@ -345,13 +328,13 @@ Type *parse_fn_type(int poly_ok) {
         unget_token(t);
     }
 
-    return make_fn_type(nargs, args, ret, variadic);
+    return make_fn_type(args, ret, variadic);
 }
 
-TypeList *parse_type_params(int in_fn) {
+Type **parse_type_params(int in_fn) {
     Tok *t = next_token();
 
-    TypeList *list = NULL;
+    Type **list = NULL;
 
     for (;;) {
         if (t == NULL) {
@@ -360,7 +343,7 @@ TypeList *parse_type_params(int in_fn) {
         if (t->type == TOK_RPAREN) {
             break;
         } else {
-            list = typelist_append(list, parse_type(t, in_fn));
+            array_push(list, parse_type(t, in_fn));
         }
 
         t = next_token();
@@ -377,13 +360,13 @@ TypeList *parse_type_params(int in_fn) {
         error(lineno(), current_file_name(), "Empty type parameter list is invalid.");
     }
 
-    return reverse_typelist(list);
+    return list;
 }
 
-TypeList *parse_type_param_defs() {
+Type **parse_type_param_defs() {
     Tok *t = next_token();
 
-    TypeList *list = NULL;
+    Type **list = NULL;
 
     for (;;) {
         if (t == NULL) {
@@ -392,12 +375,12 @@ TypeList *parse_type_param_defs() {
         if (t->type == TOK_RPAREN) {
             break;
         } else if (t->type == TOK_ID) {
-            for (TypeList *prev = list; prev != NULL; prev = prev->next) {
-                if (!strcmp(prev->item->name, t->sval)) {
+            for (int i = 1; i < array_len(list); i++) {
+                if (!strcmp(list[i]->name, t->sval)) {
                     error(lineno(), current_file_name(), "Repeated name '%s' in type parameter list.", t->sval);
                 }
             }
-            list = typelist_append(list, make_type(NULL, t->sval));
+            array_push(list, make_type(NULL, t->sval));
         } else {
             error(lineno(), current_file_name(), "Unexpected token '%s' while parsing type parameter list.", tok_to_string(t));
         }
@@ -417,7 +400,7 @@ TypeList *parse_type_param_defs() {
         error(lineno(), current_file_name(), "Empty type parameter list is invalid.");
     }
 
-    return reverse_typelist(list);
+    return list;
 }
 
 Type *parse_type(Tok *t, int poly_ok) {
@@ -532,7 +515,7 @@ Ast *parse_extern_func_decl() {
     Ast *func = ast_alloc(AST_EXTERN_FUNC_DECL); 
 
     int n = 0;
-    TypeList* arg_types = NULL;
+    Type **arg_types = NULL;
     for (;;) {
         t = next_token();
         if (t->type == TOK_DIRECTIVE) {
@@ -551,7 +534,7 @@ Ast *parse_extern_func_decl() {
         }
 
         Type *argtype = parse_type(t, 0);
-        arg_types = typelist_append(arg_types, argtype);
+        array_push(arg_types, argtype);
 
         n++;
 
@@ -562,7 +545,6 @@ Ast *parse_extern_func_decl() {
             error(lineno(), current_file_name(), "Unexpected token '%s' in argument list.", tok_to_string(t));
         }
     }
-    arg_types = reverse_typelist(arg_types);
     Type *ret = base_type(VOID_T);
 
     t = next_token();
@@ -572,7 +554,7 @@ Ast *parse_extern_func_decl() {
         unget_token(t);
     }
 
-    Type *fn_type = make_fn_type(n, arg_types, ret, 0);
+    Type *fn_type = make_fn_type(arg_types, ret, 0);
     Var *fn_decl_var = make_var(fname, fn_type);
     fn_decl_var->ext = 1;
     fn_decl_var->constant = 1;
@@ -598,10 +580,9 @@ Ast *parse_func_decl(int anonymous) {
     Ast *func = ast_alloc(anonymous ? AST_ANON_FUNC_DECL : AST_FUNC_DECL);
     func->fn_decl->args = NULL;
 
-    int n = 0;
     int variadic = 0;
-    VarList *args = func->fn_decl->args;
-    TypeList *arg_types = NULL;
+    Var **args = func->fn_decl->args;
+    Type **arg_types = NULL;
     for (;;) {
         t = next_token();
         if (t->type == TOK_RPAREN) {
@@ -629,8 +610,8 @@ Ast *parse_func_decl(int anonymous) {
                   token_type(t->type), fname);
         }
 
-        for (VarList *a = args; a != NULL; a = a->next) {
-            if (!strcmp(a->item->name, t->sval)) {
+        for (int i = 0; i < array_len(args); i++) {
+            if (!strcmp(args[i]->name, t->sval)) {
                 error(lineno(), current_file_name(), 
                       "Duplicate argument '%s' in function declaration.", t->sval);
             }
@@ -640,7 +621,6 @@ Ast *parse_func_decl(int anonymous) {
 
         char *argname = t->sval;
         Type *argtype = parse_type(next_token(), 1);
-        n++;
 
         t = next_token();
         if (t->type == TOK_ELLIPSIS) {
@@ -651,17 +631,18 @@ Ast *parse_func_decl(int anonymous) {
             }
 
             argtype = make_array_type(argtype);
-            args = varlist_append(args, make_var(argname, argtype));
-            args->item->initialized = 1;
-            arg_types = typelist_append(arg_types, argtype->array.inner);
+            Var *v = make_var(argname, argtype);
+            v->initialized = 1;
+            array_push(args, v);
+            array_push(arg_types, argtype->array.inner);
             break;
         }
 
-        args = varlist_append(args, make_var(argname, argtype));
-        args->item->initialized = 1;
-        arg_types = typelist_append(arg_types, args->item->type);
-
-        args->item->use = use;
+        Var *v = make_var(argname, argtype);
+        v->use = use;
+        v->initialized = 1;
+        array_push(args, v);
+        array_push(arg_types, v->type);
 
         if (t->type == TOK_RPAREN) {
             break;
@@ -670,8 +651,7 @@ Ast *parse_func_decl(int anonymous) {
         }
     }
 
-    func->fn_decl->args = reverse_varlist(args);
-    arg_types = reverse_typelist(arg_types);
+    func->fn_decl->args = args;
 
     Type *ret = base_type(VOID_T);
 
@@ -684,7 +664,7 @@ Ast *parse_func_decl(int anonymous) {
         error(lineno(), current_file_name(), "Unexpected token '%s' in function signature.", tok_to_string(t));
     }
 
-    Type *fn_type = make_fn_type(n, arg_types, ret, variadic);
+    Type *fn_type = make_fn_type(arg_types, ret, variadic);
     expect(TOK_LBRACE);
 
     Var *fn_decl_var = make_var(fname, fn_type);
@@ -696,7 +676,7 @@ Ast *parse_func_decl(int anonymous) {
 
     func->fn_decl->body = parse_astblock(1);
     /*if (!is_polydef(fn_type)) {*/
-        global_fn_decls = astlist_append(global_fn_decls, func);
+        array_push(global_fn_decls, func);
     /*}*/
     return func; 
 }
@@ -741,10 +721,8 @@ Ast *parse_enum_decl() {
         error(lineno(), current_file_name(), "Unexpected token '%s' while parsing enum declaration (expected '{').", tok_to_string(next));
     }
 
-    int nmembers = 0;
-    int alloc = 8;
-    char **names = malloc(sizeof(char*)*alloc);
-    Ast **exprs = malloc(sizeof(Ast)*alloc);
+    ast->enum_decl->enum_name = name;
+    ast->enum_decl->enum_type = make_enum_type(inner, NULL, NULL);
 
     while ((next = next_token())->type != TOK_RBRACE) {
         if (next->type != TOK_ID) {
@@ -752,22 +730,16 @@ Ast *parse_enum_decl() {
                 "Unexpected token '%s' while parsing enum declaration (expected an identifier).", tok_to_string(next));
         }
 
-        if (nmembers >= alloc) {
-            alloc *= 2;
-            names = realloc(names, sizeof(char*)*alloc);
-            exprs = realloc(exprs, sizeof(Ast)*alloc);
-        }
-
-        int i = nmembers;
-        names[i] = next->sval;
-        exprs[i] = NULL;
-        nmembers++;
+        Ast *expr = NULL;
+        char *member_name = next->sval;
 
         next = next_token();
         if (next->type == TOK_OP && next->op == OP_ASSIGN) {
-            exprs[i] = parse_expression(next_token(), 0);
+            expr = parse_expression(next_token(), 0);
             next = next_token();
         }
+        array_push(ast->enum_decl->enum_type->en.member_names, member_name);
+        array_push(ast->enum_decl->exprs, expr);
 
         if (next->type == TOK_RBRACE) {
             break;
@@ -778,10 +750,6 @@ Ast *parse_enum_decl() {
         }
     }
 
-    long *values = malloc(sizeof(long)*nmembers);
-    ast->enum_decl->enum_name = name;
-    ast->enum_decl->enum_type = make_enum_type(inner, nmembers, names, values);
-    ast->enum_decl->exprs = exprs;
     return ast;
 }
 
@@ -789,7 +757,7 @@ Type *parse_struct_type(int poly_ok) {
     Tok *t = next_token();
 
     int generic = 0;
-    TypeList *params = NULL;
+    Type **params = NULL;
     if (t->type == TOK_LPAREN) {
         params = parse_type_param_defs();
         t = next_token();
@@ -799,21 +767,12 @@ Type *parse_struct_type(int poly_ok) {
         error(lineno(), current_file_name(), "Unexpected token '%s' while parsing struct type.", tok_to_string(t));
     }
 
-    int alloc = 6;
-    int nmembers = 0;
+    char **member_names = NULL;
+    Type **member_types = NULL;
 
-    char **member_names = malloc(sizeof(char*) * alloc);
-    Type **member_types = malloc(sizeof(Type*) * alloc);
-
-    AstList *methods = NULL;
+    Ast **methods = NULL;
 
     for (;;) {
-        if (nmembers >= alloc) {
-            alloc += 6;
-            member_names = realloc(member_names, sizeof(char*) * alloc);
-            member_types = realloc(member_types, sizeof(char*) * alloc);
-        }
-
         Tok *t = next_token();
         
         if (t->type == TOK_ID) {
@@ -823,8 +782,8 @@ Type *parse_struct_type(int poly_ok) {
 
             Type *ty = parse_type(next_token(), poly_ok);
 
-            member_names[nmembers] = name;
-            member_types[nmembers++] = ty;
+            array_push(member_names, name);
+            array_push(member_types, ty);
 
             expect(TOK_SEMI);
             t = next_token();
@@ -835,14 +794,15 @@ Type *parse_struct_type(int poly_ok) {
                 unget_token(t);
             }
         } else if (t->type == TOK_FN) {
-            methods = astlist_append(methods, parse_func_decl(0));
+            array_push(methods, parse_func_decl(0));
         } else {
             error(lineno(), current_file_name(), "Unexpected token '%s' in struct definition.", tok_to_string(t));
         }
     }
 
-    for (int i = 0; i < nmembers-1; i++) {
-        for (int j = i + 1; j < nmembers; j++) {
+    int n = array_len(member_names);
+    for (int i = 0; i < n-1; i++) {
+        for (int j = i + 1; j < n; j++) {
             if (!strcmp(member_names[i], member_names[j])) {
                 error(lineno(), current_file_name(),
                     "Repeat member name '%s' in struct.", member_names[i]);
@@ -853,9 +813,9 @@ Type *parse_struct_type(int poly_ok) {
     Type *tp;
 
     if (generic) {
-        tp = make_generic_struct_type(nmembers, member_names, member_types, params);
+        tp = make_generic_struct_type(member_names, member_types, params);
     } else {
-        tp = make_struct_type(nmembers, member_names, member_types);
+        tp = make_struct_type(member_names, member_types);
     }
     tp->st.methods = methods;
     
@@ -1197,9 +1157,9 @@ Ast *parse_conditional() {
     c->cond->if_body = parse_astblock(1);
 
     next = next_token();
-    if (next != NULL && next->type == TOK_ELSE) {
+    if (next && next->type == TOK_ELSE) {
         next = next_token();
-        if (next == NULL) {
+        if (!next) {
             error(lineno(), current_file_name(), "Unexpected EOF while parsing conditional.");
         } else if (next->type == TOK_IF) {
             AstBlock *block = calloc(sizeof(AstBlock), 1);
@@ -1208,7 +1168,7 @@ Ast *parse_conditional() {
             block->startline = lineno();
             Ast *tmp = parse_conditional();
             block->endline = lineno();
-            block->statements = astlist_append(block->statements, tmp);
+            array_push(block->statements, tmp);
             c->cond->else_body = block;
             return c;
         } else if (next->type != TOK_LBRACE) {
@@ -1223,27 +1183,18 @@ Ast *parse_conditional() {
     return c;
 }
 
-AstList *parse_statement_list() {
-    AstList *list = NULL;
-    AstList *head = NULL;
+Ast **parse_statement_list() {
+    Ast **stmts = NULL;
     Tok *t;
-
     for (;;) {
         t = next_token();
         if (t == NULL || t->type == TOK_RBRACE) {
             break;
         }
-        Ast *stmt = parse_statement(t);
-        if (head == NULL) {
-            list = astlist_append(NULL, stmt);
-            head = list;
-        } else {
-            list->next = astlist_append(NULL, stmt);
-            list = list->next;
-        }
+        array_push(stmts, parse_statement(t));
     }
     unget_token(t);
-    return head;
+    return stmts;
 }
 
 AstBlock *parse_astblock(int bracketed) {
@@ -1281,48 +1232,76 @@ Ast *parse_block(int bracketed) {
 }
 
 Ast *parse_source_file(char *filename) {
-    set_file_source(filename, fopen(filename, "r"));
+    push_file_source(filename, fopen(filename, "r"));
     return parse_block(0);
 }
 
-AstList *get_global_funcs() {
+Ast **get_global_funcs() {
     return global_fn_decls;
 }
 
 // TODO: why is this here
 void init_builtins() {
-    Var *v = make_var("assert", make_fn_type(1, typelist_append(NULL, base_type(BOOL_T)), base_type(VOID_T), 0));
-    v->ext = 1;
-    v->constant = 1;
-    define_builtin(v);
+    {
+        Type **arg_types = NULL;
+        array_push(arg_types, base_type(BOOL_T));
+        Var *v = make_var("assert", make_fn_type(arg_types, base_type(VOID_T), 0));
+        v->ext = 1;
+        v->constant = 1;
+        define_builtin(v);
+    }
 
-    v = make_var("print_str", make_fn_type(1, typelist_append(NULL, base_type(STRING_T)), base_type(VOID_T), 0));
-    v->ext = 1;
-    v->constant = 1;
-    define_builtin(v);
+    {
+        Type **arg_types = NULL;
+        array_push(arg_types, base_type(STRING_T));
+        Var *v = make_var("print_str", make_fn_type(arg_types, base_type(VOID_T), 0));
+        v->ext = 1;
+        v->constant = 1;
+        define_builtin(v);
+    }
 
-    v = make_var("print_buf", make_fn_type(1, typelist_append(NULL, make_ref_type(base_numeric_type(UINT_T, 8))), base_type(VOID_T), 0));
-    v->ext = 1;
-    v->constant = 1;
-    define_builtin(v);
+    {
+        Type **arg_types = NULL;
+        array_push(arg_types, make_ref_type(base_numeric_type(UINT_T, 8)));
+        Var *v = make_var("print_buf", make_fn_type(arg_types, base_type(VOID_T), 0));
+        v->ext = 1;
+        v->constant = 1;
+        define_builtin(v);
+    }
 
-    v = make_var("println", make_fn_type(1, typelist_append(NULL, base_type(STRING_T)), base_type(VOID_T), 0));
-    v->ext = 1;
-    v->constant = 1;
-    define_builtin(v);
+    {
+        Type **arg_types = NULL;
+        array_push(arg_types, base_type(STRING_T));
+        Var *v = make_var("println", make_fn_type(arg_types, base_type(VOID_T), 0));
+        v->ext = 1;
+        v->constant = 1;
+        define_builtin(v);
+    }
 
-    v = make_var("itoa", make_fn_type(1, typelist_append(NULL, base_type(INT_T)), base_type(STRING_T), 0));
-    v->ext = 1;
-    v->constant = 1;
-    define_builtin(v);
+    {
+        Type **arg_types = NULL;
+        array_push(arg_types, base_type(INT_T));
+        Var *v = make_var("itoa", make_fn_type(arg_types, base_type(STRING_T), 0));
+        v->ext = 1;
+        v->constant = 1;
+        define_builtin(v);
+    }
 
-    v = make_var("utoa", make_fn_type(1, typelist_append(NULL, base_type(UINT_T)), base_type(STRING_T), 0));
-    v->ext = 1;
-    v->constant = 1;
-    define_builtin(v);
+    {
+        Type **arg_types = NULL;
+        array_push(arg_types, base_type(UINT_T));
+        Var *v = make_var("utoa", make_fn_type(arg_types, base_type(STRING_T), 0));
+        v->ext = 1;
+        v->constant = 1;
+        define_builtin(v);
+    }
 
-    v = make_var("validptr", make_fn_type(1, typelist_append(NULL, base_type(BASEPTR_T)), base_type(BOOL_T), 0));
-    v->ext = 1;
-    v->constant = 1;
-    define_builtin(v);
+    {
+        Type **arg_types = NULL;
+        array_push(arg_types, base_type(BASEPTR_T));
+        Var *v = make_var("validptr", make_fn_type(arg_types, base_type(BOOL_T), 0));
+        v->ext = 1;
+        v->constant = 1;
+        define_builtin(v);
+    }
 }

@@ -6,11 +6,7 @@
 #include "util.h"
 #include "var.h"
 
-typedef struct TempVarList {
-    int id;
-    Var *var;
-    struct TempVarList *next;
-} TempVarList;
+#include "../hashmap/hashmap.h"
 
 Scope *new_scope(Scope *parent);
 Scope *new_fn_scope(Scope *parent);
@@ -33,8 +29,8 @@ void attach_var(Scope *scope, Var *var);
 Var *lookup_local_var(Scope *scope, char *name);
 Var *lookup_var(Scope *scope, char *name);
 
-Var *allocate_ast_temp_var(Scope *scope, Ast *ast);
-Var *make_temp_var(Scope *scope, Type *t, int id);
+TempVar *allocate_ast_temp_var(Scope *scope, Ast *ast);
+TempVar *make_temp_var(Scope *scope, Type *t, int id);
 Var *find_temp_var(Scope *scope, Ast *ast);
 void remove_temp_var_by_id(Scope *scope, int id);
 
@@ -42,15 +38,7 @@ void define_builtin(Var *v);
 Var *find_builtin_var(char *name);
 
 void init_builtin_types();
-TypeList *builtin_types();
-TypeList *all_used_types();
-
-PkgList *all_loaded_packages();
-Package *load_package(char *current_file, Scope *scope, char *path);
-Package *lookup_imported_package(Scope *scope, char *name);
-void push_current_package(Package *p);
-Package *pop_current_package();
-Package *init_main_package(char *path);
-void define_global(Var *v);
+Type **builtin_types();
+Type **all_used_types();
 
 #endif
