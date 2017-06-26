@@ -292,85 +292,7 @@ static Ast *number_cast(Scope *scope, Ast *a, Type *num_type) {
     return c;
 }
 
-Ast *coerce_type_no_error(Scope *scope, Type *to, Ast *from) {
-    if (is_any(to)) {
-        if (is_any(from->var_type)) {
-            return from;
-        }
-        return any_cast(scope, from);
-    }
-    
-    // (TODO: why was this comment here?)
-    // resolve polymorphs
-    Type *t = resolve_alias(to);
-    if (t->comp == ARRAY) {
-        if (from->var_type->comp == STATIC_ARRAY) {
-            t = t->array.inner;
-            Type *from_type = from->var_type->array.inner;
-            while (from_type->comp == STATIC_ARRAY && t->comp == ARRAY) {
-                t = t->array.inner;
-                from_type = from_type->array.inner;
-            }
-            if (!check_type(t, from_type)) {
-                return NULL;
-            }
-            // TODO: double check this is right
-            return from;
-        }
-    }
-    if (from->type == AST_LITERAL) {
-        // TODO: string literal of length 1 -> u8
-        if (is_numeric(t) && is_numeric(from->var_type)) {
-            int loss = 0;
-            if (from->lit->lit_type == INTEGER) {
-                if (t->data->base == UINT_T) {
-                    if (from->lit->int_val < 0) {
-                        return NULL;
-                    }
-                    loss = precision_loss_uint(t, from->lit->int_val);
-                } else {
-                    loss = precision_loss_int(t, from->lit->int_val);
-                }
-            } else if (from->lit->lit_type == FLOAT) {
-                if (t->data->base != FLOAT_T) {
-                    return NULL;
-                }
-                loss = precision_loss_float(t, from->lit->float_val);
-            }
-            if (!loss) {
-                return number_cast(scope, from, to);
-            }
-        } else {
-            if (is_string(from->var_type) &&
-              t->data->base == UINT_T && t->data->size == 1 &&
-              strlen(from->lit->string_val) == 1) {
-                Ast *c = ast_alloc(AST_LITERAL);
-                c->lit->int_val = from->lit->string_val[0];
-                c->lit->lit_type = INTEGER;
-                c->line = from->line;
-                c->file = from->file;
-                c->var_type = t;
-                return c;
-            }
-
-            if (can_cast(from->var_type, t)) {
-                if (!is_lvalue(from)) {
-                    allocate_ast_temp_var(scope, from);
-                }
-                Ast *c = ast_alloc(AST_CAST);
-                c->cast->cast_type = to;
-                c->cast->object = from;
-                c->line = from->line;
-                c->file = from->file;
-                c->var_type = t;
-                return c;
-            }
-        }
-    }
-    return NULL;
-}
-
-Ast *coerce_type(Scope *scope, Type *to, Ast *from) {
+Ast *coerce_type(Scope *scope, Type *to, Ast *from, int raise_error) {
     if (is_any(to)) {
         if (is_any(from->var_type)) {
             return from;
@@ -402,9 +324,13 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from) {
             if (from->lit->lit_type == INTEGER) {
                 if (t->data->base == UINT_T) {
                     if (from->lit->int_val < 0) {
-                        error(from->line, from->file, 
-                            "Cannot coerce negative literal value into integer type '%s'.",
-                            type_to_string(to));
+                        if (raise_error) {
+                            error(from->line, from->file, 
+                                "Cannot coerce negative literal value into integer type '%s'.",
+                                type_to_string(to));
+                        } else {
+                            return NULL;
+                        }
                     }
                     loss = precision_loss_uint(t, from->lit->int_val);
                 } else {
@@ -417,9 +343,13 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from) {
                 loss = precision_loss_float(t, from->lit->float_val);
             }
             if (loss) {
-                error(from->line, from->file,
-                    "Cannot coerce literal value of type '%s' into type '%s' due to precision loss.",
-                    type_to_string(from->var_type), type_to_string(to));
+                if (raise_error) {
+                    error(from->line, from->file,
+                        "Cannot coerce literal value of type '%s' into type '%s' due to precision loss.",
+                        type_to_string(from->var_type), type_to_string(to));
+                } else {
+                    return NULL;
+                }
             }
             return number_cast(scope, from, to);
         } else {
@@ -448,9 +378,11 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from) {
                 return c;
             }
 
-            error(from->line, from->file,
-                "Cannot coerce literal value of type '%s' into type '%s'.",
-                type_to_string(from->var_type), type_to_string(to));
+            if (raise_error) {
+                error(from->line, from->file,
+                    "Cannot coerce literal value of type '%s' into type '%s'.",
+                    type_to_string(from->var_type), type_to_string(to));
+            }
         }
     }
     return NULL;

@@ -34,7 +34,7 @@ void check_for_unresolved_with_scope(Ast *ast, Type *t, Scope *scope) {
         break;
     }
     case ALIAS:
-        if (resolve_alias(t) == NULL) {
+        if (!resolve_alias(t)) {
             error(ast->line, ast->file, "Unknown type '%s'.", t->name, scope);
         }
         break;
@@ -73,7 +73,7 @@ void check_for_unresolved(Ast *ast, Type *t) {
         break;
     }
     case ALIAS:
-        if (resolve_alias(t) == NULL) {
+        if (!resolve_alias(t)) {
             error(ast->line, ast->file, "Unknown type '%s'.", t->name);
         }
         break;
@@ -230,7 +230,7 @@ static Ast *check_dot_op_semantics(Scope *scope, Ast *ast) {
         // Enum case
         Type *t = make_type(scope, ast->dot->object->ident->varname);
         Type *resolved = resolve_alias(t);
-        if (resolved != NULL) {
+        if (resolved) {
             if (resolved->comp == ENUM) {
                 for (int i = 0; i < array_len(resolved->en.member_names); i++) {
                     if (!strcmp(resolved->en.member_names[i], ast->dot->member_name)) {
@@ -260,13 +260,13 @@ static Ast *check_dot_op_semantics(Scope *scope, Ast *ast) {
         // versatile?
         Package *p = lookup_imported_package(scope, ast->dot->object->ident->varname);
         Var *v = lookup_var(scope, ast->dot->object->ident->varname);
-        if (v == NULL && p != NULL) {
+        if ((v == NULL || v->proxy) && p != NULL) {
             Var *v = lookup_var(p->scope, ast->dot->member_name);
-            if (v == NULL) {
+            if (!v) {
                 error(ast->line, ast->file, "No declared identifier '%s' in package '%s'.", ast->dot->member_name, p->name);
                 // TODO better error for an enum here
             }
-            if (v->proxy != NULL) { // USE-proxy
+            if (v->proxy) { // USE-proxy
                 error(ast->line, ast->file, "No declared identifier '%s' in package '%s' (*use* doesn't count).", ast->dot->member_name, p->name);
             }
 
@@ -415,8 +415,8 @@ static Ast *check_assignment_semantics(Scope *scope, Ast *ast) {
     }
 
     if (!check_type(lt, rt)) {
-        ast->binary->right = coerce_type(scope, lt, ast->binary->right);
-        if (ast->binary->right == NULL) {
+        ast->binary->right = coerce_type(scope, lt, ast->binary->right, 1);
+        if (!ast->binary->right) {
             error(ast->binary->left->line, ast->binary->left->file,
                 "LHS of assignment has type '%s', while RHS has type '%s'.",
                 type_to_string(lt), type_to_string(rt));
@@ -482,8 +482,8 @@ static Ast *check_binop_semantics(Scope *scope, Ast *ast) {
                 /*errlog("right lit value %s", ast->binary->right->lit->string_val);*/
                 /*errlog("right lit len %d", strlen(ast->binary->right->lit->string_val));*/
             /*}*/
-            ast->binary->right = coerce_type(scope, lt, ast->binary->right);
-            if (ast->binary->right == NULL) {
+            ast->binary->right = coerce_type(scope, lt, ast->binary->right, 1);
+            if (!ast->binary->right) {
                 error(ast->line, ast->file, "Cannot compare equality of non-comparable types '%s' and '%s'.",
                         type_to_string(lt), type_to_string(rt));
             }
@@ -526,7 +526,7 @@ static Ast *check_enum_decl_semantics(Scope *scope, Ast *ast) {
             Type *e = exprs[i]->var_type;
 
             if (!check_type(et->en.inner, e)) {
-                if (coerce_type_no_error(scope, et->en.inner, exprs[i]) == NULL) {
+                if (!coerce_type(scope, et->en.inner, exprs[i], 0)) {
                     error(exprs[i]->line, exprs[i]->file,
                         "Cannot initialize enum '%s' member '%s' with expression of type '%s' (base is '%s').",
                         et->name, et->en.member_names[i], type_to_string(e), type_to_string(et->en.inner));
@@ -941,8 +941,8 @@ static Ast *_check_struct_literal_semantics(Scope *scope, Ast *ast, Type *type, 
         }
 
         if (!check_type(t, expr->var_type)) {
-            Ast *coerced = coerce_type(scope, t, expr);
-            if (coerced == NULL) {
+            Ast *coerced = coerce_type(scope, t, expr, 1);
+            if (!coerced) {
                 error(ast->line, ast->file, "Type mismatch in struct literal '%s' field '%s', expected %s but received %s.",
                     type_to_string(type), name, type_to_string(t), type_to_string(expr->var_type));
             }
@@ -1003,8 +1003,8 @@ static Ast *check_compound_literal_semantics(Scope *scope, Ast *ast) {
         Ast *expr = check_semantics(scope, ast->lit->compound_val.member_exprs[i]);
 
         if (!check_type(inner, expr->var_type)) {
-            expr = coerce_type(scope, inner, expr);
-            if (expr == NULL) {
+            expr = coerce_type(scope, inner, expr, 1);
+            if (!expr) {
                 error(ast->line, ast->file, "Type mismatch in array literal '%s', expected %s but got %s.",
                     type_to_string(type), type_to_string(inner), type_to_string(expr->var_type));
             }
@@ -1301,8 +1301,8 @@ static Ast *check_declaration_semantics(Scope *scope, Ast *ast) {
             }
 
             if (!check_type(lt, init->var_type)) {
-                init = coerce_type(scope, lt, init);
-                if (init == NULL) {
+                init = coerce_type(scope, lt, init, 1);
+                if (!init) {
                     error(ast->line, ast->file, "Cannot assign value '%s' to type '%s'.",
                             type_to_string(decl->init->var_type), type_to_string(lt));
                 }
@@ -1435,8 +1435,8 @@ static void verify_arg_types(Scope *scope, Ast *ast, Type **expected_types, Ast 
             c->var_type = expected;
             arg_vals[i] = c;
         } else if (!check_type(arg->var_type, expected)) {
-            Ast* a = coerce_type(scope, expected, arg);
-            if (a == NULL) {
+            Ast* a = coerce_type(scope, expected, arg, 1);
+            if (!a) {
                 error(ast->line, ast->file, "Expected argument (%d) of type '%s', but got type '%s'.",
                     i, type_to_string(expected), type_to_string(arg->var_type));
             }
@@ -1965,8 +1965,8 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
         if (check_type(cast->object->var_type, cast->cast_type)) {
             error(ast->line, ast->file, "Unnecessary cast, types are both '%s'.", type_to_string(cast->cast_type));
         } else {
-            Ast *coerced = coerce_type(scope, cast->cast_type, cast->object);
-            if (coerced != NULL) {
+            Ast *coerced = coerce_type(scope, cast->cast_type, cast->object, 1);
+            if (coerced) {
                 // coerce_type does the cast for us 
                 cast = coerced->cast;
                 ast = coerced;
@@ -2159,8 +2159,8 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
         }
 
         if (!check_type(fn_ret_t, ret_t)) {
-            ast->ret->expr = coerce_type(scope, fn_ret_t, ast->ret->expr);
-            if (ast->ret->expr == NULL) {
+            ast->ret->expr = coerce_type(scope, fn_ret_t, ast->ret->expr, 1);
+            if (!ast->ret->expr) {
                 error(ast->line, ast->file,
                     "Return statement type '%s' does not match enclosing function's return type '%s'.",
                     type_to_string(ret_t), type_to_string(fn_ret_t));

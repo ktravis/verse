@@ -72,17 +72,15 @@ extern fn clone(fn(), #autocast ptr, #autocast ptr, #autocast ptr);
 STACK_SIZE := 4096;
 
 fn New(start: fn()) -> &Thread {
-    // TODO: use here causes a segfault in the compiler at
-    // compiler/semantics:235 in function parse_dot_op_semantics
-    // use syscall;
+    use syscall;
     t:Thread;
     // TODO: using MAP_GROWSDOWN causes a segfault ONLY when using `make`
     // TODO: this may not still be the case, but for now appears to work as
     // expected. using mmap with MAP_GROWSDOWN and a smaller STACK_SIZE (like
     // 256) runs successfully, however, without MAP_GROWSDOWN it causes a
     // segfault
-    t.stack = syscall.mmap(0, STACK_SIZE, syscall.PROT_READ | syscall.PROT_WRITE,
-        syscall.MAP_PRIVATE | syscall.MAP_ANON | syscall.MAP_GROWSDOWN, -1, 0);
+    t.stack = mmap(0, STACK_SIZE, PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANON | MAP_GROWSDOWN, -1, 0);
     flags := CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_PARENT|CLONE_THREAD|CLONE_IO;
     // TODO: is this necessary? or does the presence of certain flags return the
     // top of the stack already from mmap?
