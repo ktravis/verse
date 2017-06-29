@@ -441,14 +441,14 @@ char *get_varname(Ast *ast) {
         if (name == NULL) {
             return NULL;
         }
-        Type *orig = ast->dot->object->var_type;
-        Type *t = resolve_alias(orig);
-        for (int i = 0; i < array_len(t->st.member_names); i++) {
-            char *member_name = t->st.member_names[i];
-            if (!strcmp(t->st.member_names[i], ast->dot->member_name)) {
+        Type *t = ast->dot->object->var_type;
+        ResolvedType *r = t->resolved;
+        for (int i = 0; i < array_len(r->st.member_names); i++) {
+            char *member_name = r->st.member_names[i];
+            if (!strcmp(r->st.member_names[i], ast->dot->member_name)) {
                 char *proxy_name;
                 int proxy_name_len;
-                if (orig->comp == REF) {
+                if (r->comp == REF) {
                     proxy_name_len = strlen(name) + strlen(member_name) + 2 + 1;
                     proxy_name = malloc(sizeof(char) * proxy_name_len);
                     snprintf(proxy_name, proxy_name_len, "%s->%s", name, member_name);

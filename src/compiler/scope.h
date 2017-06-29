@@ -17,10 +17,9 @@ Type *fn_scope_return_type(Scope *scope);
 
 Type *lookup_type(Scope *s, char *name);
 Type *lookup_local_type(Scope *s, char *name);
-int define_polydef_alias(Scope *scope, Type *t);
-Type *define_polymorph(Scope *s, Type *poly, Type *type);
-Type *define_type(Scope *s, char *name, Type *type);
-int get_type_id(Type *t);
+int define_polydef_alias(Scope *scope, Type *t, Ast *ast);
+Type *define_polymorph(Scope *s, Type *poly, Type *type, Ast *ast);
+Type *define_type(Scope *s, char *name, Type *type, Ast *ast);
 TypeDef *find_type_definition(Type *t);
 int local_type_name_conflict(Scope *scope, char *name);
 void register_type(Type *t);

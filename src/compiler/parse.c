@@ -25,7 +25,7 @@ Type *can_be_type_object(Ast *ast) {
             return NULL;
         }
         // may need to allow this later, idk
-        if (lt->comp != ALIAS) {
+        if (!lt->name) {
             return NULL;
         }
         return make_external_type(lt->name, ast->dot->member_name);
@@ -493,18 +493,19 @@ Type *parse_type(Tok *t, int poly_ok) {
     }
 
     if (ref) {
-        if (owned && type->comp == ARRAY) {
-            type->array.owned = 1;
+        if (owned && type->resolved && type->resolved->comp == ARRAY) {
+            type->resolved->array.owned = 1;
         } else {
             type = make_ref_type(type);
-            type->ref.owned = owned;
+            type->resolved->ref.owned = owned;
         }
     }
 
     return type;
 }
 
-// TODO factor this with parse_func_decl
+// TODO: factor this with parse_func_decl
+// TODO: allow using names in arg declaration here (optional? not?)
 Ast *parse_extern_func_decl() {
     Tok *t = expect(TOK_FN);
     t = expect(TOK_ID);
@@ -634,7 +635,7 @@ Ast *parse_func_decl(int anonymous) {
             Var *v = make_var(argname, argtype);
             v->initialized = 1;
             array_push(args, v);
-            array_push(arg_types, argtype->array.inner);
+            array_push(arg_types, argtype->resolved->array.inner);
             break;
         }
 
@@ -738,7 +739,7 @@ Ast *parse_enum_decl() {
             expr = parse_expression(next_token(), 0);
             next = next_token();
         }
-        array_push(ast->enum_decl->enum_type->en.member_names, member_name);
+        array_push(ast->enum_decl->enum_type->resolved->en.member_names, member_name);
         array_push(ast->enum_decl->exprs, expr);
 
         if (next->type == TOK_RBRACE) {
@@ -817,7 +818,8 @@ Type *parse_struct_type(int poly_ok) {
     } else {
         tp = make_struct_type(member_names, member_types);
     }
-    tp->st.methods = methods;
+    // TODO: disallow methods in struct body
+    /*tp->st.methods = methods;*/
     
     return tp;
 }
@@ -1128,10 +1130,10 @@ Ast *parse_primary(Tok *t) {
         Type *t = parse_type(next, 0);
         if (ast->new->count != NULL) {
             t = make_array_type(t);
-            t->array.owned = 1;
+            t->resolved->array.owned = 1;
         } else {
             t = make_ref_type(t);
-            t->ref.owned = 1;
+            t->resolved->ref.owned = 1;
         }
         ast->new->type = t;
         return ast;

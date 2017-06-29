@@ -86,8 +86,7 @@ Type *fn_scope_return_type(Scope *scope) {
     if (scope == NULL) {
         return NULL;
     }
-    // TODO: don't resolve this?
-    return resolve_alias(scope->fn_var->type->fn.ret);
+    return scope->fn_var->type->resolved->fn.ret;
 }
 
 Type *lookup_local_type(Scope *s, char *name) {
@@ -114,41 +113,32 @@ Type *lookup_type(Scope *s, char *name) {
 }
 
 int check_type(Type *a, Type *b);
-int get_type_id(Type *t) {
-    for (int i = 0; i < array_len(used_types); i++) {
-        if (check_type(used_types[i], t)) {
-            /*errlog("get type id for %d %s %d %s", t->id, type_to_string(t), list->item->id, type_to_string(list->item));*/
-            return used_types[i]->id;
-        }
-    }
-    assert(0);
-    return -1;
-}
+/*int get_type_id(Type *t) {*/
+    /*return t->id;*/
+    /*for (int i = 0; i < array_len(used_types); i++) {*/
+        /*if (check_type(used_types[i], t)) {*/
+            /*[>errlog("get type id for %d %s %d %s", t->id, type_to_string(t), list->item->id, type_to_string(list->item));<]*/
+            /*return used_types[i]->id;*/
+        /*}*/
+    /*}*/
+    /*assert(0);*/
+    /*return -1;*/
+/*}*/
 
 void register_type(Type *t) {
-    // TODO: why are we getting here with this in the first place?
-    if (t->comp == ENUM) {
-        return;
-    }
     for (int i = 0; i < array_len(used_types); i++) {
+        if (used_types[i]->id == t->id) {
+            return;
+        }
         if (check_type(used_types[i], t)) {
+            t->id = used_types[i]->id;
             return;
         }
     }
-    /*iter_t iter = hashmap_iter();*/
-    /*TypeDef **x;*/
-    /*while ((x = hashmap_next(&builtin_types_scope->types, iter))) {*/
-    /*for (int i = 0; i < array_len(builtin_types_scope->used_types); i++) {*/
-        /*if (check_type(builtin_types_scope->used_types[i], t)) {*/
-            /*return;*/
-        /*}*/
-    /*}*/
-
-    /*fprintf(stderr, "testing register_type: %s\n", type_to_string(t));*/
 
     array_push(used_types, t);
 
-    Type *resolved = resolve_alias(t);
+    ResolvedType *resolved = t->resolved;
     if (!resolved) {
         return;
     }
@@ -176,8 +166,8 @@ void register_type(Type *t) {
         register_type(resolved->fn.ret);
         break;
     case PARAMS:
-        for (int i = 0; i < array_len(t->params.args); i++) {
-            register_type(t->params.args[i]);
+        for (int i = 0; i < array_len(resolved->params.args); i++) {
+            register_type(resolved->params.args[i]);
         }
         break;
     default:
@@ -185,54 +175,56 @@ void register_type(Type *t) {
     }
 }
 
-Type *define_polymorph(Scope *s, Type *poly, Type *type) {
-    assert(poly->comp == POLYDEF);
+Type *define_polymorph(Scope *s, Type *poly, Type *type, Ast *ast) {
+    assert(poly->resolved->comp == POLYDEF);
     assert(s->polymorph != NULL);
     if (lookup_local_type(s, poly->name) != NULL) {
         error(-1, "internal", "Type '%s' already declared within this scope.", poly->name);
     }
     TypeDef *td = malloc(sizeof(TypeDef));
     td->name = poly->name;
-    td->type = resolve_polymorph(type);
+    td->type = resolve_polymorph(type); // may not need this?
+    td->ast = ast;
     hashmap_put(&s->polymorph->defs, poly->name, td);
     return make_type(s, poly->name);
 }
 
-int define_polydef_alias(Scope *scope, Type *t) {
+int define_polydef_alias(Scope *scope, Type *t, Ast *ast) {
     int count = 0;
-    switch (t->comp) {
+    ResolvedType *r = t->resolved;
+    switch (r->comp) {
     case POLYDEF:
-        define_type(scope, t->name, get_any_type());
+        define_type(scope, t->name, get_any_type(), ast);
         count++;
         break;
     case REF:
-        count += define_polydef_alias(scope, t->ref.inner);
+        count += define_polydef_alias(scope, r->ref.inner, ast);
         break;
     case ARRAY:
     case STATIC_ARRAY:
-        count += define_polydef_alias(scope, t->array.inner);
+        count += define_polydef_alias(scope, r->array.inner, ast);
         break;
     case STRUCT:
-        for (int i = 0; i < array_len(t->st.member_types); i++) {
-            if (is_polydef(t->st.member_types[i])) {
-                count += define_polydef_alias(scope, t->st.member_types[i]);
+        for (int i = 0; i < array_len(r->st.member_types); i++) {
+            if (is_polydef(r->st.member_types[i])) {
+                count += define_polydef_alias(scope, r->st.member_types[i], ast);
             }
         }
         break;
     case FUNC:
-        for (int i = 0; i < array_len(t->fn.args); i++) {
-            if (is_polydef(t->fn.args[i])) {
-                count += define_polydef_alias(scope, t->fn.args[i]);
+        for (int i = 0; i < array_len(r->fn.args); i++) {
+            if (is_polydef(r->fn.args[i])) {
+                count += define_polydef_alias(scope, r->fn.args[i], ast);
             }
         }
-        if (is_polydef(t->fn.ret)) {
-            count += define_polydef_alias(scope, t->fn.ret);
+        if (is_polydef(r->fn.ret)) {
+            count += define_polydef_alias(scope, r->fn.ret, ast);
         }
         break;
     case PARAMS:
-        for (int i = 0; i < array_len(t->params.args); i++) {
-            if (is_polydef(t->params.args[i])) {
-                count += define_polydef_alias(scope, t->params.args[i]);
+        for (int i = 0; i < array_len(r->params.args); i++) {
+            if (is_polydef(r->params.args[i])) {
+                count += define_polydef_alias(scope, r->params.args[i], ast);
             }
         }
         break;
@@ -242,18 +234,21 @@ int define_polydef_alias(Scope *scope, Type *t) {
     return count;
 }
 
-Type *define_type(Scope *s, char *name, Type *type) {
+Type *define_type(Scope *s, char *name, Type *type, Ast *ast) {
     if (lookup_local_type(s, name) != NULL) {
         error(-1, "internal", "Type '%s' already declared within this scope.", name);
     }
     TypeDef *td = malloc(sizeof(TypeDef));
     td->name = name;
     td->type = type;
+    td->ast = ast;
     hashmap_put(&s->types, name, td);
 
     Type *named = make_type(s, name);
+    resolve_type(type);
+    named->resolved = type->resolved;
     /*array_push(s->used_types, named);*/
-    if (!(type->comp == STRUCT && type->st.generic)) {
+    if (!(type->resolved && type->resolved->comp == STRUCT && type->resolved->st.generic)) {
         register_type(named);
     }
     return named;
@@ -264,7 +259,7 @@ int local_type_name_conflict(Scope *scope, char *name) {
 }
 
 TypeDef *find_type_definition(Type *t) {
-    assert(t->comp == ALIAS || t->comp == POLYDEF);
+    assert(t->name);
     Scope *scope = t->scope;
     TypeDef **tmp = NULL;
     while (scope) {
@@ -272,7 +267,7 @@ TypeDef *find_type_definition(Type *t) {
         if (scope->polymorph) {
             if ((tmp = hashmap_get(&scope->polymorph->defs, t->name))) {
                 TypeDef *td = *tmp;
-                if (td->type->comp == ALIAS || td->type->comp == POLYDEF) {
+                if (td->type->name) {
                     return find_type_definition(td->type);
                 }
                 return td;

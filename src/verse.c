@@ -46,14 +46,14 @@ int main(int argc, char **argv) {
 
     // declare structs
     for (int i = 0; i < array_len(builtins); i++) {
-        Type *t = resolve_alias(builtins[i]);
-        if (t->comp == STRUCT) {
+        Type *t = builtins[i];
+        if (t->resolved->comp == STRUCT) {
             emit_struct_decl(root_scope, t);
         }
     }
     for (int i = 0; i < array_len(used_types); i++) {
-        Type *t = resolve_alias(used_types[i]);
-        if (t->comp == STRUCT) {
+        Type *t = used_types[i];
+        if (t->resolved->comp == STRUCT) {
             emit_struct_decl(root_scope, t);
         }
     }

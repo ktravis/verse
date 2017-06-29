@@ -28,6 +28,7 @@ int is_any(Type *t);
 int is_dynamic(Type *t);
 int is_array(Type *t);
 int is_numeric(Type *t);
+int is_void(Type *t);
 int is_string(Type *t);
 int is_bool(Type *t);
 int is_polydef(Type *t);
@@ -54,9 +55,8 @@ Type *make_generic_struct_type(char **member_names, Type **member_types, Type **
 Type *make_external_type(char *pkg, char *name);
 
 Type *resolve_polymorph(Type *type);
-Type *resolve_alias(Type *type);
 Type *resolve_external(Type *type);
-TypeData *resolve_type_data(Type *t);
+Type *resolve_type(Type *type);
 Type *replace_type(Type *base, Type *from, Type *to);
 
 int get_any_type_id();

@@ -7,59 +7,95 @@
 #include "scope.h"
 
 int check_type(Type *a, Type *b) {
-    /*a = resolve_polymorph(a);*/
-    /*b = resolve_polymorph(b);*/
-    if (a->comp == EXTERNAL) {
-        a = resolve_external(a);
+    if (a->aka != NULL) {
+        return check_type(a->aka, b);
     }
-    if (b->comp == EXTERNAL) {
-        b = resolve_external(b);
+    if (b->aka != NULL) {
+        return check_type(a, b->aka);
     }
-    if (a->comp != b->comp) {
-        if (!((a->comp == ALIAS && b->comp == POLYDEF) ||
-              (a->comp == POLYDEF && b->comp == ALIAS))) {
+    if (a->name && b->name) {
+        if (strcmp(a->name, b->name)) {
             return 0;
         }
     }
-    switch (a->comp) {
+    if (a->name && !a->resolved) {
+        TypeDef *adef = find_type_definition(a);
+        a->id = adef->type->id;
+        a->resolved = adef->type->resolved;
+    }
+    if (b->name && !b->resolved) {
+        TypeDef *bdef = find_type_definition(b);
+        b->id = bdef->type->id;
+        b->resolved = bdef->type->resolved;
+    }
+    ResolvedType *ar = a->resolved;
+    ResolvedType *br = b->resolved;
+    TypeComp ac = ar->comp;
+    TypeComp bc = br->comp;
+    /*a = resolve_polymorph(a);*/
+    /*b = resolve_polymorph(b);*/
+    if (ac == EXTERNAL) {
+        a = resolve_external(a);
+    }
+    if (bc == EXTERNAL) {
+        b = resolve_external(b);
+    }
+    if (ac != bc) {
+        return 0;
+    }
+    if (ar == br) {
+        if (a->name == NULL && b->name == NULL) {
+            return 1;
+        } else if (a->name && b->name && !strcmp(a->name, b->name)) {
+            return 1;
+        }
+        return 0;
+    } else if (a->name && b->name && !strcmp(a->name, b->name) && a->scope == b->scope) {
+        return 1;
+    }
+    if ((a->name == NULL && b->name != NULL) || 
+        (a->name != NULL && b->name == NULL)) {
+        return 0;
+    }
+    switch (ac) {
     case BASIC:
     case ENUM:
         return a->id == b->id;
     case POLYDEF:
-    case ALIAS:
         return find_type_definition(a) == find_type_definition(b);
     case REF:
-        return check_type(a->ref.inner, b->ref.inner);
+        return check_type(ar->ref.inner, br->ref.inner);
     case ARRAY:
-        return check_type(a->array.inner, b->array.inner);
+        return check_type(ar->array.inner, br->array.inner);
     case STATIC_ARRAY:
-        return a->array.length == b->array.length && check_type(a->array.inner, b->array.inner);
+        return ar->array.length == br->array.length &&
+            check_type(ar->array.inner, br->array.inner);
     case STRUCT:
-        if (array_len(a->st.member_names) != array_len(b->st.member_names)) {
+        if (array_len(ar->st.member_names) != array_len(br->st.member_names)) {
             return 0;
         }
-        for (int i = 0; i < array_len(a->st.member_names); i++) {
-            if (strcmp(a->st.member_names[i], b->st.member_names[i])) {
+        for (int i = 0; i < array_len(ar->st.member_names); i++) {
+            if (strcmp(ar->st.member_names[i], br->st.member_names[i])) {
                 return 0;
             }
-            if (!check_type(a->st.member_types[i], b->st.member_types[i])) {
+            if (!check_type(ar->st.member_types[i], br->st.member_types[i])) {
                 return 0;
             }
         }
         return 1;
     case FUNC:
-        if (a->fn.variadic != b->fn.variadic) {
+        if (ar->fn.variadic != br->fn.variadic) {
             return 0;
         }
-        if (array_len(a->fn.args) != array_len(b->fn.args)) {
+        if (array_len(ar->fn.args) != array_len(br->fn.args)) {
             return 0;
         }
-        for (int i = 0; i < array_len(a->fn.args); i++) {
-            if (!check_type(a->fn.args[i], b->fn.args[i])) {
+        for (int i = 0; i < array_len(ar->fn.args); i++) {
+            if (!check_type(ar->fn.args[i], br->fn.args[i])) {
                 return 0;
             }
         }
-        return check_type(a->fn.ret, b->fn.ret);
+        return check_type(ar->fn.ret, br->fn.ret);
     default:
         error(-1, "internal", "typechecking unhandled case");
     }
@@ -71,143 +107,159 @@ int can_cast(Type *from, Type *to) {
         return 1;
     }
 
-    if (resolve_alias(from)->comp == ENUM) {
-        from = resolve_alias(from);
-        return can_cast(from->en.inner, to);
-    } else if (resolve_alias(to)->comp == ENUM) {
-        to = resolve_alias(to);
-        return can_cast(from, to->en.inner);
+    ResolvedType *fr = from->resolved;
+    ResolvedType *tr = to->resolved;
+
+    if (fr->comp == ENUM) {
+        return can_cast(fr->en.inner, to);
+    } else if (tr->comp == ENUM) {
+        return can_cast(from, tr->en.inner);
     }
 
-    switch (from->comp) {
+    switch (fr->comp) {
     case REF:
-        to = resolve_alias(to); 
-        return to->comp == REF ||
-            (to->comp == BASIC &&
-                 (to->data->base == BASEPTR_T ||
-                 (to->data->base == INT_T && to->data->size == 8)));
+        return tr->comp == REF ||
+            (tr->comp == BASIC &&
+                 (tr->data->base == BASEPTR_T ||
+                 (tr->data->base == INT_T && tr->data->size == 8)));
     case FUNC:
-        to = resolve_alias(to);
-        return check_type(from, to);
+        if (array_len(fr->fn.args) != array_len(tr->fn.args)) {
+            return 0;
+        }
+        for (int i = 0; i < array_len(fr->fn.args); i++) {
+            if (!check_type(fr->fn.args[i], tr->fn.args[i])) {
+                return 0;
+            }
+        }
+        if (fr->fn.ret == tr->fn.ret) {
+            return 1;
+        }
+        return check_type(fr->fn.ret, tr->fn.ret);
     case STRUCT:
-        to = resolve_alias(to);
-        return check_type(from, to);
+        if (array_len(fr->st.member_types) != array_len(tr->st.member_types)) {
+            return 0;
+        }
+        for (int i = 0; i < array_len(fr->st.member_types); i++) {
+            if (!check_type(fr->st.member_types[i], tr->st.member_types[i])) {
+                return 0;
+            }
+            if (strcmp(fr->st.member_names[i], tr->st.member_names[i])) {
+                return 0;
+            }
+        }
+        return 1;
     case BASIC:
-        from = resolve_alias(from); // TODO: need this in other cases?
-        to = resolve_alias(to);
-        switch (from->data->base) {
+        switch (fr->data->base) {
         case BASEPTR_T:
-            if (to->comp == BASIC) {
-                switch (to->data->base) {
+            if (tr->comp == BASIC) {
+                switch (tr->data->base) {
                 case BASEPTR_T:
                     return 1;
                 case UINT_T:
                 case INT_T:
-                    return to->data->size == 8;
+                    return tr->data->size == 8;
                 default:
                     break;
                 }
-            } else if (to->comp == REF) {
+            } else if (tr->comp == REF) {
                 return 1;
             }
             return 0;
         case UINT_T:
-            if (to->comp != BASIC) {
+            if (tr->comp != BASIC) {
                 return 0;
             }
-            if (to->data->base == INT_T && to->data->size > from->data->size) {
+            if (tr->data->base == INT_T && tr->data->size > fr->data->size) {
                 return 1;
-            } else if (to->data->base == BASEPTR_T) {
-                return from->data->size == 8;
+            } else if (tr->data->base == BASEPTR_T) {
+                return fr->data->size == 8;
             }
-            return from->data->base == to->data->base;
+            return fr->data->base == tr->data->base;
         case INT_T:
-            if (to->comp == BASIC) {
-                if (to->data->base == BASEPTR_T) {
-                    return from->data->size == 8;
-                } else if (to->data->base == FLOAT_T) {
-                    return to->data->size >= from->data->size;
-                } else if (to->data->base == INT_T) {
-                    return from->data->size <= to->data->size;
+            if (tr->comp == BASIC) {
+                if (tr->data->base == BASEPTR_T) {
+                    return fr->data->size == 8;
+                } else if (tr->data->base == FLOAT_T) {
+                    return tr->data->size >= fr->data->size;
+                } else if (tr->data->base == INT_T) {
+                    return fr->data->size <= tr->data->size;
                 }
             }
         }
-        if (to->comp == BASIC) {
-            return to->data->base == from->data->base;
+        if (tr->comp == BASIC) {
+            return tr->data->base == fr->data->base;
         }
-        return to->comp == from->comp;
+        return tr->comp == fr->comp;
     case STATIC_ARRAY: {
-        to = resolve_alias(to);
-        if (to->comp == ARRAY) {
-            return check_type(from->array.inner, to->array.inner);
+        if (tr->comp == ARRAY) {
+            return check_type(fr->array.inner, tr->array.inner);
         }
         return 0;
     }
     case ARRAY:
         return 0;
     default:
-        from = resolve_alias(from);
-        to = resolve_alias(to);
-        return can_cast(from, to);
+        break;
     }
     return 0;
 }
 
 // if you don't want to define, just pass NULL for scope
 int match_polymorph(Scope *scope, Type *expected, Type *got) {
-    if (expected->comp == POLYDEF) {
+    ResolvedType *er = expected->resolved;
+    ResolvedType *gr = got->resolved;
+    if (er->comp == POLYDEF) {
         if (scope != NULL) {
-            define_polymorph(scope, expected, got);
+            define_polymorph(scope, expected, got, NULL); // TODO: probably need to pass a real Ast* here!
         }
         return 1;
     }
-    Type *res = resolve_alias(got);
-    if (res->comp != expected->comp) {
-        if (expected->comp == ARRAY && res->comp == STATIC_ARRAY) {
-            return match_polymorph(scope, expected->array.inner, res->array.inner);
+    if (gr->comp != er->comp) {
+        if (er->comp == ARRAY && gr->comp == STATIC_ARRAY) {
+            return match_polymorph(scope, er->array.inner, gr->array.inner);
         }
-        if (expected->comp == PARAMS && res->comp == STRUCT) {
-            return match_polymorph(scope, expected, res->st.generic_base);
+        if (er->comp == PARAMS && gr->comp == STRUCT) {
+            return match_polymorph(scope, expected, gr->st.generic_base);
         }
         return 0;
     }
-    switch (expected->comp) {
+    switch (er->comp) {
     case REF:
-        return match_polymorph(scope, expected->ref.inner, res->ref.inner);
+        return match_polymorph(scope, er->ref.inner, gr->ref.inner);
     case ARRAY:
-        return match_polymorph(scope, expected->array.inner, res->array.inner);
+        return match_polymorph(scope, er->array.inner, gr->array.inner);
     case FUNC:
-        if (expected->fn.variadic != res->fn.variadic) {
+        if (er->fn.variadic != gr->fn.variadic) {
             return 0;
         }
-        if (array_len(expected->fn.args) != array_len(res->fn.args)) {
+        if (array_len(er->fn.args) != array_len(gr->fn.args)) {
             return 0;
         }
-        for (int i = 0; i < array_len(expected->fn.args); i++) {
+        for (int i = 0; i < array_len(er->fn.args); i++) {
             // TODO: not sure this was right
-            if (is_polydef(expected->fn.args[i])) {
-                if (!match_polymorph(scope, expected->fn.args[i], res->fn.args[i])) {
+            if (is_polydef(er->fn.args[i])) {
+                if (!match_polymorph(scope, er->fn.args[i], gr->fn.args[i])) {
                     return 0;
                 }
-            } else if (!check_type(expected->fn.args[i], res->fn.args[i])) {
+            } else if (!check_type(er->fn.args[i], gr->fn.args[i])) {
                 return 0;
             }
         }
-        return check_type(expected->fn.ret, res->fn.ret);
+        return check_type(er->fn.ret, gr->fn.ret);
     case PARAMS: {
-        if (!check_type(expected->params.inner, res->params.inner)) {
+        if (!check_type(er->params.inner, gr->params.inner)) {
             return 0;
         }
-        if (array_len(expected->params.args) != array_len(res->params.args)) {
+        if (array_len(er->params.args) != array_len(gr->params.args)) {
             return 0;
         }
-        for (int i = 0; i < array_len(expected->params.args); i++) {
+        for (int i = 0; i < array_len(er->params.args); i++) {
             // TODO: not sure this was right
-            if (is_polydef(expected->params.args[i])) {
-                if (!match_polymorph(scope, expected->params.args[i], res->params.args[i])) {
+            if (is_polydef(er->params.args[i])) {
+                if (!match_polymorph(scope, er->params.args[i], gr->params.args[i])) {
                     return 0;
                 }
-            } else if (!check_type(expected->params.args[i], res->params.args[i])) {
+            } else if (!check_type(er->params.args[i], gr->params.args[i])) {
                 return 0;
             }
         }
@@ -220,7 +272,6 @@ int match_polymorph(Scope *scope, Type *expected, Type *got) {
     case BASIC:
     case ENUM:
     case EXTERNAL:
-    case ALIAS:
         error(-1, "internal", "Cmon mang");
         return 0;
     }
@@ -228,12 +279,12 @@ int match_polymorph(Scope *scope, Type *expected, Type *got) {
 }
 
 Type *promote_number_type(Type *a, int left_lit, Type *b, int right_lit) {
-    Type *aa = resolve_alias(a);
+    ResolvedType *aa = a->resolved;
     assert(aa->comp == BASIC);
     int abase = aa->data->base;
     int asize = aa->data->size;
 
-    Type *bb = resolve_alias(b);
+    ResolvedType *bb = b->resolved;
     assert(bb->comp == BASIC);
     int bbase = bb->data->base;
     int bsize = aa->data->size;
@@ -262,8 +313,8 @@ int type_equality_comparable(Type *a, Type *b) {
     if (is_numeric(a)) {
         return is_numeric(b);
     }
-    if (a->comp == REF || (a->comp == BASIC && a->data->base == BASEPTR_T)) {
-        return b->comp == REF || (b->comp == BASIC && b->data->base == BASEPTR_T);
+    if (a->resolved->comp == REF || (a->resolved->comp == BASIC && a->resolved->data->base == BASEPTR_T)) {
+        return b->resolved->comp == REF || (b->resolved->comp == BASIC && b->resolved->data->base == BASEPTR_T);
     }
 
     return check_type(a, b); // TODO: something different here
@@ -302,16 +353,16 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from, int raise_error) {
     
     // (TODO: why was this comment here?)
     // resolve polymorphs
-    Type *t = resolve_alias(to);
-    if (t->comp == ARRAY) {
-        if (from->var_type->comp == STATIC_ARRAY) {
-            t = t->array.inner;
-            Type *from_type = from->var_type->array.inner;
-            while (from_type->comp == STATIC_ARRAY && t->comp == ARRAY) {
-                t = t->array.inner;
-                from_type = from_type->array.inner;
+    ResolvedType *tr = to->resolved;
+    if (tr->comp == ARRAY) {
+        if (from->var_type->resolved->comp == STATIC_ARRAY) {
+            Type *inner = tr->array.inner;
+            Type *from_type = from->var_type->resolved->array.inner;
+            while (from_type->resolved->comp == STATIC_ARRAY && inner->resolved->comp == ARRAY) {
+                inner = inner->resolved->array.inner;
+                from_type = from_type->resolved->array.inner;
             }
-            if (!check_type(t, from_type)) {
+            if (!check_type(inner, from_type)) {
                 return NULL;
             }
             // TODO: double check this is right
@@ -319,10 +370,10 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from, int raise_error) {
         }
     }
     if (from->type == AST_LITERAL) {
-        if (is_numeric(t) && is_numeric(from->var_type)) {
+        if (is_numeric(to) && is_numeric(from->var_type)) {
             int loss = 0;
             if (from->lit->lit_type == INTEGER) {
-                if (t->data->base == UINT_T) {
+                if (tr->data->base == UINT_T) {
                     if (from->lit->int_val < 0) {
                         if (raise_error) {
                             error(from->line, from->file, 
@@ -332,15 +383,15 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from, int raise_error) {
                             return NULL;
                         }
                     }
-                    loss = precision_loss_uint(t, from->lit->int_val);
+                    loss = precision_loss_uint(to, from->lit->int_val);
                 } else {
-                    loss = precision_loss_int(t, from->lit->int_val);
+                    loss = precision_loss_int(to, from->lit->int_val);
                 }
             } else if (from->lit->lit_type == FLOAT) {
-                if (t->data->base != FLOAT_T) {
+                if (tr->data->base != FLOAT_T) {
                     return NULL;
                 }
-                loss = precision_loss_float(t, from->lit->float_val);
+                loss = precision_loss_float(to, from->lit->float_val);
             }
             if (loss) {
                 if (raise_error) {
@@ -354,18 +405,18 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from, int raise_error) {
             return number_cast(scope, from, to);
         } else {
             if (is_string(from->var_type) &&
-              t->comp == BASIC && t->data->base == UINT_T && t->data->size == 1 &&
+              tr->comp == BASIC && tr->data->base == UINT_T && tr->data->size == 1 &&
               strlen(from->lit->string_val) == 1) {
                 Ast *c = ast_alloc(AST_LITERAL);
                 c->lit->int_val = from->lit->string_val[0];
                 c->lit->lit_type = INTEGER;
                 c->line = from->line;
                 c->file = from->file;
-                c->var_type = t;
+                c->var_type = to;
                 return c;
             }
 
-            if (can_cast(from->var_type, t)) {
+            if (can_cast(from->var_type, to)) {
                 if (!is_lvalue(from)) {
                     allocate_ast_temp_var(scope, from);
                 }
@@ -374,7 +425,7 @@ Ast *coerce_type(Scope *scope, Type *to, Ast *from, int raise_error) {
                 c->cast->object = from;
                 c->line = from->line;
                 c->file = from->file;
-                c->var_type = t;
+                c->var_type = to;
                 return c;
             }
 

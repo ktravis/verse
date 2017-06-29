@@ -37,20 +37,20 @@ Var *copy_var(Scope *scope, Var *v) {
 }
 
 void init_struct_var(Var *var) {
-    Type *type = resolve_alias(var->type);
-    assert(type->comp == STRUCT);
+    ResolvedType *r = var->type->resolved;
+    assert(r->comp == STRUCT);
 
     var->initialized = 1;
     var->members = NULL;
 
-    for (int i = 0; i < array_len(type->st.member_names); i++) {
-        int l = strlen(var->name)+strlen(type->st.member_names[i])+1;
+    for (int i = 0; i < array_len(r->st.member_names); i++) {
+        int l = strlen(var->name)+strlen(r->st.member_names[i])+1;
         char *member_name;
         member_name = malloc((l+1)*sizeof(char));
-        sprintf(member_name, "%s.%s", var->name, type->st.member_names[i]);
+        sprintf(member_name, "%s.%s", var->name, r->st.member_names[i]);
         member_name[l] = 0;
 
-        Var *v = make_var(member_name, type->st.member_types[i]); // TODO
+        Var *v = make_var(member_name, r->st.member_types[i]); // TODO
         v->initialized = 1; // maybe wrong?
         array_push(var->members, v);
     }

@@ -19,7 +19,7 @@ typedef struct PkgFile {
 
 typedef enum TypeComp {
     BASIC,
-    ALIAS,
+    //ALIAS,
     POLYDEF,
     PARAMS,
     STATIC_ARRAY,
@@ -65,36 +65,40 @@ typedef struct EnumType {
 
 typedef struct Type {
     int id;
-    TypeComp comp;
+    char *name;
     struct Scope *scope;
+    struct ResolvedType *resolved;
+    struct Type *aka;
+} Type;
+
+typedef struct ResolvedType {
+    TypeComp comp;
     union {
         // basic
         struct TypeData *data;
-        // alias
-        char *name;
-
         struct {
             struct Type **args;
             struct Type *inner;
         } params;
-
         // is this good, or do we need additional levels?
         struct {
             char *pkg_name;
+            Package *package;
+            Type *type;
             char *type_name;
         } ext;
-
         RefType ref;
         ArrayType array;
         FnType fn;
         StructType st;
         EnumType en;
     };
-} Type;
+} ResolvedType;
 
 typedef struct TypeDef {
     char *name;
     Type *type;
+    struct Ast  *ast;
     //Type *defined_type;
 } TypeDef;
 
