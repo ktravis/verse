@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../array/array.h"
+#include "array/array.h"
 #include "ast.h"
 #include "types.h"
 #include "typechecking.h"
@@ -17,18 +17,26 @@ typedef struct MethodList {
     Type *type;
     char *name;
     Ast *decl;
+    Scope *scope;
     struct MethodList *next;
 } MethodList;
 
 MethodList *all_methods = NULL;
 
+// TODO: move on-demand reification somehwere else so that we don't have this
+// weird dependency
+Type *reify_struct(Scope *scope, Ast *ast, Type *type);
+
 Ast *find_method(Type *t, char *name) {
-    t = resolve_type(t);
     Ast *possible = NULL;
     // TODO: NEED TO ALLOW FOR list->type to be an alias (Array) and t be struct
     // (reified Array(string)
     for (MethodList *list = all_methods; list != NULL; list = list->next) {
         if (!strcmp(list->name, name)) {
+            resolve_type(list->type);
+            if (contains_generic_struct(list->type)) {
+                list->type = reify_struct(list->scope, list->decl, list->type);
+            }
             if (check_type(resolve_type(list->type), t)) {
                 return list->decl;
             } else if (t->resolved->comp == STRUCT && t->resolved->st.generic_base != NULL) {
@@ -44,9 +52,9 @@ Ast *find_method(Type *t, char *name) {
     return possible;
 }
 
-static Type *resolve_alias(Type *t);
+Type *resolve_alias(Type *t);
 
-Ast *define_method(Type *t, Ast *decl) {
+Ast *define_method(Scope *impl_scope, Type *t, Ast *decl) {
     assert(decl->type == AST_FUNC_DECL);
 
     Type *resolved = resolve_alias(t);
@@ -59,6 +67,7 @@ Ast *define_method(Type *t, Ast *decl) {
     all_methods = calloc(sizeof(MethodList), 1);
     all_methods->type = t;
     all_methods->name = decl->fn_decl->var->name;
+    all_methods->scope = impl_scope;
     all_methods->decl = decl;
     all_methods->next = last;
     return NULL;
@@ -118,7 +127,6 @@ int size_of_type(Type *t) {
 Type *copy_type(Scope *scope, Type *t) {
     // Should this be separated into 2 functions, one that replaces scope and
     // the other that doesn't?
-    // TODO: change id?
     if (t->resolved && t->resolved->comp == BASIC) {
         return t;
     }
@@ -171,6 +179,8 @@ Type *copy_type(Scope *scope, Type *t) {
             for (int i = 0; i < array_len(cr->st.arg_params); i++) {
                 r->st.arg_params[i] = copy_type(scope, cr->st.arg_params[i]);
             }
+        }
+        if (cr->st.generic_base) {
             r->st.generic_base = copy_type(scope, cr->st.generic_base);
         }
         break;
@@ -416,6 +426,8 @@ Type *resolve_external(Type *type) {
         return NULL;
     }
 
+    // TODO: TODO: TODO: no, this should look up the resolved type in that
+    // package
     type = make_type(p->scope, type->resolved->ext.type_name);
     return type;
 }
@@ -425,13 +437,13 @@ Type *resolve_type(Type *type) {
         return NULL;
     }
     Type **used_types = all_used_types();
-    if (type->name && type->resolved) {
-    for (int i = 0; i < array_len(used_types); i++) {
-        if (check_type(used_types[i], type)) {
-            type->id = used_types[i]->id;
-            break;
+    if (type->name && type->resolved && type->resolved->comp != POLYDEF) {
+        for (int i = 0; i < array_len(used_types); i++) {
+            if (check_type(used_types[i], type)) {
+                type->id = used_types[i]->id;
+                break;
+            }
         }
-    }
         return type;
     }
     Type *r = resolve_alias(type);
@@ -440,6 +452,9 @@ Type *resolve_type(Type *type) {
     }
     if (type != r) {
         type->resolved = r->resolved;
+    }
+    if (is_polydef(type)) {
+        return type;
     }
     for (int i = 0; i < array_len(used_types); i++) {
         if (check_type(used_types[i], type)) {
@@ -452,8 +467,14 @@ Type *resolve_type(Type *type) {
         break;
     case POLYDEF:
         break;
-    case EXTERNAL:
+    case EXTERNAL: {
+        Type *tmp = resolve_external(type);
+        if (!tmp) {
+            return NULL;
+        }
+        *type = *tmp;
         break;
+    }
     case PARAMS:
         for (int i = 0; i < array_len(type->resolved->params.args); i++) {
             type->resolved->params.args[i] = resolve_type(type->resolved->params.args[i]);
@@ -461,26 +482,40 @@ Type *resolve_type(Type *type) {
         type->resolved->params.inner = resolve_type(type->resolved->params.inner);
         break;
     case ARRAY:
-    case STATIC_ARRAY:
-        type->resolved->array.inner = resolve_type(type->resolved->array.inner);
+    case STATIC_ARRAY: {
+        Type *r = resolve_type(type->resolved->array.inner);
+        if (r) {
+            type->resolved->array.inner = r;
+        }
         break;
-    case REF:
-        type->resolved->ref.inner = resolve_type(type->resolved->ref.inner);
+    }
+    case REF: {
+        Type *r = resolve_type(type->resolved->ref.inner);
+        if (r) {
+            type->resolved->ref.inner = resolve_type(type->resolved->ref.inner);
+        }
         break;
+    }
     case FUNC:
         for (int i = 0; i < array_len(type->resolved->fn.args); i++) {
-            type->resolved->fn.args[i] = resolve_type(type->resolved->fn.args[i]);
+            Type *r = resolve_type(type->resolved->fn.args[i]);
+            if (r) {
+                type->resolved->fn.args[i] = r;
+            }
         }
         type->resolved->fn.ret = resolve_type(type->resolved->fn.ret);
         break;
     case STRUCT:
-        type->resolved->st.generic_base = resolve_type(type->resolved->st.generic_base);
+        /*type->resolved->st.generic_base = resolve_type(type->resolved->st.generic_base);*/
         for (int i = 0; i < array_len(type->resolved->st.member_types); i++) {
-            type->resolved->st.member_types[i] = resolve_type(type->resolved->st.member_types[i]);
+            Type *r = resolve_type(type->resolved->st.member_types[i]);
+            if (r) { // This is so that generic placeholders aren't overwritten, maybe find a way to prevent this from mattering earlier?
+                type->resolved->st.member_types[i] = r;
+            }
         }
-        for (int i = 0; i < array_len(type->resolved->st.arg_params); i++) {
-            type->resolved->st.arg_params[i] = resolve_type(type->resolved->st.arg_params[i]);
-        }
+        /*for (int i = 0; i < array_len(type->resolved->st.arg_params); i++) {*/
+            /*type->resolved->st.arg_params[i] = resolve_type(type->resolved->st.arg_params[i]);*/
+        /*}*/
         break;
     case ENUM:
         type->resolved->en.inner = resolve_type(type->resolved->en.inner);
@@ -719,6 +754,46 @@ Type *replace_type(Type *base, Type *from, Type *to) {
     return base;
 }
 
+Type *replace_type_by_name(Type *base, char *from_name, Type *to) {
+    if (base->name && !strcmp(from_name, base->name)) {
+        return to;
+    }
+    if (!base->resolved) {
+        return base;
+    }
+
+    ResolvedType *r = base->resolved;
+    switch (r->comp) {
+    case PARAMS:
+        for (int i = 0; i < array_len(r->params.args); i++) {
+            r->params.args[i] = replace_type_by_name(r->params.args[i], from_name, to);
+        }
+        r->params.inner = replace_type_by_name(r->params.inner, from_name, to);
+        break;
+    case REF:
+        r->ref.inner = replace_type_by_name(r->ref.inner, from_name, to);
+        break;
+    case ARRAY:
+    case STATIC_ARRAY:
+        r->array.inner = replace_type_by_name(r->array.inner, from_name, to);
+        break;
+    case STRUCT:
+        for (int i = 0; i < array_len(r->st.member_types); i++) {
+            r->st.member_types[i] = replace_type_by_name(r->st.member_types[i], from_name, to);
+        }
+        break;
+    case FUNC:
+        for (int i = 0; i < array_len(r->fn.args); i++) {
+            r->fn.args[i] = replace_type_by_name(r->fn.args[i], from_name, to);
+        }
+        r->fn.ret = replace_type_by_name(r->fn.ret, from_name, to);
+        break;
+    default:
+        break;
+    }
+    return base;
+}
+
 static int types_initialized = 0;
 static Type *void_type = NULL;
 static int void_type_id;
@@ -854,7 +929,6 @@ char *type_to_string(Type *t) {
     }
     case FUNC: {
         int len = 5; // fn() + \0
-        int i = 0;
         char **args = NULL;
         for (int i = 0; i < array_len(r->fn.args); i++) {
             char *name = type_to_string(r->fn.args[i]);
@@ -865,7 +939,7 @@ char *type_to_string(Type *t) {
             len += 3;
         }
         if (array_len(args) > 1) {
-            len += i - 1;
+            len += array_len(args) - 1;
         }
         char *ret = NULL;
         if (r->fn.ret != void_type) {
@@ -875,12 +949,12 @@ char *type_to_string(Type *t) {
         char *dest = malloc(sizeof(char) * len);
         dest[0] = '\0';
         snprintf(dest, 4, "fn(");
-        for (int j = 0; j < i; j++) {
-            strcat(dest, args[j]);
-            if (j != i - 1) {
+        for (int i = 0; i < array_len(args); i++) {
+            if (i > 0) {
                 strcat(dest, ",");
             }
-            free(args[j]);
+            strcat(dest, args[i]);
+            free(args[i]);
         }
         if (r->fn.variadic) {
             strcat(dest, "...");

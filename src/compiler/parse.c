@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../array/array.h"
+#include "array/array.h"
 #include "eval.h"
 #include "parse.h"
 #include "semantics.h"
@@ -11,8 +11,6 @@
 #include "util.h"
 
 static int last_tmp_fn_id = 0;
-
-static Ast **global_fn_decls = NULL;
 
 Type *can_be_type_object(Ast *ast) {
     switch (ast->type) {
@@ -677,7 +675,7 @@ Ast *parse_func_decl(int anonymous) {
 
     func->fn_decl->body = parse_astblock(1);
     /*if (!is_polydef(fn_type)) {*/
-        array_push(global_fn_decls, func);
+        /*array_push(global_fn_decls, func);*/
     /*}*/
     return func; 
 }
@@ -1236,10 +1234,6 @@ Ast *parse_block(int bracketed) {
 Ast *parse_source_file(char *filename) {
     push_file_source(filename, fopen(filename, "r"));
     return parse_block(0);
-}
-
-Ast **get_global_funcs() {
-    return global_fn_decls;
 }
 
 // TODO: why is this here

@@ -114,6 +114,7 @@ typedef struct AstFnDecl {
     Scope     *scope;
     AstBlock  *body;
     Polymorph **polymorphs;
+    struct AstFnDecl *polymorph_of;
     // TODO: sloppy, clean this up
     int        ext_autocast;
 } AstFnDecl;

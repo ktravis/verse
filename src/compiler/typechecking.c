@@ -1,12 +1,15 @@
 #include <assert.h>
 #include <string.h>
 
-#include "../array/array.h"
+#include "array/array.h"
 #include "ast.h"
 #include "typechecking.h"
 #include "scope.h"
 
 int check_type(Type *a, Type *b) {
+    if (a == NULL || b == NULL) {
+        return 0;
+    }
     if (a->aka != NULL) {
         return check_type(a->aka, b);
     }
@@ -17,6 +20,9 @@ int check_type(Type *a, Type *b) {
         if (strcmp(a->name, b->name)) {
             return 0;
         }
+    }
+    if (a->id == b->id) {
+        return 1;
     }
     if (a->name && !a->resolved) {
         TypeDef *adef = find_type_definition(a);

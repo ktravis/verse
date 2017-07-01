@@ -68,6 +68,8 @@ fn main() -> int {
     a := var(anys[0], anys[1]);
     println(*(a.value_pointer as &string));
 
+    println(var("Hi", sum([]string::{"again", "how", "is"}), "it"));
+
     // TODO: bug
     /*eh(2, fn(a: int) -> int { return a; });*/
 

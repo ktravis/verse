@@ -1,7 +1,7 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#include "../hashmap/hashmap.h"
+#include "hashmap/hashmap.h"
 
 typedef struct Package {
     char *path;
@@ -129,6 +129,7 @@ typedef struct Polymorph {
     struct Scope     *scope;
     struct AstBlock  *body;
     Type             *ret;
+    Var              *var;
 } Polymorph;
 
 typedef enum {

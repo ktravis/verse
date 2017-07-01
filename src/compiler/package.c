@@ -4,7 +4,7 @@
 #include <string.h>
 #include <dirent.h>
 
-#include "../array/array.h"
+#include "array/array.h"
 #include "package.h"
 #include "scope.h"
 #include "parse.h"

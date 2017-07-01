@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../array/array.h"
+#include "array/array.h"
 #include "ast.h"
 #include "token.h"
 #include "util.h"

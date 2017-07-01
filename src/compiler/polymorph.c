@@ -1,7 +1,7 @@
 #include <stdlib.h>
 
-#include "../array/array.h"
-#include "../hashmap/hashmap.h"
+#include "array/array.h"
+#include "hashmap/hashmap.h"
 
 #include "polymorph.h"
 #include "typechecking.h"
@@ -15,6 +15,7 @@ Polymorph *create_polymorph(AstFnDecl *decl, Type **arg_types) {
     p->scope->polymorph = p;
     p->body = copy_ast_block(p->scope, decl->body); // p->scope or scope?
     p->ret = NULL;
+    p->var = NULL;
     hashmap_init(&p->defs);
     array_push(decl->polymorphs, p);
     return p;

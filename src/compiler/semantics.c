@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../array/array.h"
+#include "array/array.h"
 #include "semantics.h"
 #include "eval.h"
 #include "parse.h"
@@ -13,12 +13,20 @@
 
 // TODO: do this better
 static int in_impl = 0;
+static Ast **global_fn_decls = NULL;
 
-void check_for_unresolved_with_scope(Ast *ast, Type *t, Scope *scope) {
+Ast **get_global_funcs() {
+    return global_fn_decls;
+}
+
+void check_for_undefined_with_scope(Ast *ast, Type *t, Scope *scope) {
+    if (t->resolved && t->resolved->comp == POLYDEF) {
+        return;
+    }
     Scope *tmp = t->scope;
     t->scope = scope;
     if (t->name) {
-        if (!resolve_type(t)) {
+        if (!resolve_alias(t)) {
             error(ast->line, ast->file, "Unknown type '%s'.", t->name);
         }
         t->scope = tmp;
@@ -27,25 +35,25 @@ void check_for_unresolved_with_scope(Ast *ast, Type *t, Scope *scope) {
     switch (t->resolved->comp) {
     case FUNC:
         for (int i = 0; i < array_len(t->resolved->fn.args); i++) {
-            check_for_unresolved_with_scope(ast, t->resolved->fn.args[i], scope);
+            check_for_undefined_with_scope(ast, t->resolved->fn.args[i], scope);
         }
         if (t->resolved->fn.ret) {
-            check_for_unresolved_with_scope(ast, t->resolved->fn.ret, scope);
+            check_for_undefined_with_scope(ast, t->resolved->fn.ret, scope);
         }
         break;
     case STRUCT: {
         // line numbers can be weird on this...
         for (int i = 0; i < array_len(t->resolved->st.member_types); i++) {
-            check_for_unresolved_with_scope(ast, t->resolved->st.member_types[i], scope);
+            check_for_undefined_with_scope(ast, t->resolved->st.member_types[i], scope);
         }
         break;
     }
     case REF:
-        check_for_unresolved_with_scope(ast, t->resolved->ref.inner, scope);
+        check_for_undefined_with_scope(ast, t->resolved->ref.inner, scope);
         break;
     case ARRAY:
     case STATIC_ARRAY:
-        check_for_unresolved_with_scope(ast, t->resolved->array.inner, scope);
+        check_for_undefined_with_scope(ast, t->resolved->array.inner, scope);
         break;
     case BASIC:
     case POLYDEF:
@@ -57,12 +65,12 @@ void check_for_unresolved_with_scope(Ast *ast, Type *t, Scope *scope) {
     t->scope = tmp;
 }
 
-void check_for_unresolved(Ast *ast, Type *t) {
+void check_for_undefined(Ast *ast, Type *t) {
     if (t->name) {
         if (t->resolved) {
             return;
         }
-        if (!resolve_type(t)) {
+        if (!resolve_alias(t)) {
             error(ast->line, ast->file, "Unknown type '%s'.", t->name);
         }
         return;
@@ -70,25 +78,25 @@ void check_for_unresolved(Ast *ast, Type *t) {
     switch (t->resolved->comp) {
     case FUNC:
         for (int i = 0; i < array_len(t->resolved->fn.args); i++) {
-            check_for_unresolved(ast, t->resolved->fn.args[i]);
+            check_for_undefined(ast, t->resolved->fn.args[i]);
         }
         if (t->resolved->fn.ret) {
-            check_for_unresolved(ast, t->resolved->fn.ret);
+            check_for_undefined(ast, t->resolved->fn.ret);
         }
         break;
     case STRUCT: {
         // line numbers can be weird on this...
         for (int i = 0; i < array_len(t->resolved->st.member_types); i++) {
-            check_for_unresolved(ast, t->resolved->st.member_types[i]);
+            check_for_undefined(ast, t->resolved->st.member_types[i]);
         }
         break;
     }
     case REF:
-        check_for_unresolved(ast, t->resolved->ref.inner);
+        check_for_undefined(ast, t->resolved->ref.inner);
         break;
     case ARRAY:
     case STATIC_ARRAY:
-        check_for_unresolved(ast, t->resolved->array.inner);
+        check_for_undefined(ast, t->resolved->array.inner);
         break;
     case BASIC:
     case POLYDEF:
@@ -152,7 +160,7 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
     assert(r->comp == PARAMS);
     assert(r->params.args != NULL);
 
-    ResolvedType *inner = r->params.inner->resolved;
+    ResolvedType *inner = resolve_alias(r->params.inner)->resolved;
     if (inner->comp != STRUCT) {
         error(ast->line, ast->file, "Invalid parameterization, type '%s' is not a generic struct.", type_to_string(r->params.inner));
     }
@@ -161,7 +169,7 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
     Type **expected = inner->st.arg_params;
     
     for (int i = 0; i < array_len(given); i++) {
-        check_for_unresolved(ast, given[i]);
+        check_for_undefined(ast, given[i]);
     }
 
     if (array_len(given) != array_len(expected)) {
@@ -172,7 +180,8 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
     Type **member_types = array_copy(inner->st.member_types);
     for (int i = 0; i < array_len(given); i++) {
         for (int j = 0; j < array_len(inner->st.member_types); j++) {
-            member_types[j] = replace_type(copy_type(member_types[j]->scope, member_types[j]), expected[i], given[i]);
+            assert(expected[i]->name != NULL);
+            member_types[j] = replace_type_by_name(copy_type(member_types[j]->scope, member_types[j]), expected[i]->name, given[i]);
         }
     }
 
@@ -474,13 +483,6 @@ static Ast *check_binop_semantics(Scope *scope, Ast *ast) {
     case OP_EQUALS:
     case OP_NEQUALS:
         if (!check_type(lt, rt)) {
-            /*errlog("type on left %s", type_to_string(lt));*/
-            /*errlog("type on right %s", type_to_string(ast->binary->right->var_type));*/
-            /*errlog("right is string lit %d", ast->binary->right->type == AST_LITERAL && ast->binary->right->lit->lit_type == STRING);*/
-            /*if (ast->binary->right->type == AST_LITERAL && ast->binary->right->lit->lit_type == STRING) {*/
-                /*errlog("right lit value %s", ast->binary->right->lit->string_val);*/
-                /*errlog("right lit len %d", strlen(ast->binary->right->lit->string_val));*/
-            /*}*/
             ast->binary->right = coerce_type(scope, lt, ast->binary->right, 1);
             if (!ast->binary->right) {
                 error(ast->line, ast->file, "Cannot compare equality of non-comparable types '%s' and '%s'.",
@@ -571,7 +573,6 @@ void first_pass_type(Scope *scope, Type *t) {
         for (int i = 0; i < array_len(r->fn.args); i++) {
             first_pass_type(scope, r->fn.args[i]);
         }
-        // register type?
         first_pass_type(scope, r->fn.ret);
         break;
     case STRUCT:
@@ -582,13 +583,9 @@ void first_pass_type(Scope *scope, Type *t) {
         for (int i = 0; i < array_len(r->st.arg_params); i++) {
             first_pass_type(scope, r->st.arg_params[i]);
         }
-        /*if (!r->st.generic) {*/
-            /*register_type(t);*/
-        /*}*/
         break;
     case ENUM:
         first_pass_type(scope, r->en.inner);
-        /*register_type(t);*/
         break;
     case REF:
         first_pass_type(scope, r->ref.inner);
@@ -656,9 +653,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
 
         // TODO handle case where arg has same name as func
         if (!is_polydef(ast->fn_decl->var->type)) {
-            for (int i = 0; i < array_len(ast->fn_decl->args); i++) {
-                array_push(ast->fn_decl->scope->vars, ast->fn_decl->args[i]);
-            }
+            array_push(global_fn_decls, ast);
         }
         break;
     case AST_ENUM_DECL:
@@ -800,7 +795,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
                 error(meth->line, meth->file, "Method '%s' of type %s must have a receiver argument.", meth->fn_decl->var->name, type_to_string(ast->impl->type));
             }
             // TODO: check name against struct/enum members (or "builtin members" for string/array)
-            Ast *last_decl = define_method(ast->impl->type, meth);
+            Ast *last_decl = define_method(scope, ast->impl->type, meth);
             if (last_decl != NULL) {
                 error(meth->line, meth->file, "Method '%s' of type %s already defined at %s:%d.", meth->fn_decl->var->name, type_to_string(ast->impl->type), last_decl->file, last_decl->line);
             }
@@ -933,26 +928,28 @@ static Ast *_check_struct_literal_semantics(Scope *scope, Ast *ast, Type *type) 
 }
 
 static Ast *check_struct_literal_semantics(Scope *scope, Ast *ast) {
-    Type *type = resolve_type(ast->lit->compound_val.type);
-    if (!type) {
-        check_for_unresolved(ast, ast->lit->compound_val.type);
-    }
+    Type *type = ast->lit->compound_val.type;
     if (contains_generic_struct(type)) {
         type = reify_struct(scope, ast, type);
     }
-    ast->lit->compound_val.type = type;
+    Type *tmp = resolve_type(type);
+    if (!tmp) {
+        check_for_undefined(ast, type);
+    }
+    ast->lit->compound_val.type = tmp;
     return _check_struct_literal_semantics(scope, ast, type);
 }
 
 static Ast *check_compound_literal_semantics(Scope *scope, Ast *ast) {
-    Type *type = resolve_type(ast->lit->compound_val.type);
-    if (!type) {
-        check_for_unresolved(ast, ast->lit->compound_val.type);
-    }
+    Type *type = ast->lit->compound_val.type;
     if (contains_generic_struct(type)) {
         type = reify_struct(scope, ast, type);
     }
-    ast->lit->compound_val.type = type;
+    Type *tmp = resolve_type(type);
+    if (!tmp) {
+        check_for_undefined(ast, type);
+    }
+    ast->lit->compound_val.type = tmp;
 
     long nmembers = array_len(ast->lit->compound_val.member_exprs);
 
@@ -1170,23 +1167,22 @@ static Ast *check_declaration_semantics(Scope *scope, Ast *ast) {
     Ast *init = decl->init;
 
     if (decl->var->type) {
-        Type *t = resolve_type(decl->var->type);
-        if (!t) {
-            check_for_unresolved(ast, decl->var->type);
+        Type *t = decl->var->type;
+        if (contains_generic_struct(t)) {
+            t = reify_struct(scope, ast, t);
         }
+        Type *tmp = resolve_type(t);
+        if (!tmp) {
+            check_for_undefined(ast, t);
+        }
+        t = tmp;
         if (init == NULL && t->resolved->comp == STRUCT && t->resolved->st.generic) {
             error(ast->line, ast->file, "Cannot declare variable '%s' of parametrized type '%s' without parameters.",
                   decl->var->name, type_to_string(decl->var->type));
         }
-        // TODO: need some sort of "validate_struct" that would catch things
-        // like using an invalid parameter in a struct
-        if (contains_generic_struct(t)) {
-            t = reify_struct(scope, ast, t);
-        }
         decl->var->type = t;
         register_type(t);
     }
-
 
     if (init == NULL) {
         if (decl->var->type->resolved->comp == STATIC_ARRAY && decl->var->type->resolved->array.length == -1) {
@@ -1474,6 +1470,7 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
 
     int given_count = verify_arg_count(scope, ast, fn_type);
 
+    fn_type = copy_type(scope, fn_type); // TODO: added this, might not need
     ResolvedType *r = fn_type->resolved;
     // create variadic temp var if necessary (variadic, no spread, more than
     // 0 args to variadic "slot")
@@ -1491,17 +1488,30 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
     if (match != NULL) {
         // made a match to existing polymorph
         ast->call->polymorph = match;
+
+        Ast *id = ast_alloc(AST_IDENTIFIER);
+        id->line = ast->call->fn->line;
+        id->file = ast->call->fn->file;
+        id->ident->var = match->var;
+        id->ident->varname = "";
+        id->var_type = id->ident->var->type;
+        ast->call->fn = id;
         ast->var_type = resolve_polymorph(match->ret);
         return ast;
     } else {
         match = create_polymorph(decl, call_arg_types);
     }
 
+    // Important: copy/clear the type, so that we don't modify another!
+    fn_type = copy_type(match->scope, fn_type);
+    r = fn_type->resolved;
+
     decl->scope->polymorph = match;
     ast->call->polymorph = match;
     
-    // reset call_args
     Type **defined_arg_types = NULL;
+    Type **fn_arg_types = NULL;
+    Var **arg_vars = NULL;
 
     for (int i = 0; i < array_len(r->fn.args); i++) {
         Type *expected_type = r->fn.args[i];
@@ -1518,6 +1528,9 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
                 v->type = make_array_type(v->type);
             }
             array_push(match->scope->vars, v);
+            // TODO: I think this case might be wrong
+            array_push(arg_vars, v);
+            array_push(fn_arg_types, v->type);
             break;
         }
         Type *arg_type = ast->call->args[i]->var_type;
@@ -1542,7 +1555,9 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
         if (r->fn.variadic && i == array_len(r->fn.args) - 1) {
             v->type = make_array_type(v->type);
         }
-        array_push(match->scope->vars, v);
+        array_push(fn_arg_types, v->type);
+        /*array_push(match->scope->vars, v);*/
+        array_push(arg_vars, v);
     }
 
     verify_arg_types(scope, ast, defined_arg_types, ast->call->args, r->fn.variadic);
@@ -1551,11 +1566,9 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
         r->fn.ret = reify_struct(match->scope, ast, r->fn.ret);
     }
 
-    // TODO: TODO: TODO: something with copy is broken, keeping last resolved
-    // value
     Type *ret = copy_type(match->scope, r->fn.ret);
     if (ret != NULL) {
-        // TODO: check_for_unresolved here?
+        // TODO: check_for_undefined here?
         ret->resolved = NULL;
         ret = resolve_type(ret);
         if (contains_generic_struct(ret)) {
@@ -1564,13 +1577,34 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
     } else {
         ret = base_type(VOID_T);
     }
-    // TODO: I think that this probably shouldn't modify resolved, it should be
-    // maybe adding something to the scope instead?
-    /*resolved->fn.ret = ret;*/
+
+    match->var = make_var("", make_fn_type(fn_arg_types, ret, r->fn.variadic));
+
+    Ast *generated_ast = ast_alloc(AST_FUNC_DECL);
+    generated_ast->line = ast->line; // just use call site info for now
+    generated_ast->file = ast->file;
+    generated_ast->fn_decl->var = match->var;
+    generated_ast->fn_decl->anon = decl->anon;
+    generated_ast->fn_decl->args = arg_vars;
+    generated_ast->fn_decl->scope = match->scope;
+    generated_ast->fn_decl->polymorph_of = decl;
+    generated_ast->fn_decl->body = match->body;
+    /*generated_ast->fn_decl->ext_autocast = decl->ext_autocast;*/
+    array_push(global_fn_decls, generated_ast);
 
     match->ret = ret; // this is used in the body, must be done before check_block_semantics
-    match->body = check_block_semantics(match->scope, match->body, 1);
+    generated_ast = check_semantics(match->scope, generated_ast);
+    /*match->body = check_block_semantics(match->scope, match->body, 1);*/
 
+
+    Ast *id = ast_alloc(AST_IDENTIFIER);
+    id->line = ast->call->fn->line;
+    id->file = ast->call->fn->file;
+    id->ident->var = match->var;
+    id->ident->varname = "";
+    id->var_type = generated_ast->fn_decl->var->type;
+
+    ast->call->fn = id;
     ast->var_type = ret;
 
     return ast;
@@ -1699,70 +1733,6 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
         }
     }
 
-    for (int i = 0; i < array_len(ast->fn_decl->args); i++) {
-        Var *arg = ast->fn_decl->args[i];
-        check_for_unresolved_with_scope(ast, arg->type, type_check_scope);
-
-        if (!is_concrete(arg->type)) {
-            error(ast->line, ast->file, "Argument '%s' has generic type '%s' (not allowed currently).",
-                  arg->name, type_to_string(arg->type));
-        }
-
-        if (arg->use) {
-            // allow polydef here?
-            Type *t = resolve_type(arg->type);
-            if (!t) {
-                check_for_unresolved(ast, arg->type);
-            }
-            arg->type = t;
-            while (t->resolved->comp == REF) {
-                t = t->resolved->ref.inner;
-            }
-            if (t->resolved->comp != STRUCT) {
-                error(ast->line, ast->file,
-                    "'use' is not allowed on args of non-struct type '%s'.",
-                    type_to_string(t));
-            }
-            Ast *lhs = make_ast_id(arg, arg->name);
-            lhs->line = ast->line;
-            lhs->file = ast->file;
-
-            ResolvedType *r = t->resolved;
-            for (int i = 0; i < array_len(r->st.member_names); i++) {
-                char *name = r->st.member_names[i];
-                if (lookup_local_var(ast->fn_decl->scope, name) != NULL) {
-                    error(ast->line, ast->file,
-                        "'use' statement on struct type '%s' conflicts with existing argument named '%s'.",
-                        type_to_string(t), name);
-                } else if (local_type_name_conflict(scope, name)) {
-                    error(ast->line, ast->file,
-                        "'use' statement on struct type '%s' conflicts with builtin type named '%s'.",
-                        type_to_string(t), name);
-                }
-
-                Var *v = make_var(name, r->st.member_types[i]);
-                Ast *dot = make_ast_dot_op(lhs, name);
-                dot->line = ast->line;
-                dot->file = ast->file;
-                v->proxy = check_semantics(ast->fn_decl->scope, first_pass(ast->fn_decl->scope, dot));
-                array_push(ast->fn_decl->scope->vars, v);
-            }
-        }
-    }
-
-    Scope *tmp = r->fn.ret->scope;
-    r->fn.ret->scope = type_check_scope;
-
-    if (resolve_type(r->fn.ret) == NULL) {
-        error(ast->line, ast->file, "Unknown type '%s' in declaration of function '%s'", type_to_string(r->fn.ret), ast->fn_decl->var->name);
-    }
-
-    r->fn.ret->scope = tmp;
-
-    if (!poly) {
-        ast->fn_decl->body = check_block_semantics(ast->fn_decl->scope, ast->fn_decl->body, 1);
-    }
-
     {
         Type *fn_type = ast->fn_decl->var->type;
         Type **fn_args = fn_type->resolved->fn.args;
@@ -1778,6 +1748,10 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
                     ast->fn_decl->args[i]->type = a;
                 }
                 fn_args[i] = a;
+                /*ast->fn_decl->args[i]->type = a;*/
+            }
+            if (!poly) {
+                array_push(ast->fn_decl->scope->vars, ast->fn_decl->args[i]);
             }
         }
 
@@ -1785,6 +1759,67 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
         if (ret != NULL && !is_polydef(ast->fn_decl->var->type) && contains_generic_struct(ret)) {
             ast->fn_decl->var->type->resolved->fn.ret = reify_struct(ast->fn_decl->scope, ast, ret);
         }
+    }
+
+    for (int i = 0; i < array_len(ast->fn_decl->args); i++) {
+        Var *arg = ast->fn_decl->args[i];
+        check_for_undefined_with_scope(ast, arg->type, type_check_scope);
+
+        if (!poly) {
+            resolve_type(arg->type);
+            if (!is_concrete(arg->type)) {
+                error(ast->line, ast->file, "Argument '%s' has generic type '%s' (not allowed currently).",
+                      arg->name, type_to_string(arg->type));
+            }
+
+            if (arg->use) {
+                // allow polydef here?
+                Type *t = resolve_type(arg->type);
+                if (!t) {
+                    check_for_undefined(ast, arg->type);
+                }
+                arg->type = t;
+                while (t->resolved->comp == REF) {
+                    t = t->resolved->ref.inner;
+                }
+                if (t->resolved->comp != STRUCT) {
+                    error(ast->line, ast->file,
+                        "'use' is not allowed on args of non-struct type '%s'.",
+                        type_to_string(t));
+                }
+                Ast *lhs = make_ast_id(arg, arg->name);
+                lhs->line = ast->line;
+                lhs->file = ast->file;
+
+                ResolvedType *r = t->resolved;
+                for (int i = 0; i < array_len(r->st.member_names); i++) {
+                    char *name = r->st.member_names[i];
+                    if (lookup_local_var(ast->fn_decl->scope, name) != NULL) {
+                        error(ast->line, ast->file,
+                            "'use' statement on struct type '%s' conflicts with existing argument named '%s'.",
+                            type_to_string(t), name);
+                    } else if (local_type_name_conflict(scope, name)) {
+                        error(ast->line, ast->file,
+                            "'use' statement on struct type '%s' conflicts with builtin type named '%s'.",
+                            type_to_string(t), name);
+                    }
+
+                    Var *v = make_var(name, r->st.member_types[i]);
+                    Ast *dot = make_ast_dot_op(lhs, name);
+                    dot->line = ast->line;
+                    dot->file = ast->file;
+                    v->proxy = check_semantics(ast->fn_decl->scope, first_pass(ast->fn_decl->scope, dot));
+                    array_push(ast->fn_decl->scope->vars, v);
+                }
+            }
+        }
+    }
+
+    check_for_undefined_with_scope(ast, r->fn.ret, type_check_scope);
+
+    if (!poly) {
+        resolve_type(r->fn.ret);
+        ast->fn_decl->body = check_block_semantics(ast->fn_decl->scope, ast->fn_decl->body, 1);
     }
 
     if (ast->type == AST_ANON_FUNC_DECL) {
@@ -1933,7 +1968,7 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
         ast->var_type = ast->new->type;
         Type *res = resolve_type(ast->var_type);
         if (!res) {
-            check_for_unresolved(ast, ast->var_type);
+            check_for_undefined(ast, ast->var_type);
             error(ast->line, ast->file, "Unknown type for new, '%s'", type_to_string(ast->var_type));
         }
 
@@ -2000,7 +2035,7 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file, "Type name '%s' already exists as variable.", ast->type_decl->type_name);
         }
         // TODO consider instead just having an "unresolved types" list
-        check_for_unresolved(ast, ast->type_decl->target_type);
+        check_for_undefined(ast, ast->type_decl->target_type);
         // TODO: error about unspecified length
         if (contains_generic_struct(ast->type_decl->target_type)) {
             ast->type_decl->target_type = reify_struct(scope, ast, ast->type_decl->target_type);
@@ -2039,7 +2074,7 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
         return check_index_semantics(scope, ast);
     case AST_IMPL:
         if (!resolve_type(ast->impl->type)) {
-            check_for_unresolved(ast, ast->impl->type);
+            check_for_undefined(ast, ast->impl->type);
         }
         if (contains_generic_struct(ast->impl->type)) {
             ast->impl->type = reify_struct(scope, ast, ast->impl->type);
@@ -2047,6 +2082,7 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
         for (int i = 0; i < array_len(ast->impl->methods); i++) {
             Ast *m = check_semantics(scope, ast->impl->methods[i]);
             Type *recv = m->fn_decl->args[0]->type;
+            resolve_type(recv);
             if (recv->resolved->comp == REF) {
                 recv = recv->resolved->ref.inner;
             }
@@ -2110,7 +2146,7 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
             }
             Type *t = resolve_type(lp->index->type);
             if (!t) {
-                check_for_unresolved(ast, lp->index->type);
+                check_for_undefined(ast, lp->index->type);
             }
             lp->index->type = t;
 
@@ -2124,7 +2160,7 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
         Type *it_type = lp->iterable->var_type;
         Type *r = resolve_type(it_type);
         if (!r) {
-            check_for_unresolved(lp->iterable, r);
+            check_for_undefined(lp->iterable, r);
         }
         lp->iterable->var_type = r;
         lp->itervar->type = r;
@@ -2170,10 +2206,6 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
         }
 
         if (ast->ret->expr != NULL) {
-            // TODO: this is wrong in test.vs, why? even after doing
-            // resolve_polymorph, the type is still Array(T). Is the scope not
-            // being set to the proper one (with the polymorph on it), so that
-            // at this point there is nothing to resolve to?
             ast->ret->expr = check_semantics(scope, ast->ret->expr);
             ret_t = resolve_polymorph(ast->ret->expr->var_type);
         }

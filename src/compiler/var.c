@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../array/array.h"
+#include "array/array.h"
 #include "var.h"
 
 static int last_var_id = 0;

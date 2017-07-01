@@ -4,7 +4,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "array/array.h"
+#include "compiler/array/array.h"
 #include "compiler/ast.h"
 #include "compiler/codegen.h"
 #include "compiler/parse.h"

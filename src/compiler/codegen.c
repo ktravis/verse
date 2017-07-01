@@ -4,7 +4,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "../array/array.h"
+#include "array/array.h"
 #include "typechecking.h"
 #include "codegen.h"
 #include "parse.h"
@@ -522,44 +522,48 @@ void emit_decl(Scope *scope, Ast *ast) {
 void emit_func_decl(Scope *scope, Ast *fn) {
     Type *fn_type = fn->fn_decl->var->type;
     ResolvedType *r = fn_type->resolved;
-    if (fn->fn_decl->polymorphs) {
-        scope = fn->fn_decl->scope;
-        for (int i = 0; i < array_len(fn->fn_decl->polymorphs); i++) {
-            Polymorph *p = fn->fn_decl->polymorphs[i];
-            scope->polymorph = p;
-            printf("/* %s */\n", fn->fn_decl->var->name);
-            indent();
-            emit_type(p->ret);
+    /*if (fn->fn_decl->polymorphs) {*/
+        /*scope = fn->fn_decl->scope;*/
+        /*for (int i = 0; i < array_len(fn->fn_decl->polymorphs); i++) {*/
+            /*Polymorph *p = fn->fn_decl->polymorphs[i];*/
+            /*scope->polymorph = p;*/
+//            printf("/* %s */\n", fn->fn_decl->var->name);
+            /*indent();*/
+            /*emit_type(p->ret);*/
 
-            printf("_poly_%d_vs_%d(", p->id, fn->fn_decl->var->id);
+            /*printf("_poly_%d_vs_%d(", p->id, fn->fn_decl->var->id);*/
 
-            for (int i = 0; i < array_len(p->args); i++) {
-                if (i > 0) {
-                    printf(",");
-                }
-                int type_index = (i >= array_len(p->args)) ? array_len(p->args)-1 : i;
-                if (r->fn.variadic && i == (array_len(p->args) - 1)) {
-                    printf("struct array_type ");
-                } else {
-                    emit_type(p->args[type_index]);
-                }
-                printf("_vs_%d", fn->fn_decl->args[i]->id);
-            }
-            printf(") ");
+            /*for (int i = 0; i < array_len(p->args); i++) {*/
+                /*if (i > 0) {*/
+                    /*printf(",");*/
+                /*}*/
+                /*int type_index = (i >= array_len(p->args)) ? array_len(p->args)-1 : i;*/
+                /*if (r->fn.variadic && i == (array_len(p->args) - 1)) {*/
+                    /*printf("struct array_type ");*/
+                /*} else {*/
+                    /*emit_type(p->args[type_index]);*/
+                /*}*/
+                /*printf("_vs_%d", fn->fn_decl->args[i]->id);*/
+            /*}*/
+            /*printf(") ");*/
 
-            emit_scope_start(scope);
-            emit_scope_start(p->scope);
-            compile_block(p->scope, p->body);
-            emit_scope_end(p->scope);
-            emit_scope_end(scope);
-            scope->polymorph = NULL;
-        }
-    } else {
+            /*emit_scope_start(scope);*/
+            /*emit_scope_start(p->scope);*/
+            /*compile_block(p->scope, p->body);*/
+            /*emit_scope_end(p->scope);*/
+            /*emit_scope_end(scope);*/
+            /*scope->polymorph = NULL;*/
+        /*}*/
+    /*} else {*/
         if (is_polydef(fn_type)) {
             // polymorph not being used
             return;
         }
-        printf("/* %s */\n", fn->fn_decl->var->name);
+        if (fn->fn_decl->polymorph_of) {
+            printf("/* polymorph %s of %s */\n", type_to_string(fn->fn_decl->var->type), fn->fn_decl->polymorph_of->var->name);
+        } else {
+            printf("/* %s */\n", fn->fn_decl->var->name);
+        }
         indent();
         emit_type(r->fn.ret);
 
@@ -584,7 +588,7 @@ void emit_func_decl(Scope *scope, Ast *fn) {
         emit_scope_start(fn->fn_decl->scope);
         compile_block(fn->fn_decl->scope, fn->fn_decl->body);
         emit_scope_end(fn->fn_decl->scope);
-    }
+    /*}*/
 }
 
 void emit_structmember(Scope *scope, char *name, Type *st) {
@@ -854,9 +858,9 @@ void compile_fn_call(Scope *scope, Ast *ast) {
 
     Type **argtypes = r->fn.args;
 
-    if (ast->call->polymorph != NULL) {
-        argtypes = ast->call->polymorph->args;
-    }
+    /*if (ast->call->polymorph != NULL) {*/
+        /*argtypes = ast->call->polymorph->args;*/
+    /*}*/
 
     if (needs_wrapper) {
         printf("((");
@@ -875,9 +879,9 @@ void compile_fn_call(Scope *scope, Ast *ast) {
         printf("))(");
     }
 
-    if (ast->call->polymorph != NULL) {
-        printf("_poly_%d", ast->call->polymorph->id);
-    }
+    /*if (ast->call->polymorph != NULL) {*/
+        /*printf("_poly_%d", ast->call->polymorph->id);*/
+    /*}*/
     if (needs_temp_var(ast->call->fn)) {
         emit_temp_var(scope, ast->call->fn, 0);
     } else {
@@ -1772,44 +1776,48 @@ void emit_var_decl(Scope *scope, Var *v) {
 }
 
 void emit_forward_decl(Scope *scope, AstFnDecl *decl) {
-    if (decl->polymorphs != NULL) {
-        scope = decl->scope;
-        for (int i = 0; i < array_len(decl->polymorphs); i++) {
-            Polymorph *p = decl->polymorphs[i];
-            scope->polymorph = p;
+    /*if (decl->polymorphs != NULL) {*/
+        /*scope = decl->scope;*/
+        /*for (int i = 0; i < array_len(decl->polymorphs); i++) {*/
+            /*Polymorph *p = decl->polymorphs[i];*/
+            /*scope->polymorph = p;*/
 
-            printf("/* %s */\n", decl->var->name);
-            // TODO: integrate var with polymorph specializations so this works
-            //  better/more naturally here
+//            printf("/* %s */\n", decl->var->name);
+            /*// TODO: integrate var with polymorph specializations so this works*/
+            /*//  better/more naturally here*/
 
-            ResolvedType *r = decl->var->type->resolved;
-            assert(r->comp == FUNC);
-            emit_type(p->ret);
+            /*ResolvedType *r = decl->var->type->resolved;*/
+            /*assert(r->comp == FUNC);*/
+            /*emit_type(p->ret);*/
 
-            printf("_poly_%d_vs_%d(", p->id, decl->var->id);
+            /*printf("_poly_%d_vs_%d(", p->id, decl->var->id);*/
 
-            for (int i = 0; i < array_len(decl->args); i++) {
-                if (i > 0) {
-                    printf(",");
-                }
-                int type_index = (i >= array_len(p->args)) ? array_len(p->args)-1 : i;
-                if (r->fn.variadic && i == (array_len(decl->args) - 1)) {
-                    printf("struct array_type ");
-                } else {
-                    emit_type(p->args[type_index]);
-                }
-                printf("_vs_%d", decl->args[i]->id);
-            }
-            printf(");\n");
-            scope->polymorph = NULL;
-        }
-    } else {
+            /*for (int i = 0; i < array_len(decl->args); i++) {*/
+                /*if (i > 0) {*/
+                    /*printf(",");*/
+                /*}*/
+                /*int type_index = (i >= array_len(p->args)) ? array_len(p->args)-1 : i;*/
+                /*if (r->fn.variadic && i == (array_len(decl->args) - 1)) {*/
+                    /*printf("struct array_type ");*/
+                /*} else {*/
+                    /*emit_type(p->args[type_index]);*/
+                /*}*/
+                /*printf("_vs_%d", decl->args[i]->id);*/
+            /*}*/
+            /*printf(");\n");*/
+            /*scope->polymorph = NULL;*/
+        /*}*/
+    /*} else {*/
         ResolvedType *r = decl->var->type->resolved;
         if (is_polydef(decl->var->type)) {
             // polymorph not being used
             return;
         }
-        printf("/* %s */\n", decl->var->name);
+        if (decl->polymorph_of) {
+            printf("/* polymorph %s of %s */\n", type_to_string(decl->var->type), decl->polymorph_of->var->name);
+        } else {
+            printf("/* %s */\n", decl->var->name);
+        }
         if (decl->var->ext) {
             printf("extern ");
         }
@@ -1836,5 +1844,5 @@ void emit_forward_decl(Scope *scope, AstFnDecl *decl) {
             printf("a%d", i);
         }
         printf(");\n");
-    }
+    /*}*/
 }

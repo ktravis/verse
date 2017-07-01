@@ -5,7 +5,7 @@ SRC_DIR   = src
 BUILD_DIR = $(BIN_DIR)
 
 CFLAGS  = -Wall -std=gnu99 -g -Werror -Wno-error=unused-variable
-OBJECTS = $(SRC_DIR)/verse.o $(patsubst %.c, %.o, $(wildcard $(SRC_DIR)/*/*.c))
+OBJECTS = $(SRC_DIR)/verse.o $(patsubst %.c, %.o, $(shell find $(SRC_DIR)/compiler -name '*.c'))
 HEADERS = $(wildcard $(SRC_DIR)/*.h)
 
 ALL: build
@@ -32,7 +32,7 @@ $(BIN_DIR)/includer: $(SRC_DIR)/binpack.c
 	$(BIN_DIR)/includer $(SRC_DIR)/prelude.c
 
 clean:
-	-rm -f src/*.o src/*/*.o
+	-rm -f src/*.o src/**/*.o
 	-rm -rf $(BUILD_DIR)
 	-rm -rf $(BIN_DIR)
 	-rm -f $(SRC_DIR)/prelude.bin $(SRC_DIR)/prelude.h

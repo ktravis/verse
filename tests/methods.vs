@@ -100,6 +100,7 @@ fn main() -> int {
     u: Thing(Guy);
     t: Thing(int);
 
+    fmt.printf("test: %\n", u.test());
     assert(u.test());
     assert(!t.test());
 

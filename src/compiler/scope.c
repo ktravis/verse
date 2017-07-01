@@ -3,8 +3,8 @@
 #include <string.h>
 #include <dirent.h>
 
-#include "../array/array.h"
-#include "../hashmap/hashmap.h"
+#include "array/array.h"
+#include "hashmap/hashmap.h"
 #include "scope.h"
 #include "parse.h"
 #include "semantics.h"
@@ -169,6 +169,7 @@ void register_type(Type *t) {
         for (int i = 0; i < array_len(resolved->params.args); i++) {
             register_type(resolved->params.args[i]);
         }
+        register_type(resolved->params.inner);
         break;
     default:
         break;
@@ -226,6 +227,9 @@ int define_polydef_alias(Scope *scope, Type *t, Ast *ast) {
             if (is_polydef(r->params.args[i])) {
                 count += define_polydef_alias(scope, r->params.args[i], ast);
             }
+        }
+        if (is_polydef(r->params.inner)) {
+            count += define_polydef_alias(scope, r->params.inner, ast);
         }
         break;
     default:

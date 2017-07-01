@@ -5,8 +5,6 @@
 #include "token.h"
 #include "types.h"
 
-Ast **get_global_funcs();
-
 Type *parse_type(Tok *t, int poly_ok);
 Ast *parse_directive(Tok *t);
 Ast *parse_expression(Tok *t, int priority);

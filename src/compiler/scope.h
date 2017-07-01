@@ -6,7 +6,7 @@
 #include "util.h"
 #include "var.h"
 
-#include "../hashmap/hashmap.h"
+#include "hashmap/hashmap.h"
 
 Scope *new_scope(Scope *parent);
 Scope *new_fn_scope(Scope *parent);
