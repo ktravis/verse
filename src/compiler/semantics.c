@@ -1551,7 +1551,6 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
     Type *ret = copy_type(match->scope, r->fn.ret);
     if (ret != NULL) {
         // TODO: check_for_undefined here?
-        ret->resolved = NULL;
         ret = resolve_type(ret);
         if (contains_generic_struct(ret)) {
             ret = reify_struct(match->scope, ast, ret);

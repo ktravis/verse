@@ -37,7 +37,7 @@ Ast *find_method(Type *t, char *name) {
             if (contains_generic_struct(list->type)) {
                 list->type = reify_struct(list->scope, list->decl, list->type);
             }
-            if (check_type(resolve_type(list->type), t)) {
+            if (check_type(/*resolve_type*/(list->type), t)) {
                 return list->decl;
             } else if (t->resolved->comp == STRUCT && t->resolved->st.generic_base != NULL) {
                 assert(t->resolved->st.generic_base->resolved->comp == PARAMS);
@@ -694,49 +694,49 @@ int contains_generic_struct(Type *t) {
     return 0;
 }
 
-Type *replace_type(Type *base, Type *from, Type *to) {
-    if (base == from || base->id == from->id) {
-        return to;
-    }
+/*Type *replace_type(Type *base, Type *from, Type *to) {*/
+    /*if (base == from || base->id == from->id) {*/
+        /*return to;*/
+    /*}*/
 
-    if (base->name && !base->resolved) {
-        if (from->name && from->scope == base->scope && !strcmp(from->name, base->name)) {
-            return to;
-        }
-        return base;
-    }
+    /*if (base->name && !base->resolved) {*/
+        /*if (from->name && from->scope == base->scope && !strcmp(from->name, base->name)) {*/
+            /*return to;*/
+        /*}*/
+        /*return base;*/
+    /*}*/
 
-    ResolvedType *r = base->resolved;
-    switch (r->comp) {
-    case PARAMS:
-        for (int i = 0; i < array_len(r->params.args); i++) {
-            r->params.args[i] = replace_type(r->params.args[i], from, to);
-        }
-        r->params.inner = replace_type(r->params.inner, from, to);
-        break;
-    case REF:
-        r->ref.inner = replace_type(r->ref.inner, from, to);
-        break;
-    case ARRAY:
-    case STATIC_ARRAY:
-        r->array.inner = replace_type(r->array.inner, from, to);
-        break;
-    case STRUCT:
-        for (int i = 0; i < array_len(r->st.member_types); i++) {
-            r->st.member_types[i] = replace_type(r->st.member_types[i], from, to);
-        }
-        break;
-    case FUNC:
-        for (int i = 0; i < array_len(r->fn.args); i++) {
-            r->fn.args[i] = replace_type(r->fn.args[i], from, to);
-        }
-        r->fn.ret = replace_type(r->fn.ret, from, to);
-        break;
-    default:
-        break;
-    }
-    return base;
-}
+    /*ResolvedType *r = base->resolved;*/
+    /*switch (r->comp) {*/
+    /*case PARAMS:*/
+        /*for (int i = 0; i < array_len(r->params.args); i++) {*/
+            /*r->params.args[i] = replace_type(r->params.args[i], from, to);*/
+        /*}*/
+        /*r->params.inner = replace_type(r->params.inner, from, to);*/
+        /*break;*/
+    /*case REF:*/
+        /*r->ref.inner = replace_type(r->ref.inner, from, to);*/
+        /*break;*/
+    /*case ARRAY:*/
+    /*case STATIC_ARRAY:*/
+        /*r->array.inner = replace_type(r->array.inner, from, to);*/
+        /*break;*/
+    /*case STRUCT:*/
+        /*for (int i = 0; i < array_len(r->st.member_types); i++) {*/
+            /*r->st.member_types[i] = replace_type(r->st.member_types[i], from, to);*/
+        /*}*/
+        /*break;*/
+    /*case FUNC:*/
+        /*for (int i = 0; i < array_len(r->fn.args); i++) {*/
+            /*r->fn.args[i] = replace_type(r->fn.args[i], from, to);*/
+        /*}*/
+        /*r->fn.ret = replace_type(r->fn.ret, from, to);*/
+        /*break;*/
+    /*default:*/
+        /*break;*/
+    /*}*/
+    /*return base;*/
+/*}*/
 
 Type *replace_type_by_name(Type *base, char *from_name, Type *to) {
     if (base->name && !strcmp(from_name, base->name)) {
@@ -746,34 +746,68 @@ Type *replace_type_by_name(Type *base, char *from_name, Type *to) {
         return base;
     }
 
+    Type *old = NULL;
+    int changed = 0;
     ResolvedType *r = base->resolved;
     switch (r->comp) {
     case PARAMS:
         for (int i = 0; i < array_len(r->params.args); i++) {
+            old = r->params.args[i];
             r->params.args[i] = replace_type_by_name(r->params.args[i], from_name, to);
+            if (r->params.args[i] != old) {
+                changed = 1;
+            }
         }
+        old = r->params.inner;
         r->params.inner = replace_type_by_name(r->params.inner, from_name, to);
+        if (r->params.inner != old) {
+            changed = 1;
+        }
         break;
     case REF:
+        old = r->ref.inner;
         r->ref.inner = replace_type_by_name(r->ref.inner, from_name, to);
+        if (r->ref.inner != old) {
+            changed = 1;
+        }
         break;
     case ARRAY:
     case STATIC_ARRAY:
+        old = r->array.inner;
         r->array.inner = replace_type_by_name(r->array.inner, from_name, to);
+        if (r->array.inner != old) {
+            changed = 1;
+        }
         break;
     case STRUCT:
         for (int i = 0; i < array_len(r->st.member_types); i++) {
+            old = r->st.member_types[i];
             r->st.member_types[i] = replace_type_by_name(r->st.member_types[i], from_name, to);
+            if (r->st.member_types[i] != old) {
+                changed = 1;
+            }
         }
         break;
     case FUNC:
         for (int i = 0; i < array_len(r->fn.args); i++) {
+            old = r->fn.args[i];
             r->fn.args[i] = replace_type_by_name(r->fn.args[i], from_name, to);
+            if (old != r->fn.args[i]) {
+                changed = 1;
+            }
         }
+        old = r->fn.ret;
         r->fn.ret = replace_type_by_name(r->fn.ret, from_name, to);
+        if (old != r->fn.ret) {
+            changed = 1;
+        }
         break;
     default:
         break;
+    }
+    if (changed) {
+        base->id = last_type_id++;
+        register_type(base);
     }
     return base;
 }

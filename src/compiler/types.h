@@ -59,7 +59,7 @@ Type *find_type_or_polymorph(Type *type);
 Type *resolve_polymorph_recursively(Type *type);
 Type *resolve_external(Type *type);
 Type *resolve_type(Type *type);
-Type *replace_type(Type *base, Type *from, Type *to);
+//Type *replace_type(Type *base, Type *from, Type *to);
 Type *replace_type_by_name(Type *base, char *from_name, Type *to);
 
 int get_any_type_id();
