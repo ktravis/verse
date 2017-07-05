@@ -1243,7 +1243,7 @@ void compile(Scope *scope, Ast *ast) {
             }
             // TODO: I don't think this will work if there are multiple scopes
             // nested and defers are added after a break
-            for (int i = s->parent_deferred; i >= 0; --i) { // TODO: confirm direction is correct!
+            for (int i = s->parent_deferred; i >= 0; --i) {
                 Ast *d = s->parent->deferred[i];
                 indent();
                 if (needs_temp_var(d)) {
@@ -1265,12 +1265,56 @@ void compile(Scope *scope, Ast *ast) {
         }
         break;
     }
-    case AST_BREAK:
+    case AST_BREAK: {
+        emit_deferred(scope);
+        Scope *s = scope;
+        while (s->parent != NULL) {
+            emit_free_locals(s);
+            if (s->type == Loop) {
+                break;
+            }
+            // TODO: I don't think this will work if there are multiple scopes
+            // nested and defers are added after a break
+            for (int i = s->parent_deferred; i >= 0; --i) {
+                Ast *d = s->parent->deferred[i];
+                indent();
+                if (needs_temp_var(d)) {
+                    Var *v = find_temp_var(s, d);
+                    printf("_tmp%d = ", v->id);
+                }
+                compile(s, d);
+                printf(";\n");
+            }
+            s = s->parent;
+        }
         printf("break");
         break;
-    case AST_CONTINUE:
+    }
+    case AST_CONTINUE: {
+        emit_deferred(scope);
+        Scope *s = scope;
+        while (s->parent != NULL) {
+            emit_free_locals(s);
+            if (s->type == Loop) {
+                break;
+            }
+            // TODO: I don't think this will work if there are multiple scopes
+            // nested and defers are added after a break
+            for (int i = s->parent_deferred; i >= 0; --i) {
+                Ast *d = s->parent->deferred[i];
+                indent();
+                if (needs_temp_var(d)) {
+                    Var *v = find_temp_var(s, d);
+                    printf("_tmp%d = ", v->id);
+                }
+                compile(s, d);
+                printf(";\n");
+            }
+            s = s->parent;
+        }
         printf("continue");
         break;
+    }
     case AST_DECL:
         emit_decl(scope, ast);
         break;
