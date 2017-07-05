@@ -830,7 +830,6 @@ void emit_any_wrapper(Scope *scope, Ast *ast) {
     } else {
         emit_temp_var(scope, ast, 1);
     }
-    /*Type *obj_type = resolve_alias(ast->var_type);*/
     printf(",.type=(struct _type_vs_%d *)&_type_info%d}", get_typeinfo_type_id(), ast->var_type->id);
 }
 

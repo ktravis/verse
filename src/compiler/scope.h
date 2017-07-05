@@ -15,6 +15,7 @@ Scope *closest_loop_scope(Scope *scope);
 Scope *closest_fn_scope(Scope *scope);
 Type *fn_scope_return_type(Scope *scope);
 
+Type *lookup_polymorph(Scope *s, char *name);
 Type *lookup_type(Scope *s, char *name);
 Type *lookup_local_type(Scope *s, char *name);
 int define_polydef_alias(Scope *scope, Type *t, Ast *ast);

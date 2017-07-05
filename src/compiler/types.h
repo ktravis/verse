@@ -54,8 +54,9 @@ Type *make_struct_type(char **member_names, Type **member_types);
 Type *make_generic_struct_type(char **member_names, Type **member_types, Type **params);
 Type *make_external_type(char *pkg, char *name);
 
-Type *resolve_alias(Type *type);
-Type *resolve_polymorph(Type *type);
+Type *find_type_or_polymorph(Type *type);
+
+Type *resolve_polymorph_recursively(Type *type);
 Type *resolve_external(Type *type);
 Type *resolve_type(Type *type);
 Type *replace_type(Type *base, Type *from, Type *to);

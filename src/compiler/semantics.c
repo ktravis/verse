@@ -26,7 +26,7 @@ void check_for_undefined_with_scope(Ast *ast, Type *t, Scope *scope) {
     Scope *tmp = t->scope;
     t->scope = scope;
     if (t->name) {
-        if (!resolve_alias(t)) {
+        if (!find_type_or_polymorph(t)) {
             error(ast->line, ast->file, "Unknown type '%s'.", t->name);
         }
         t->scope = tmp;
@@ -70,7 +70,7 @@ void check_for_undefined(Ast *ast, Type *t) {
         if (t->resolved) {
             return;
         }
-        if (!resolve_alias(t)) {
+        if (!find_type_or_polymorph(t)) {
             error(ast->line, ast->file, "Unknown type '%s'.", t->name);
         }
         return;
@@ -160,7 +160,11 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
     assert(r->comp == PARAMS);
     assert(r->params.args != NULL);
 
-    ResolvedType *inner = resolve_alias(r->params.inner)->resolved;
+    Type *_inner = r->params.inner;
+    if (!_inner->resolved) {
+        _inner = find_type_or_polymorph(_inner);
+    }
+    ResolvedType *inner = _inner->resolved;
     if (inner->comp != STRUCT) {
         error(ast->line, ast->file, "Invalid parameterization, type '%s' is not a generic struct.", type_to_string(r->params.inner));
     }
@@ -284,31 +288,6 @@ static Ast *check_dot_op_semantics(Scope *scope, Ast *ast) {
             if (v->proxy) { // USE-proxy
                 error(ast->line, ast->file, "No declared identifier '%s' in package '%s' (*use* doesn't count).", ast->dot->member_name, p->name);
             }
-
-            // TODO: decide if we want to allow promotion of "exports" via USE
-            /*if (v->proxy != NULL) { // USE-proxy*/
-                /*Type *resolved = resolve_alias(v->type);*/
-                /*if (resolved->comp == ENUM) { // proxy for enum*/
-                    /*for (int i = 0; i < resolved->en.nmembers; i++) {*/
-                        /*if (!strcmp(resolved->en.member_names[i], v->name)) {*/
-                            /*Ast *a = ast_alloc(AST_LITERAL);*/
-                            /*a->lit->lit_type = ENUM_LIT;*/
-                            /*a->lit->enum_val.enum_index = i;*/
-                            /*a->lit->enum_val.enum_type = resolved;*/
-                            /*a->var_type = v->type;*/
-                            /*return a;*/
-                        /*}*/
-                    /*}*/
-                    /*error(-1, "<internal>", "How'd this happen");*/
-                /*} else { // proxy for normal var*/
-                    /*int i = 0;*/
-                    /*assert(v->proxy != v);*/
-                    /*while (v->proxy) {*/
-                        /*assert(i++ < 666); // lol*/
-                        /*v = v->proxy; // this better not loop!*/
-                    /*}*/
-                /*}*/
-            /*}*/
             ast = ast_alloc(AST_IDENTIFIER);
             ast->ident->var = v;
             ast->var_type = v->type;
@@ -1375,7 +1354,7 @@ static void verify_arg_types(Scope *scope, Ast *ast, Type **expected_types, Ast 
     int j = 0;
     for (int i = 0; i < array_len(arg_vals); i++) {
         Ast *arg = arg_vals[i];
-        Type *expected = resolve_polymorph(expected_types[j]);
+        Type *expected = resolve_polymorph_recursively(expected_types[j]);
 
         if (arg->type == AST_SPREAD) {
             // handled by verify_arg_count
@@ -1496,7 +1475,7 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
         id->ident->varname = "";
         id->var_type = id->ident->var->type;
         ast->call->fn = id;
-        ast->var_type = resolve_polymorph(match->ret);
+        ast->var_type = resolve_polymorph_recursively(match->ret);
         return ast;
     } else {
         match = create_polymorph(decl, call_arg_types);
@@ -1703,7 +1682,7 @@ static Ast *check_call_semantics(Scope *scope, Ast *ast) {
     // check types and allocate tempvars for "Any"
     verify_arg_types(scope, ast, r->fn.args, ast->call->args, r->fn.variadic);
 
-    ast->var_type = resolve_polymorph(r->fn.ret);
+    ast->var_type = resolve_polymorph_recursively(r->fn.ret);
 
     return ast;
 }
@@ -2207,7 +2186,7 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
 
         if (ast->ret->expr != NULL) {
             ast->ret->expr = check_semantics(scope, ast->ret->expr);
-            ret_t = resolve_polymorph(ast->ret->expr->var_type);
+            ret_t = resolve_polymorph_recursively(ast->ret->expr->var_type);
         }
 
         if (ret_t->resolved->comp == STATIC_ARRAY) {

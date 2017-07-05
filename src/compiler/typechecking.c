@@ -26,11 +26,17 @@ int check_type(Type *a, Type *b) {
     }
     if (a->name && !a->resolved) {
         TypeDef *adef = find_type_definition(a);
+        if (!adef) {
+            return 0;
+        }
         a->id = adef->type->id;
         a->resolved = adef->type->resolved;
     }
     if (b->name && !b->resolved) {
         TypeDef *bdef = find_type_definition(b);
+        if (!bdef) {
+            return 0;
+        }
         b->id = bdef->type->id;
         b->resolved = bdef->type->resolved;
     }
@@ -38,13 +44,15 @@ int check_type(Type *a, Type *b) {
     ResolvedType *br = b->resolved;
     TypeComp ac = ar->comp;
     TypeComp bc = br->comp;
-    /*a = resolve_polymorph(a);*/
-    /*b = resolve_polymorph(b);*/
     if (ac == EXTERNAL) {
-        a = resolve_external(a);
+        a = find_type_or_polymorph(a);
+        ar = a->resolved;
+        ac = ar->comp;
     }
     if (bc == EXTERNAL) {
-        b = resolve_external(b);
+        b = find_type_or_polymorph(b);
+        br = b->resolved;
+        bc = br->comp;
     }
     if (ac != bc) {
         return 0;
@@ -313,9 +321,6 @@ Type *promote_number_type(Type *a, int left_lit, Type *b, int right_lit) {
 }
 
 int type_equality_comparable(Type *a, Type *b) {
-    /*a = resolve_polymorph(a);*/
-    /*b = resolve_polymorph(b);*/
-
     if (is_numeric(a)) {
         return is_numeric(b);
     }

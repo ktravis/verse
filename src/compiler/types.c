@@ -52,15 +52,13 @@ Ast *find_method(Type *t, char *name) {
     return possible;
 }
 
-Type *resolve_alias(Type *t);
-
 Ast *define_method(Scope *impl_scope, Type *t, Ast *decl) {
     assert(decl->type == AST_FUNC_DECL);
-
-    Type *resolved = resolve_alias(t);
     for (MethodList *list = all_methods; list != NULL; list = list->next) {
-        if (list->type == resolved && !strcmp(list->name, decl->fn_decl->var->name)) {
-            return list->decl;
+        if (t->resolved && !strcmp(list->name, decl->fn_decl->var->name)) {
+            if (t->id == list->type->id || t->resolved == list->type->resolved) {
+                return list->decl;
+            }
         }
     }
     MethodList *last = all_methods;
@@ -127,9 +125,9 @@ int size_of_type(Type *t) {
 Type *copy_type(Scope *scope, Type *t) {
     // Should this be separated into 2 functions, one that replaces scope and
     // the other that doesn't?
-    if (t->resolved && t->resolved->comp == BASIC) {
-        return t;
-    }
+    /*if (t->resolved && t->resolved->comp == BASIC) {*/
+        /*return t;*/
+    /*}*/
     Type *type = calloc(sizeof(Type), 1);
     *type = *t;
     type->scope = scope;
@@ -289,6 +287,8 @@ Type *make_params_type(Type *inner, Type **params) {
 
 Type *make_external_type(char *pkg, char *name) {
     Type *t = calloc(sizeof(Type), 1);
+    t->id = last_type_id++;
+    t->name = name;
     t->resolved = make_resolved(EXTERNAL);
     t->resolved->ext.pkg_name = pkg;
     t->resolved->ext.type_name = name;
@@ -333,81 +333,81 @@ int precision_loss_float(Type *t, double fval) {
     return 1;
 }
 
+Type *lookup_polymorph(Scope *s, char *name);
 Type *lookup_type(Scope *s, char *name);
 Type *lookup_local_type(Scope *s, char *name);
 Package *lookup_imported_package(Scope *s, char *name);
 
 Type *_resolve_polymorph(Type *type) {
-    Type *t = type;
-    for (;;) {
-        if (t->resolved && t->resolved->comp == POLYDEF) {
-            Type *tmp = lookup_type(type->scope, t->name);
-            if (!tmp) {
-                break;
-            }
-            t = tmp;
-            /*type->resolved = tmp->resolved;*/
-            /*type->aka = tmp;*/
-        } else if (t->name && t->scope->polymorph) {
-            /*TypeDef **tmp = hashmap_get(&type->scope->polymorph->defs, type->name);*/
-            TypeDef **tmp = hashmap_get(&type->scope->polymorph->defs, t->name);
-            if (!tmp) {
-                break;
-            }
-            t = (*tmp)->type;
-            /*type->resolved = (*tmp)->type->resolved;*/
-            /*type->aka = (*tmp)->type;*/
-        } else {
-            break;
-        }
+    assert(type->name);
+    Type *t = lookup_polymorph(type->scope, type->name);
+    if (!t) {
+        return type;
     }
     if (t != type) {
+        assert(t->resolved);
         type->resolved = t->resolved;
         type->aka = t;
-        /*type = t;*/
     }
     return type;
 }
 
-Type *resolve_polymorph(Type *type) {
-    if (type->resolved) {
-        type = _resolve_polymorph(type);
-    } else {
-        assert(type->name != NULL);
+Type *resolve_polymorph_recursively(Type *type) {
+    if (type->name) {
         return _resolve_polymorph(type);
     }
+    Type *p = NULL;
     switch (type->resolved->comp) {
     case POLYDEF:
-        /*type = _resolve_polymorph(type);*/
         break;
     case REF:
-        type->resolved->ref.inner = resolve_polymorph(type->resolved->ref.inner);
+        p = resolve_polymorph_recursively(type->resolved->ref.inner);
+        if (p) {
+            type->resolved->ref.inner = p;
+        }
         break;
     case ARRAY:
     case STATIC_ARRAY:
-        type->resolved->array.inner = resolve_polymorph(type->resolved->array.inner);
+        p = resolve_polymorph_recursively(type->resolved->array.inner);
+        if (p) {
+            type->resolved->array.inner = p;
+        }
         break;
     case STRUCT:
         for (int i = 0; i < array_len(type->resolved->st.member_types); i++) {
-            type->resolved->st.member_types[i] = resolve_polymorph(type->resolved->st.member_types[i]);
+            p = resolve_polymorph_recursively(type->resolved->st.member_types[i]);
+            if (p) {
+                type->resolved->st.member_types[i] = p;
+            }
         }
         break;
     case FUNC:
         for (int i = 0; i < array_len(type->resolved->fn.args); i++) {
-            type->resolved->fn.args[i] = resolve_polymorph(type->resolved->fn.args[i]);
+            p = resolve_polymorph_recursively(type->resolved->fn.args[i]);
+            if (p) {
+                type->resolved->fn.args[i] = p;
+            }
         }
         if (type->resolved->fn.ret) {
-            type->resolved->fn.ret = resolve_polymorph(type->resolved->fn.ret);
+            p = resolve_polymorph_recursively(type->resolved->fn.ret);;
+            if (p) {
+                type->resolved->fn.ret = p; 
+            }
         }
         break;
     case PARAMS:
         for (int i = 0; i < array_len(type->resolved->params.args); i++) {
-            type->resolved->params.args[i] = resolve_polymorph(type->resolved->params.args[i]);
+            p = resolve_polymorph_recursively(type->resolved->params.args[i]);
+            if (p) {
+                type->resolved->params.args[i] = p;
+            }
         }
-        type->resolved->params.inner = resolve_polymorph(type->resolved->params.inner);
+        p = resolve_polymorph_recursively(type->resolved->params.inner);
+        if (p) {
+            type->resolved->params.inner = p;
+        }
         break;
     case BASIC:
-        /*type = _resolve_polymorph(type);*/
         break;
     default:
         break;
@@ -415,66 +415,45 @@ Type *resolve_polymorph(Type *type) {
     return type;
 }
 
-Type *resolve_external(Type *type) {
-    assert(type->scope != NULL);
-    assert(type->resolved->comp == EXTERNAL);
-
-    Package *p = lookup_imported_package(type->scope, type->resolved->ext.pkg_name); 
-    if (p == NULL) {
-        // TODO: decide on how this error behavior should work, where is it
-        // caught, etc
-        return NULL;
-    }
-
-    // TODO: TODO: TODO: no, this should look up the resolved type in that
-    // package
-    type = make_type(p->scope, type->resolved->ext.type_name);
-    return type;
-}
-
 Type *resolve_type(Type *type) {
     if (!type) {
         return NULL;
     }
-    Type **used_types = all_used_types();
-    if (type->name && type->resolved && type->resolved->comp != POLYDEF) {
-        for (int i = 0; i < array_len(used_types); i++) {
-            if (check_type(used_types[i], type)) {
-                type->id = used_types[i]->id;
-                break;
+    if (type->name) {
+        Type *found = NULL;
+        if (type->resolved && type->resolved->comp != EXTERNAL) {
+            // In this case, only check for polymorph. No need to check again
+            // for resolution.
+            found = _resolve_polymorph(type);
+        } else {
+            found = find_type_or_polymorph(type);
+        }
+        if (found) {
+            if (type != found) {
+                type->id = found->id;
+                assert(found->resolved);
+                type->resolved = found->resolved;
             }
         }
-        return type;
     }
-    Type *r = resolve_alias(type);
-    if (!r) {
+    if (!type->resolved) {
         return NULL;
-    }
-    if (type != r) {
-        type->resolved = r->resolved;
     }
     if (is_polydef(type)) {
         return type;
     }
+    Type **used_types = all_used_types();
     for (int i = 0; i < array_len(used_types); i++) {
         if (check_type(used_types[i], type)) {
             type->id = used_types[i]->id;
-            break;
+            return type;
         }
     }
+    // find_type_or_polymorph should take care of this!
+    assert(type->resolved->comp != EXTERNAL);
     switch (type->resolved->comp) {
-    case BASIC:
-        break;
     case POLYDEF:
         break;
-    case EXTERNAL: {
-        Type *tmp = resolve_external(type);
-        if (!tmp) {
-            return NULL;
-        }
-        *type = *tmp;
-        break;
-    }
     case PARAMS:
         for (int i = 0; i < array_len(type->resolved->params.args); i++) {
             type->resolved->params.args[i] = resolve_type(type->resolved->params.args[i]);
@@ -520,29 +499,35 @@ Type *resolve_type(Type *type) {
     case ENUM:
         type->resolved->en.inner = resolve_type(type->resolved->en.inner);
         break;
+    default:
+        break;
     }
     return type;
 }
 
-// TODO: this could be better
-Type *resolve_alias(Type *type) {
+Type *find_type_or_polymorph(Type *type) {
     if (!type) {
         return NULL;
     }
     type = _resolve_polymorph(type);
-    if (type->resolved && type->resolved->comp == EXTERNAL) {
-        return resolve_alias(resolve_external(type));
+    if (type->resolved) {
+        if (type->resolved->comp == EXTERNAL) {
+            Package *p = lookup_imported_package(type->scope, type->resolved->ext.pkg_name); 
+            if (p == NULL) {
+                return NULL;
+            }
+            type = make_type(p->scope, type->resolved->ext.type_name);
+            return find_type_or_polymorph(type);
+        } else {
+            return type;
+        }
     }
     if (!type->name) {
         return type;
     }
     Scope *s = type->scope;
     assert(s);
-    Type *t = lookup_type(s, type->name);
-    if (t && type->name) {
-        return resolve_alias(t);
-    }
-    return t;
+    return lookup_type(s, type->name);
 }
 
 int is_numeric(Type *t) {
@@ -578,7 +563,6 @@ int is_array(Type *t) {
 
 int is_dynamic(Type *t) {
     assert(t->resolved);
-    t = resolve_alias(t);
 
     switch (t->resolved->comp) {
     case BASIC:

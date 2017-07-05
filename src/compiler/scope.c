@@ -32,13 +32,6 @@ void init_builtin_types() {
 
 Type **builtin_types() {
     return builtin_types_scope->used_types;
-    /*Type **out = NULL;*/
-    /*iter_t iter = hashmap_iter();*/
-    /*TypeDef **x;*/
-    /*while ((x = hashmap_next(&builtin_types_scope->types, iter))) {*/
-        /*array_push(out, (*x)->type);*/
-    /*}*/
-    /*return out;*/
 }
 
 static Type **used_types = NULL;
@@ -89,6 +82,18 @@ Type *fn_scope_return_type(Scope *scope) {
     return scope->fn_var->type->resolved->fn.ret;
 }
 
+Type *lookup_polymorph(Scope *s, char *name) {
+    TypeDef **tmp = NULL;
+    for (; s != NULL; s = s->parent) {
+        if (s->polymorph) {
+            if ((tmp = hashmap_get(&s->polymorph->defs, name))) {
+                return (*tmp)->type;
+            }
+        }
+    }
+    return NULL;
+}
+
 Type *lookup_local_type(Scope *s, char *name) {
     TypeDef **tmp = NULL;
     if (s->polymorph) {
@@ -113,19 +118,14 @@ Type *lookup_type(Scope *s, char *name) {
 }
 
 int check_type(Type *a, Type *b);
-/*int get_type_id(Type *t) {*/
-    /*return t->id;*/
-    /*for (int i = 0; i < array_len(used_types); i++) {*/
-        /*if (check_type(used_types[i], t)) {*/
-            /*[>errlog("get type id for %d %s %d %s", t->id, type_to_string(t), list->item->id, type_to_string(list->item));<]*/
-            /*return used_types[i]->id;*/
-        /*}*/
-    /*}*/
-    /*assert(0);*/
-    /*return -1;*/
-/*}*/
 
 void register_type(Type *t) {
+    if (t->name) {
+        TypeDef *tmp = find_type_definition(t);
+        if (tmp && tmp->type == t) {
+            return;
+        }
+    }
     for (int i = 0; i < array_len(used_types); i++) {
         if (used_types[i]->id == t->id) {
             return;
@@ -184,7 +184,7 @@ Type *define_polymorph(Scope *s, Type *poly, Type *type, Ast *ast) {
     }
     TypeDef *td = malloc(sizeof(TypeDef));
     td->name = poly->name;
-    td->type = resolve_polymorph(type); // may not need this?
+    td->type = resolve_polymorph_recursively(type); // may not need this?
     td->ast = ast;
     hashmap_put(&s->polymorph->defs, poly->name, td);
     return make_type(s, poly->name);
@@ -242,19 +242,19 @@ Type *define_type(Scope *s, char *name, Type *type, Ast *ast) {
     if (lookup_local_type(s, name) != NULL) {
         error(-1, "internal", "Type '%s' already declared within this scope.", name);
     }
-    TypeDef *td = malloc(sizeof(TypeDef));
-    td->name = name;
-    td->type = type;
-    td->ast = ast;
-    hashmap_put(&s->types, name, td);
 
     Type *named = make_type(s, name);
-    resolve_type(type);
+    type = resolve_type(type);
+    assert(type->resolved);
     named->resolved = type->resolved;
-    /*array_push(s->used_types, named);*/
     if (!(type->resolved && type->resolved->comp == STRUCT && type->resolved->st.generic)) {
         register_type(named);
     }
+    TypeDef *td = malloc(sizeof(TypeDef));
+    td->name = name;
+    td->type = named;
+    td->ast = ast;
+    hashmap_put(&s->types, name, td);
     return named;
 }
 
@@ -270,11 +270,7 @@ TypeDef *find_type_definition(Type *t) {
         // eh?
         if (scope->polymorph) {
             if ((tmp = hashmap_get(&scope->polymorph->defs, t->name))) {
-                TypeDef *td = *tmp;
-                if (td->type->name) {
-                    return find_type_definition(td->type);
-                }
-                return td;
+                return *tmp;
             }
         }
         if ((tmp = hashmap_get(&scope->types, t->name))) {

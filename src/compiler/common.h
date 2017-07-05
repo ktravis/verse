@@ -151,6 +151,7 @@ typedef struct Scope {
     Polymorph *polymorph;
     int parent_deferred;
     struct Ast **deferred;
+    struct Package *package;
     struct Package **imported_packages;
 } Scope;
 
