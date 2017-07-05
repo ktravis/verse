@@ -173,7 +173,9 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
     Type **expected = inner->st.arg_params;
     
     for (int i = 0; i < array_len(given); i++) {
+        Type *tmp = resolve_type(given[i]);
         check_for_undefined(ast, given[i]);
+        given[i] = tmp;
     }
 
     if (array_len(given) != array_len(expected)) {
@@ -192,6 +194,7 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
     Type *out = make_struct_type(inner->st.member_names, member_types);
     out->scope = t->scope;
     out->resolved->st.generic_base = t;
+    resolve_type(out);
     register_type(out);
 
     return out;
@@ -2187,6 +2190,7 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
         if (ast->ret->expr != NULL) {
             ast->ret->expr = check_semantics(scope, ast->ret->expr);
             ret_t = resolve_polymorph_recursively(ast->ret->expr->var_type);
+            resolve_type(ret_t);
         }
 
         if (ret_t->resolved->comp == STATIC_ARRAY) {

@@ -150,6 +150,7 @@ typedef struct Scope {
     Var *fn_var;
     Polymorph *polymorph;
     int parent_deferred;
+    char *defining_name;
     struct Ast **deferred;
     struct Package *package;
     struct Package **imported_packages;
