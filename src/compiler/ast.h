@@ -209,6 +209,15 @@ typedef struct AstMethod {
     AstFnDecl *decl;
 } AstMethod;
 
+typedef struct AstTypeIdent {
+    Type       *type;
+} AstTypeIdent;
+
+typedef struct AstPackage {
+    Package *package;
+    char    *pkg_name;
+} AstPackage;
+
 // TODO: make AstPackage, AstType, AstMethod
 
 Ast *ast_alloc(AstType type);

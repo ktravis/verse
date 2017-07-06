@@ -446,6 +446,7 @@ Type *resolve_type(Type *type) {
     for (int i = 0; i < array_len(used_types); i++) {
         if (check_type(used_types[i], type)) {
             type->id = used_types[i]->id;
+            type->resolved = used_types[i]->resolved;
             return type;
         }
     }

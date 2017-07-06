@@ -65,38 +65,55 @@ void check_for_undefined_with_scope(Ast *ast, Type *t, Scope *scope) {
     t->scope = tmp;
 }
 
-void check_for_undefined(Ast *ast, Type *t) {
+
+void _check_for_undefined_with_ignore(Ast *ast, Type *t, char **ignore) {
     if (t->name) {
-        if (t->resolved) {
+        for (int i = 0; i < array_len(ignore); i++) {
+            if (!strcmp(t->name, ignore[i])) {
+                return;
+            }
+        }
+        if (!t->resolved) {
+            if (!find_type_or_polymorph(t)) {
+                error(ast->line, ast->file, "Unknown type '%s'.", t->name);
+            }
             return;
         }
-        if (!find_type_or_polymorph(t)) {
-            error(ast->line, ast->file, "Unknown type '%s'.", t->name);
-        }
-        return;
     }
     switch (t->resolved->comp) {
     case FUNC:
         for (int i = 0; i < array_len(t->resolved->fn.args); i++) {
-            check_for_undefined(ast, t->resolved->fn.args[i]);
+            _check_for_undefined_with_ignore(ast, t->resolved->fn.args[i], ignore);
         }
         if (t->resolved->fn.ret) {
-            check_for_undefined(ast, t->resolved->fn.ret);
+            _check_for_undefined_with_ignore(ast, t->resolved->fn.ret, ignore);
         }
         break;
     case STRUCT: {
-        // line numbers can be weird on this...
-        for (int i = 0; i < array_len(t->resolved->st.member_types); i++) {
-            check_for_undefined(ast, t->resolved->st.member_types[i]);
+        if (t->resolved->st.generic) {
+            char **tmp = NULL;
+            for (int i = 0; i < array_len(t->resolved->st.arg_params); i++) {
+                array_push(tmp, t->resolved->st.arg_params[i]->name);
+            }
+            for (int i = 0; i < array_len(t->resolved->st.member_types); i++) {
+                _check_for_undefined_with_ignore(ast, t->resolved->st.member_types[i], tmp);
+            }
+            array_free(tmp);
+            break;
+        } else {
+            // line numbers can be weird on this...
+            for (int i = 0; i < array_len(t->resolved->st.member_types); i++) {
+                _check_for_undefined_with_ignore(ast, t->resolved->st.member_types[i], ignore);
+            }
         }
         break;
     }
     case REF:
-        check_for_undefined(ast, t->resolved->ref.inner);
+        _check_for_undefined_with_ignore(ast, t->resolved->ref.inner, ignore);
         break;
     case ARRAY:
     case STATIC_ARRAY:
-        check_for_undefined(ast, t->resolved->array.inner);
+        _check_for_undefined_with_ignore(ast, t->resolved->array.inner, ignore);
         break;
     case BASIC:
     case POLYDEF:
@@ -105,6 +122,10 @@ void check_for_undefined(Ast *ast, Type *t) {
     case ENUM:
         break;
     }
+}
+
+void check_for_undefined(Ast *ast, Type *t) {
+    _check_for_undefined_with_ignore(ast, t, NULL);
 }
 
 // TODO: make reify_struct deduplicate reifications?
@@ -243,64 +264,128 @@ static Ast *check_uop_semantics(Scope *scope, Ast *ast) {
     return ast;
 }
 
+static Ast *check_ident_semantics(Scope *scope, Ast *ast) {
+    Var *v = lookup_var(scope, ast->ident->varname);
+    if (v == NULL) {
+        // couldn't find var, try enum
+        Type *t = make_type(scope, ast->ident->varname);
+        Type *found = resolve_type(t);
+        if (found) {
+            Ast *a = ast_alloc(AST_TYPE_IDENT);
+            a->line = ast->line;
+            a->file = ast->file;
+            a->type_ident->type = found;
+            a->var_type = typeinfo_ref();
+            return a;
+        }
+
+        // couldn't find var or enum, try pacakge
+        Package *p = lookup_imported_package(scope, ast->ident->varname);
+        if (p != NULL) {
+            Ast *a = ast_alloc(AST_PACKAGE);
+            a->line = ast->line;
+            a->file = ast->file;
+            a->pkg->pkg_name = p->name;
+            a->pkg->package = p;
+            a->var_type = base_type(VOID_T); // TODO: maybe make a builtin Package type
+            return a;
+        } 
+        error(ast->line, ast->file, "Undefined identifier '%s' encountered.", ast->ident->varname);
+    }
+
+    if (v->proxy) { // USE-proxy
+        Type *t = resolve_type(v->type);
+        if (t->resolved->comp == ENUM) { // proxy for enum
+            for (int i = 0; i < array_len(t->resolved->en.member_names); i++) {
+                if (!strcmp(t->resolved->en.member_names[i], v->name)) {
+                    Ast *a = ast_alloc(AST_LITERAL);
+                    a->line = ast->line;
+                    a->file = ast->file;
+                    a->lit->lit_type = ENUM_LIT;
+                    a->lit->enum_val.enum_index = i;
+                    a->lit->enum_val.enum_type = t;
+                    a->var_type = v->type;
+                    return a;
+                }
+            }
+            error(-1, "<internal>", "How'd this happen");
+        } else { // proxy for normal var
+            // TODO: this may not be needed again, semantics already
+            // checked?
+            /*return v->proxy;*/
+            return check_semantics(scope, v->proxy);
+        }
+    }
+    ast->ident->var = v;
+    ast->var_type = resolve_type(ast->ident->var->type);
+    return ast;
+}
+
 static Ast *check_dot_op_semantics(Scope *scope, Ast *ast) {
     if (ast->dot->object->type == AST_IDENTIFIER) {
+        ast->dot->object = check_ident_semantics(scope, ast->dot->object);
+        // handle the below types specifically, without running check_semantics
+        // again (TODO: find a way to make this easier/smoother)
+    } else if (ast->dot->object->type != AST_TYPE_IDENT && ast->dot->object->type != AST_PACKAGE) {
+        ast->dot->object = check_semantics(scope, ast->dot->object);
+    }
+
+    if (ast->dot->object->type == AST_TYPE_IDENT) {
         // TODO: need to make sure that an enum or package in outer scope cannot
         // shadow a locally (or closer to locally) declared variable just
         // because this is happening before the other resolution
-        //
-        // Enum case
-        Type *t = make_type(scope, ast->dot->object->ident->varname);
-        Type *found = resolve_type(t);
-        if (found) {
-            if (found->resolved->comp == ENUM) {
-                for (int i = 0; i < array_len(found->resolved->en.member_names); i++) {
-                    if (!strcmp(found->resolved->en.member_names[i], ast->dot->member_name)) {
-                        Ast *a = ast_alloc(AST_LITERAL);
-                        a->lit->lit_type = ENUM_LIT;
-                        a->lit->enum_val.enum_index = i;
-                        a->lit->enum_val.enum_type = found;
-                        a->var_type = t;
-                        return a;
-                    }
+        AstTypeIdent *tp = ast->dot->object->type_ident;
+        if (tp->type->resolved->comp == ENUM) {
+            for (int i = 0; i < array_len(tp->type->resolved->en.member_names); i++) {
+                if (!strcmp(tp->type->resolved->en.member_names[i], ast->dot->member_name)) {
+                    Ast *a = ast_alloc(AST_LITERAL);
+                    a->lit->lit_type = ENUM_LIT;
+                    a->lit->enum_val.enum_index = i;
+                    a->lit->enum_val.enum_type = tp->type;
+                    a->var_type = tp->type;
+                    return a;
                 }
-                // TODO allow BaseType.members
-                /*if (!strcmp("members", ast->dot->member_name)) {*/
-                    
-                /*}*/
-                error(ast->line, ast->file, "No value '%s' in enum type '%s'.",
-                        ast->dot->member_name, ast->dot->object->ident->varname);
-            } else {
-                error(ast->line, ast->file, "Can't get member '%s' from non-enum type '%s'.",
-                        ast->dot->member_name, ast->dot->object->ident->varname);
             }
+            // TODO allow BaseType.members
+            /*if (!strcmp("members", ast->dot->member_name)) {*/
+                
+            /*}*/
+            error(ast->line, ast->file, "No value '%s' in enum type '%s'.",
+                    ast->dot->member_name, type_to_string(tp->type));
+        } else {
+            error(ast->line, ast->file, "Can't get member '%s' from non-enum type '%s'.",
+                    ast->dot->member_name, type_to_string(tp->type));
         }
-
-        // Package case
-        // maybe change this to have check_semantics on the object return an
-        // "AST_PACKAGE" type? That way more can be done with it, more
-        // versatile?
-        Package *p = lookup_imported_package(scope, ast->dot->object->ident->varname);
-        Var *v = lookup_var(scope, ast->dot->object->ident->varname);
-        if ((v == NULL || v->proxy) && p != NULL) {
-            Var *v = lookup_var(p->scope, ast->dot->member_name);
-            if (!v) {
-                error(ast->line, ast->file, "No declared identifier '%s' in package '%s'.", ast->dot->member_name, p->name);
-                // TODO better error for an enum here
+    } else if (ast->dot->object->type == AST_PACKAGE) {
+        Package *p = ast->dot->object->pkg->package;
+        Var *v = lookup_var(p->scope, ast->dot->member_name);
+        if (!v) {
+            // try finding a type
+            Type *t = make_type(p->scope, ast->dot->member_name);
+            Type *found = resolve_type(t);
+            if (found) {
+                Ast *a = ast_alloc(AST_TYPE_IDENT);
+                a->line = ast->line;
+                a->file = ast->file;
+                a->type_ident->type = found;
+                a->var_type = typeinfo_ref();
+                return a;
             }
-            if (v->proxy) { // USE-proxy
-                error(ast->line, ast->file, "No declared identifier '%s' in package '%s' (*use* doesn't count).", ast->dot->member_name, p->name);
-            }
-            ast = ast_alloc(AST_IDENTIFIER);
-            ast->ident->var = v;
-            ast->var_type = v->type;
-            return ast;
+            
+            error(ast->line, ast->file, "No declared identifier '%s' in package '%s'.", ast->dot->member_name, p->name);
+            // TODO better error for an enum here
         }
-    } 
-    ast->dot->object = check_semantics(scope, ast->dot->object);
+        if (v->proxy) { // USE-proxy
+            error(ast->line, ast->file, "No declared identifier '%s' in package '%s' (*use* doesn't count).", ast->dot->member_name, p->name);
+        }
+        ast = ast_alloc(AST_IDENTIFIER);
+        ast->ident->var = v;
+        ast->var_type = v->type;
+        return ast;
+    }
 
     Type *orig = ast->dot->object->var_type;
-    Type *t = orig;
+    Type *t = resolve_type(orig);
 
     if (t->resolved->comp == REF) {
         t = t->resolved->ref.inner;
@@ -791,6 +876,12 @@ Ast *first_pass(Scope *scope, Ast *ast) {
     case AST_METHOD:
         error(ast->line, ast->file, "<internal> first_pass on method");
         break;
+    case AST_TYPE_IDENT:
+        error(ast->line, ast->file, "<internal> first_pass on type ident");
+        break;
+    case AST_PACKAGE:
+        error(ast->line, ast->file, "<internal> first_pass on ast package");
+        break;
     }
     return ast;
 }
@@ -994,75 +1085,77 @@ static Ast *check_use_semantics(Scope *scope, Ast *ast) {
     if (scope->type == Root) {
         error(ast->line, ast->file, "'use' is not permitted in global scope.");
     }
-    if (ast->use->object->type == AST_IDENTIFIER) {
-        char *used_name = ast->use->object->ident->varname;
-        Type *t = make_type(scope, used_name);
-        Type *found = resolve_type(t);
-        if (found) {
-            ResolvedType *resolved = found->resolved;
-            if (resolved->comp != ENUM) {
-                error(ast->use->object->line, ast->file,
-                    "'use' is not valid on non-enum type '%s'.", type_to_string(t));
-            }
-
-            for (int i = 0; i < array_len(resolved->en.member_names); i++) {
-                char *name = resolved->en.member_names[i];
-
-                if (lookup_local_var(scope, name) != NULL) {
-                    error(ast->use->object->line, ast->file,
-                        "'use' statement on enum '%s' conflicts with local variable named '%s'.", type_to_string(t), name);
-                }
-
-                if (find_builtin_var(name) != NULL) {
-                    error(ast->use->object->line, ast->file,
-                        "'use' statement on enum '%s' conflicts with builtin variable named '%s'.", type_to_string(t), name);
-                }
-
-                Var *v = make_var(name, t);
-                v->constant = 1;
-
-                // proxy to literal
-                Ast *a = ast_alloc(AST_LITERAL);
-                a->lit->lit_type = ENUM_LIT;
-                a->lit->enum_val.enum_index = i;
-                a->lit->enum_val.enum_type = found;
-                a->var_type = t;
-                v->proxy = a;
-                array_push(scope->vars, v);
-            }
-            return ast;
-        }
-
-        Package *p = lookup_imported_package(scope, used_name);
-        if (p) {
-            for (int i = 0; i < array_len(p->scope->vars); i++) {
-                Var *v = p->scope->vars[i];
-                if (v->proxy) {
-                    // skip use aliases
-                    continue;
-                }
-                if (lookup_local_var(scope, v->name) != NULL) {
-                    error(ast->use->object->line, ast->file,
-                        "'use' statement on package '%s' conflicts with local variable named '%s'.", used_name, v->name);
-                }
-
-                if (find_builtin_var(v->name) != NULL) {
-                    error(ast->use->object->line, ast->file,
-                        "'use' statement on enum '%s' conflicts with builtin variable named '%s'.", used_name, v->name);
-                }
-
-                Var *new_v = make_var(v->name, v->type);
-                Ast *dot = make_ast_dot_op(ast->use->object, v->name);
-                dot->line = ast->line;
-                dot->file = ast->file;
-                new_v->proxy = dot;
-                array_push(scope->vars, new_v);
-            }
-            return ast;
-        }
+    if (ast->dot->object->type == AST_IDENTIFIER) {
+        ast->dot->object = check_ident_semantics(scope, ast->dot->object);
+        // handle the below types specifically, without running check_semantics
+        // again (TODO: find a way to make this easier/smoother)
+    } else if (ast->dot->object->type != AST_TYPE_IDENT && ast->dot->object->type != AST_PACKAGE) {
+        ast->dot->object = check_semantics(scope, ast->dot->object);
     }
 
-    ast->use->object = check_semantics(scope, ast->use->object);
+    if (ast->use->object->type == AST_TYPE_IDENT) {
+        Type *t = ast->use->object->type_ident->type;
+        ResolvedType *resolved = t->resolved;
+        if (resolved->comp != ENUM) {
+            error(ast->use->object->line, ast->file,
+                "'use' is not valid on non-enum type '%s'.", type_to_string(t));
+        }
+
+        for (int i = 0; i < array_len(resolved->en.member_names); i++) {
+            char *name = resolved->en.member_names[i];
+
+            if (lookup_local_var(scope, name) != NULL) {
+                error(ast->use->object->line, ast->file,
+                    "'use' statement on enum '%s' conflicts with local variable named '%s'.", type_to_string(t), name);
+            }
+
+            if (find_builtin_var(name) != NULL) {
+                error(ast->use->object->line, ast->file,
+                    "'use' statement on enum '%s' conflicts with builtin variable named '%s'.", type_to_string(t), name);
+            }
+
+            Var *v = make_var(name, t);
+            v->constant = 1;
+
+            // proxy to literal
+            Ast *a = ast_alloc(AST_LITERAL);
+            a->line = ast->line;
+            a->file = ast->file;
+            a->lit->lit_type = ENUM_LIT;
+            a->lit->enum_val.enum_index = i;
+            a->lit->enum_val.enum_type = t;
+            a->var_type = t;
+            v->proxy = a;
+            array_push(scope->vars, v);
+        }
+        return ast;
+    } else if (ast->use->object->type == AST_PACKAGE) {
+        Package *p = ast->use->object->pkg->package;
+        for (int i = 0; i < array_len(p->scope->vars); i++) {
+            Var *v = p->scope->vars[i];
+            if (v->proxy) {
+                // skip use aliases
+                continue;
+            }
+            if (lookup_local_var(scope, v->name) != NULL) {
+                error(ast->use->object->line, ast->file,
+                    "'use' statement on package '%s' conflicts with local variable named '%s'.", p->name, v->name);
+            }
+
+            if (find_builtin_var(v->name) != NULL) {
+                error(ast->use->object->line, ast->file,
+                    "'use' statement on enum '%s' conflicts with builtin variable named '%s'.", p->name, v->name);
+            }
+
+            Var *new_v = make_var(v->name, v->type);
+            Ast *dot = make_ast_dot_op(ast->use->object, v->name);
+            dot->line = ast->line;
+            dot->file = ast->file;
+            new_v->proxy = dot;
+            array_push(scope->vars, new_v);
+        }
+        return ast;
+    }
 
     Type *orig = ast->use->object->var_type;
     Type *t = orig;
@@ -1399,10 +1492,10 @@ static void verify_arg_types(Scope *scope, Ast *ast, Type **expected_types, Ast 
             // TODO: should this check that the cast is still valid? or is total
             // freedom acceptable in this case?
             Ast *c = ast_alloc(AST_CAST);
-            c->cast->cast_type = expected;
-            c->cast->object = arg;
             c->line = arg->line;
             c->file = arg->file;
+            c->cast->cast_type = expected;
+            c->cast->object = arg;
             c->var_type = expected;
             arg_vals[i] = c;
         } else if (!check_type(arg->var_type, expected)) {
@@ -1906,34 +1999,10 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
         break;
     }
     case AST_IDENTIFIER: {
-        Var *v = lookup_var(scope, ast->ident->varname);
-        if (v == NULL) {
-            error(ast->line, ast->file, "Undefined identifier '%s' encountered.", ast->ident->varname);
-            // TODO better error for an enum here
+        ast = check_ident_semantics(scope, ast);
+        if (ast->type == AST_PACKAGE || ast->type == AST_TYPE_IDENT) { // TODO:  make this nicer/more robust
+            error(ast->line, ast->file, "Non-variable identifier used outside of valid expression.");
         }
-
-        if (v->proxy) { // USE-proxy
-            Type *t = resolve_type(v->type);
-            if (t->resolved->comp == ENUM) { // proxy for enum
-                for (int i = 0; i < array_len(t->resolved->en.member_names); i++) {
-                    if (!strcmp(t->resolved->en.member_names[i], v->name)) {
-                        Ast *a = ast_alloc(AST_LITERAL);
-                        a->lit->lit_type = ENUM_LIT;
-                        a->lit->enum_val.enum_index = i;
-                        a->lit->enum_val.enum_type = t;
-                        a->var_type = v->type;
-                        return a;
-                    }
-                }
-                error(-1, "<internal>", "How'd this happen");
-            } else { // proxy for normal var
-                // TODO: this may not be needed again, semantics already
-                // checked?
-                return check_semantics(scope, v->proxy);
-            }
-        }
-        ast->ident->var = v;
-        ast->var_type = resolve_type(ast->ident->var->type);
         break;
     }
     case AST_DOT:
@@ -2028,7 +2097,10 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file, "Type name '%s' already exists as variable.", ast->type_decl->type_name);
         }
         // TODO consider instead just having an "unresolved types" list
-        check_for_undefined(ast, ast->type_decl->target_type);
+        char **ignore = NULL;
+        array_push(ignore, ast->type_decl->type_name);
+        _check_for_undefined_with_ignore(ast, ast->type_decl->target_type, ignore);
+        array_free(ignore);
         // TODO: error about unspecified length
         if (contains_generic_struct(ast->type_decl->target_type)) {
             ast->type_decl->target_type = reify_struct(scope, ast, ast->type_decl->target_type);

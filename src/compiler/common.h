@@ -192,6 +192,8 @@ typedef enum AstType {
     AST_DEFER,
     AST_IMPL,
     AST_METHOD,
+    AST_TYPE_IDENT,
+    AST_PACKAGE,
 } AstType;
 
 typedef struct Ast {
@@ -232,6 +234,8 @@ typedef struct Ast {
         struct AstDefer         *defer;
         struct AstImpl          *impl;
         struct AstMethod        *method;
+        struct AstTypeIdent     *type_ident;
+        struct AstPackage       *pkg;
     };
 } Ast;
 

@@ -117,6 +117,12 @@ Ast *ast_alloc(AstType type) {
     case AST_METHOD:
         ast->method = calloc(sizeof(AstMethod), 1);
         break;
+    case AST_TYPE_IDENT:
+        ast->type_ident = calloc(sizeof(AstTypeIdent), 1);
+        break;
+    case AST_PACKAGE:
+        ast->pkg = calloc(sizeof(AstPackage), 1);
+        break;
     }
     return ast;
 }
@@ -321,6 +327,13 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         cp->method->recv = copy_ast(scope, ast->method->recv);
         cp->method->name = ast->method->name;
         cp->method->decl = ast->method->decl;
+        break;
+    case AST_TYPE_IDENT:
+        cp->type_ident = calloc(sizeof(AstTypeIdent), 1);
+        cp->type_ident->type = copy_type(scope, ast->type_ident->type);
+        break;
+    case AST_PACKAGE:
+        /*ast->pkg = calloc(sizeof(AstPackage), 1);*/
         break;
     }
     return cp;

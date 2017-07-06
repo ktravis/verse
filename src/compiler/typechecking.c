@@ -197,6 +197,8 @@ int can_cast(Type *from, Type *to) {
                     return tr->data->size >= fr->data->size;
                 } else if (tr->data->base == INT_T) {
                     return fr->data->size <= tr->data->size;
+                } else if (tr->data->base == UINT_T) {
+                    return fr->data->size < tr->data->size;
                 }
             }
         }

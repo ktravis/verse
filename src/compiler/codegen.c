@@ -1819,73 +1819,34 @@ void emit_var_decl(Scope *scope, Var *v) {
 }
 
 void emit_forward_decl(Scope *scope, AstFnDecl *decl) {
-    /*if (decl->polymorphs != NULL) {*/
-        /*scope = decl->scope;*/
-        /*for (int i = 0; i < array_len(decl->polymorphs); i++) {*/
-            /*Polymorph *p = decl->polymorphs[i];*/
-            /*scope->polymorph = p;*/
+    ResolvedType *r = decl->var->type->resolved;
+    if (is_polydef(decl->var->type)) {
+        // polymorph not being used
+        return;
+    }
+    if (decl->polymorph_of) {
+        printf("/* polymorph %s of %s */\n", type_to_string(decl->var->type), decl->polymorph_of->var->name);
+    } else {
+        printf("/* %s */\n", decl->var->name);
+    }
+    if (decl->var->ext) {
+        printf("extern ");
+    }
+    assert(r->comp == FUNC);
+    emit_type(r->fn.ret);
 
-//            printf("/* %s */\n", decl->var->name);
-            /*// TODO: integrate var with polymorph specializations so this works*/
-            /*//  better/more naturally here*/
+    printf("_vs_%d(", decl->var->id);
 
-            /*ResolvedType *r = decl->var->type->resolved;*/
-            /*assert(r->comp == FUNC);*/
-            /*emit_type(p->ret);*/
-
-            /*printf("_poly_%d_vs_%d(", p->id, decl->var->id);*/
-
-            /*for (int i = 0; i < array_len(decl->args); i++) {*/
-                /*if (i > 0) {*/
-                    /*printf(",");*/
-                /*}*/
-                /*int type_index = (i >= array_len(p->args)) ? array_len(p->args)-1 : i;*/
-                /*if (r->fn.variadic && i == (array_len(decl->args) - 1)) {*/
-                    /*printf("struct array_type ");*/
-                /*} else {*/
-                    /*emit_type(p->args[type_index]);*/
-                /*}*/
-                /*printf("_vs_%d", decl->args[i]->id);*/
-            /*}*/
-            /*printf(");\n");*/
-            /*scope->polymorph = NULL;*/
-        /*}*/
-    /*} else {*/
-        ResolvedType *r = decl->var->type->resolved;
-        if (is_polydef(decl->var->type)) {
-            // polymorph not being used
-            return;
+    for (int i = 0; i < array_len(r->fn.args); i++) {
+        if (i > 0) {
+            printf(",");
         }
-        if (decl->polymorph_of) {
-            printf("/* polymorph %s of %s */\n", type_to_string(decl->var->type), decl->polymorph_of->var->name);
+        if (r->fn.variadic && i == (array_len(r->fn.args) - 1)) {
+            printf("struct array_type ");
         } else {
-            printf("/* %s */\n", decl->var->name);
+            emit_type(r->fn.args[i]);
         }
-        if (decl->var->ext) {
-            printf("extern ");
-        }
-        assert(r->comp == FUNC);
-        emit_type(r->fn.ret);
-
-        printf("_vs_");
-        /*if (decl->var->ext) {*/
-            // Does this need to change?
-            /*printf("%s(", decl->var->name);*/
-        /*} else {*/
-            printf("%d(", decl->var->id);
-        /*}*/
-
-        for (int i = 0; i < array_len(r->fn.args); i++) {
-            if (i > 0) {
-                printf(",");
-            }
-            if (r->fn.variadic && i == (array_len(r->fn.args) - 1)) {
-                printf("struct array_type ");
-            } else {
-                emit_type(r->fn.args[i]);
-            }
-            printf("a%d", i);
-        }
-        printf(");\n");
-    /*}*/
+        printf("a%d", i);
+    }
+    printf(");\n");
 }

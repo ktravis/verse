@@ -1,5 +1,34 @@
 #import "os"
 
+fn expand_number_type(p: ptr, nt: &NumType) -> u64 {
+    if nt.size_in_bytes == 8 {
+        return *(p as &u64);
+    } else if nt.size_in_bytes == 4 {
+        if nt.is_signed {
+        // TODO: wtf
+            x := *(p as &s32);
+            return *((&x as ptr) as &u64);
+        }
+        x := *(p as &u32);
+        return x as u64;
+    } else if nt.size_in_bytes == 2 {
+        if nt.is_signed {
+            x := *(p as &s16);
+            return x as u64;
+        }
+        x := *(p as &u16);
+        return x as u64;
+    } else {
+        if nt.is_signed {
+            x := *(p as &s8);
+            return x as u64;
+        }
+        x := *(p as &u8);
+        return x as u64;
+    }
+    return 777;
+}
+
 fn formatArgs(c:u8, val: Any) {
     s: string;
     if c == "s" {
@@ -231,6 +260,15 @@ fn any_to_string(a: Any) -> string {
             i += 1;
         }
         return s + "}";
+    } else if bt == ENUM {
+        et := a.type as &EnumType;
+        x := expand_number_type(a.value_pointer, et.inner as &NumType);
+        for &v, i in et.values {
+            if x == *(v as &u64) {
+                return et.members[i];
+            }
+        }
+        return "? (" + utoa(x as uint) + ")";
     }
     return a.type.name;
 }
