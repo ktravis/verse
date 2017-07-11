@@ -131,7 +131,8 @@ void register_type(Type *t) {
             return;
         }
         if (check_type(used_types[i], t)) {
-            t->id = used_types[i]->id;
+            /*t->id = used_types[i]->id;*/
+            *t = *used_types[i];
             return;
         }
     }

@@ -445,8 +445,13 @@ Type *resolve_type(Type *type) {
     Type **used_types = all_used_types();
     for (int i = 0; i < array_len(used_types); i++) {
         if (check_type(used_types[i], type)) {
+            if (used_types[i]->resolved) {
+                type->resolved = used_types[i]->resolved;
+            } else {
+                assert(type->resolved);
+                used_types[i]->resolved = type->resolved;
+            }
             type->id = used_types[i]->id;
-            type->resolved = used_types[i]->resolved;
             return type;
         }
     }
@@ -1373,9 +1378,7 @@ void emit_typeinfo_decl(Scope *scope, Type *t) {
     case ENUM:
         printf("struct string_type _type_info%d_members[%d] = {\n", id, array_len(r->en.member_values));
         for (int i = 0; i < array_len(r->en.member_names); i++) {
-            printf("  {%ld, \"%s\"},\n",
-                   strlen(r->en.member_names[i]),
-                          r->en.member_names[i]);
+            printf("  {%ld, \"%s\"},\n", strlen(r->en.member_names[i]), r->en.member_names[i]);
         }
         printf("};\n");
         printf("int64_t _type_info%d_values[%d] = {\n", id, array_len(r->en.member_values));

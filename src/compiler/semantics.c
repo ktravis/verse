@@ -66,11 +66,13 @@ void check_for_undefined_with_scope(Ast *ast, Type *t, Scope *scope) {
 }
 
 
-void _check_for_undefined_with_ignore(Ast *ast, Type *t, char **ignore) {
+void _check_for_undefined_with_ignore(Ast *ast, Type *t, char **ignore, int top) {
     if (t->name) {
-        for (int i = 0; i < array_len(ignore); i++) {
-            if (!strcmp(t->name, ignore[i])) {
-                return;
+        if (!top) {
+            for (int i = 0; i < array_len(ignore); i++) {
+                if (!strcmp(t->name, ignore[i])) {
+                    return;
+                }
             }
         }
         if (!t->resolved) {
@@ -83,10 +85,10 @@ void _check_for_undefined_with_ignore(Ast *ast, Type *t, char **ignore) {
     switch (t->resolved->comp) {
     case FUNC:
         for (int i = 0; i < array_len(t->resolved->fn.args); i++) {
-            _check_for_undefined_with_ignore(ast, t->resolved->fn.args[i], ignore);
+            _check_for_undefined_with_ignore(ast, t->resolved->fn.args[i], ignore, 0);
         }
         if (t->resolved->fn.ret) {
-            _check_for_undefined_with_ignore(ast, t->resolved->fn.ret, ignore);
+            _check_for_undefined_with_ignore(ast, t->resolved->fn.ret, ignore, 0);
         }
         break;
     case STRUCT: {
@@ -96,24 +98,24 @@ void _check_for_undefined_with_ignore(Ast *ast, Type *t, char **ignore) {
                 array_push(tmp, t->resolved->st.arg_params[i]->name);
             }
             for (int i = 0; i < array_len(t->resolved->st.member_types); i++) {
-                _check_for_undefined_with_ignore(ast, t->resolved->st.member_types[i], tmp);
+                _check_for_undefined_with_ignore(ast, t->resolved->st.member_types[i], tmp, 0);
             }
             array_free(tmp);
             break;
         } else {
             // line numbers can be weird on this...
             for (int i = 0; i < array_len(t->resolved->st.member_types); i++) {
-                _check_for_undefined_with_ignore(ast, t->resolved->st.member_types[i], ignore);
+                _check_for_undefined_with_ignore(ast, t->resolved->st.member_types[i], ignore, 0);
             }
         }
         break;
     }
     case REF:
-        _check_for_undefined_with_ignore(ast, t->resolved->ref.inner, ignore);
+        _check_for_undefined_with_ignore(ast, t->resolved->ref.inner, ignore, 0);
         break;
     case ARRAY:
     case STATIC_ARRAY:
-        _check_for_undefined_with_ignore(ast, t->resolved->array.inner, ignore);
+        _check_for_undefined_with_ignore(ast, t->resolved->array.inner, ignore, 0);
         break;
     case BASIC:
     case POLYDEF:
@@ -125,7 +127,7 @@ void _check_for_undefined_with_ignore(Ast *ast, Type *t, char **ignore) {
 }
 
 void check_for_undefined(Ast *ast, Type *t) {
-    _check_for_undefined_with_ignore(ast, t, NULL);
+    _check_for_undefined_with_ignore(ast, t, NULL, 0);
 }
 
 // TODO: make reify_struct deduplicate reifications?
@@ -2099,7 +2101,7 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
         // TODO consider instead just having an "unresolved types" list
         char **ignore = NULL;
         array_push(ignore, ast->type_decl->type_name);
-        _check_for_undefined_with_ignore(ast, ast->type_decl->target_type, ignore);
+        _check_for_undefined_with_ignore(ast, ast->type_decl->target_type, ignore, 1);
         array_free(ignore);
         // TODO: error about unspecified length
         if (contains_generic_struct(ast->type_decl->target_type)) {

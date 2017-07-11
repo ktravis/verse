@@ -16,6 +16,27 @@
 
 #include "prelude.h"
 
+static int *declared_type_ids;
+
+void recursively_declare_types(Scope *root_scope, Type *t) {
+    if (t->resolved->comp != STRUCT) {
+        return;
+    }
+    for (int i = 0; i < array_len(declared_type_ids); i++) {
+        if (t->id == declared_type_ids[i]) {
+            return;
+        }
+    }
+    array_push(declared_type_ids, t->id);
+
+    if (t->resolved->comp == STRUCT) {
+        for (int i = 0; i < array_len(t->resolved->st.member_types); i++) {
+            recursively_declare_types(root_scope, t->resolved->st.member_types[i]);
+        }
+        emit_struct_decl(root_scope, t);
+    }
+}
+
 int main(int argc, char **argv) {
     if (argc == 2) {
         // TODO some sort of util function for opening a file and gracefully
@@ -40,30 +61,37 @@ int main(int argc, char **argv) {
 
     printf("%.*s\n", prelude_length, prelude);
 
-    /*TypeList *used_types = reverse_typelist(root_scope->used_types);*/
     Type **used_types = all_used_types();
     Type **builtins = builtin_types();
 
     // declare structs
     for (int i = 0; i < array_len(builtins); i++) {
-        Type *t = builtins[i];
-        if (t->resolved->comp == STRUCT) {
-            emit_struct_decl(root_scope, t);
-        }
+        recursively_declare_types(root_scope, builtins[i]);
     }
     for (int i = 0; i < array_len(used_types); i++) {
-        Type *t = used_types[i];
-        if (t->resolved->comp == STRUCT) {
-            emit_struct_decl(root_scope, t);
-        }
+        recursively_declare_types(root_scope, used_types[i]);
     }
     // declare other types
     for (int i = 0; i < array_len(builtins); i++) {
         emit_typeinfo_decl(root_scope, builtins[i]);
     }
+    array_free(declared_type_ids);
+    declared_type_ids = NULL;
     for (int i = 0; i < array_len(used_types); i++) {
-        emit_typeinfo_decl(root_scope, used_types[i]);
+        char skip = 0;
+        for (int j = 0; j < array_len(declared_type_ids); j++) {
+            if (used_types[i]->id == declared_type_ids[j]) {
+                skip = 1;
+                break;
+            }
+        }
+        if (!skip) {
+            array_push(declared_type_ids, used_types[i]->id);
+            emit_typeinfo_decl(root_scope, used_types[i]);
+        }
     }
+    array_free(declared_type_ids);
+    declared_type_ids = NULL;
 
     // declare globals
     for (int i = 0; i < array_len(main_package->globals); i++) {
@@ -84,7 +112,17 @@ int main(int argc, char **argv) {
         emit_typeinfo_init(root_scope, builtins[i]);
     }
     for (int i = 0; i < array_len(used_types); i++) {
-        emit_typeinfo_init(root_scope, used_types[i]);
+        char skip = 0;
+        for (int j = 0; j < array_len(declared_type_ids); j++) {
+            if (used_types[i]->id == declared_type_ids[j]) {
+                skip = 1;
+                break;
+            }
+        }
+        if (!skip) {
+            array_push(declared_type_ids, used_types[i]->id);
+            emit_typeinfo_init(root_scope, used_types[i]);
+        }
     }
     change_indent(-1);
     printf("}\n");
