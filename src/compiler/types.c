@@ -300,11 +300,11 @@ int precision_loss_uint(Type *t, unsigned long ival) {
     if (t->resolved->data->size >= 8) {
         return 0;
     } else if (t->resolved->data->size >= 4) {
-        return ival >= UINT_MAX;
+        return ival > UINT_MAX;
     } else if (t->resolved->data->size >= 2) {
-        return ival >= USHRT_MAX;
+        return ival > USHRT_MAX;
     } else if (t->resolved->data->size >= 1) {
-        return ival >= UCHAR_MAX;
+        return ival > UCHAR_MAX;
     }
     return 1;
 }

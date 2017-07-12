@@ -81,6 +81,9 @@ void _check_for_undefined_with_ignore(Ast *ast, Type *t, char **ignore, int top)
             }
             return;
         }
+        if (top) {
+            return;
+        }
     }
     switch (t->resolved->comp) {
     case FUNC:
@@ -380,10 +383,13 @@ static Ast *check_dot_op_semantics(Scope *scope, Ast *ast) {
         if (v->proxy) { // USE-proxy
             error(ast->line, ast->file, "No declared identifier '%s' in package '%s' (*use* doesn't count).", ast->dot->member_name, p->name);
         }
-        ast = ast_alloc(AST_IDENTIFIER);
-        ast->ident->var = v;
-        ast->var_type = v->type;
-        return ast;
+        Ast *id = ast_alloc(AST_IDENTIFIER);
+        id->line = ast->line;
+        id->file = ast->file;
+        id->ident->var = v;
+        id->ident->varname = v->name;
+        id->var_type = v->type;
+        return id;
     }
 
     Type *orig = ast->dot->object->var_type;

@@ -139,7 +139,7 @@ int main(int argc, char **argv) {
         emit_func_decl(root_scope, fns[i]);
     }
 
-    printf("void _verse_init() {\n");
+    printf("int _verse_init() {\n");
     change_indent(1);
 
     for (int i = 0; i < array_len(packages); i++) {
@@ -155,16 +155,14 @@ int main(int argc, char **argv) {
     compile(root_scope, root);
     emit_scope_end(root_scope);
 
-    change_indent(-1);
-    printf("}\n");
-
-    printf("int main(int argc, char** argv) {\n"
-           "    _verse_init_typeinfo();\n"
-           "    _verse_init();\n");
     if (main_var != NULL) {
         printf("    return _vs_%d();\n}", main_var->id);
     } else {
         printf("    return 0;\n}");
     }
+
+    printf("int main(int argc, char** argv) {\n"
+           "    _verse_init_typeinfo();\n"
+           "    return _verse_init();\n}\n");
     return 0;
 }

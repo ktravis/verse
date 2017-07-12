@@ -80,6 +80,8 @@ typedef enum {
 
 typedef struct Tok {
     TokType type;
+    int line;
+    char *file;
     union {
         long long ival;
         double fval;
@@ -119,6 +121,7 @@ Tok *expect(int type);
 Tok *expect_eol();
 int expect_line_break();
 int expect_line_break_or_semicolon();
+int expect_line_break_or(char expected);
 
 int lineno();
 char *current_file_name();

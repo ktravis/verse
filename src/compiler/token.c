@@ -101,6 +101,12 @@ int is_id_char(char c) {
 Tok *make_token(int t) {
     Tok *tok = malloc(sizeof(Tok));
     tok->type = t;
+    tok->line = lineno();
+    if (t == TOK_NL) {
+        // put this on the previous line
+        tok->line--;
+    }
+    tok->file = current_file_name();
     return tok;
 }
 
@@ -116,16 +122,19 @@ int expect_line_break() {
     unget_char(c);
     return 0;
 }
-int expect_line_break_or_semicolon() {
+int expect_line_break_or(char expected) {
     if (expect_line_break()) {
         return 1;
     }
     char c = get_char();
-    if (c == ';') {
+    if (c == expected) {
         return 1;
     }
     unget_char(c);
     return 0;
+}
+int expect_line_break_or_semicolon() {
+    return expect_line_break_or(';');
 }
 
 Tok *_next_token(int nl_ok) {

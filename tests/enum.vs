@@ -1,6 +1,6 @@
 enum hi {
- ok,
- not_ok,
+ ok
+ not_ok
 };
 
 fn go() {
@@ -27,10 +27,10 @@ fn main() -> int {
     go();
 
     enum hi:u8 {
-        a = 2,
-        b,
-        c,
-        d,
+        a = 2
+        b
+        c
+        d
     };
     return 0;
 }

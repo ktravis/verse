@@ -732,20 +732,26 @@ Ast *parse_enum_decl() {
         Ast *expr = NULL;
         char *member_name = next->sval;
 
-        next = next_token();
+        int old_line = next->line;
+
+        next = next_token_or_newline();
         if (next->type == TOK_OP && next->op == OP_ASSIGN) {
             expr = parse_expression(next_token(), 0);
-            next = next_token();
+            next = next_token_or_newline();
         }
         array_push(ast->enum_decl->enum_type->resolved->en.member_names, member_name);
         array_push(ast->enum_decl->exprs, expr);
 
         if (next->type == TOK_RBRACE) {
             break;
-        } else if (next->type != TOK_COMMA) {
-            error(lineno(), current_file_name(),
-                "Unexpected token '%s' while parsing enum declaration (expected ',' '=', or '}').",
-                tok_to_string(next));
+        } else if (next->line == old_line) {
+            if (next->type != TOK_COMMA && next->type != TOK_NL) {
+                error(lineno(), current_file_name(),
+                    "Unexpected token '%s' while parsing enum declaration (expected ',' '=', or '}').",
+                    tok_to_string(next));
+            }
+        } else {
+            unget_token(next);
         }
     }
 
@@ -784,14 +790,19 @@ Type *parse_struct_type(int poly_ok) {
             array_push(member_names, name);
             array_push(member_types, ty);
 
-            expect(TOK_SEMI);
+            /*expect(TOK_SEMI);*/
+            /*expect_eol();*/
+            int last_line = t->line;
             t = next_token();
-
-            if (t != NULL && t->type == TOK_RBRACE) {
-                break;
+            if (t->line == last_line) {
+                if (t->type != TOK_SEMI) {
+                    error(t->line, current_file_name(), "Expected semicolon or line ending in struct definition.");
+                }
             } else {
                 unget_token(t);
             }
+        } else if (t->type == TOK_RBRACE) {
+            break;
         } else if (t->type == TOK_FN) {
             array_push(methods, parse_func_decl(0));
         } else {

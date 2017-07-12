@@ -129,6 +129,20 @@ fn float64_to_string(f: float64) -> string {
     return s;
 }
 
+hex_digits := []string::{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"};
+
+fn utoa_hex(u: uint) -> string {
+    out := "";
+    while u > 0 {
+        out = hex_digits[u % 16] + out;
+        u /= 16;
+    }
+    while out.length < 8 {
+        out = "0" + out;
+    }
+    return "0x" + out;
+}
+
 fn float32_to_string(f: float32) -> string {
     p := (&f as ptr) as &u64;
     sign := *p >> 31 & 0x1;
@@ -269,6 +283,9 @@ fn any_to_string(a: Any) -> string {
             }
         }
         return "? (" + utoa(x as uint) + ")";
+    } else if bt == PTR {
+        u := *(a.value_pointer as &uint);
+        return utoa_hex(u);
     }
     return a.type.name;
 }
