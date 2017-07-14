@@ -29,32 +29,6 @@ void change_indent(int n) {
 
 static Type **struct_types;
 
-// TODO: make this not be like it is
-int get_struct_type_id(Type *type) {
-    for (int i = 0; i < array_len(struct_types); i++) {
-        Type *item = struct_types[i];
-        ResolvedType *r = item->resolved;
-        if (array_len(r->st.member_types) != array_len(r->st.member_types)) {
-            continue;
-        }
-        if (item->id == type->id) {
-            return type->id;
-        }
-        int match = 1;
-        for (int j = 0; j < array_len(r->st.member_names); j++) {
-            if (strcmp(r->st.member_names[j], r->st.member_names[j]) ||
-               !check_type(r->st.member_types[j], r->st.member_types[j])) {
-                match = 0;
-                break;
-            }
-        }
-        if (match) {
-            return item->id;
-        }
-    }
-    return type->id;
-}
-
 void emit_temp_var(Scope *scope, Ast *ast, int ref) {
     Var *v = find_temp_var(scope, ast);
     v->initialized = 1;
@@ -317,7 +291,6 @@ void emit_copy(Scope *scope, Ast *ast) {
         compile(scope, ast);
         printf(")");
     } else if (t->resolved->comp == STRUCT) {
-        /*printf("_copy_%d(", get_struct_type_id(t));*/
         printf("_copy_%d(", t->id);
         compile(scope, ast);
         printf(")");
@@ -379,7 +352,7 @@ void emit_type(Type *type) {
         printf("*");
         break;
     case STRUCT:
-        printf("struct _type_vs_%d ", type->id);//get_struct_type_id(type));
+        printf("struct _type_vs_%d ", type->id);
         break;
     case ENUM:
         emit_type(r->en.inner);
@@ -497,7 +470,7 @@ void emit_decl(Scope *scope, Ast *ast) {
         } else if (c == STRUCT) {
             printf(";\n");
             indent();
-            printf("_init_%d(&_vs_%d)", t->id, ast->decl->var->id);//get_struct_type_id(t), ast->decl->var->id);
+            printf("_init_%d(&_vs_%d)", t->id, ast->decl->var->id);
             ast->decl->var->initialized = 1;
         } else if (c == REF)  {
             printf(" = NULL");
@@ -648,7 +621,7 @@ void emit_static_array_copy(Scope *scope, Type *t, char *dest, char *src) {
         free(dname);
         free(sname);
     } else if (inner->resolved->comp == STRUCT) {
-        printf("%s[i] = _copy_%d(%s[i])", dest, inner->id, src);//get_struct_type_id(inner), src);
+        printf("%s[i] = _copy_%d(%s[i])", dest, inner->id, src);
     } else if (is_string(inner)) {
         printf("%s[i] = copy_string(%s[i])", dest, src);
     } else {
@@ -670,9 +643,6 @@ void emit_struct_decl(Scope *scope, Type *st) {
     ResolvedType *r = st->resolved;
     assert(r->comp == STRUCT);
 
-    /*if (st->id != get_struct_type_id(st)) {*/
-        /*return;*/
-    /*}*/
     for (int i = 0; i < array_len(struct_types); i++) {
         if (struct_types[i]->id == st->id) {
             return;
@@ -762,7 +732,6 @@ void emit_struct_decl(Scope *scope, Type *st) {
         } else if (rm->comp == STRUCT) {
             indent();
             printf("x.%s = _copy_%d(x.%s);\n", member_name,
-                    /*get_struct_type_id(member_type), member_name);*/
                     member_type->id, member_name);
         } else if (rm->comp == REF && rm->ref.owned) {
             indent();
@@ -770,7 +739,7 @@ void emit_struct_decl(Scope *scope, Type *st) {
             if (is_string(rm->ref.inner)) {
                 printf("tmp%d = copy_string(*x.%s);\n", i, member_name);
             } else if (rm->ref.inner->resolved->comp == STRUCT) {
-                printf("tmp%d = _copy_%d(*x.%s);\n", i, rm->ref.inner->id, member_name);//get_struct_type_id(rm->ref.inner), member_name);
+                printf("tmp%d = _copy_%d(*x.%s);\n", i, rm->ref.inner->id, member_name);
             } else {
                 printf("tmp%d = *x.%s;\n", i, member_name);
             }
@@ -992,7 +961,6 @@ void compile(Scope *scope, Ast *ast) {
             printf("\", %d)", (int)strlen(ast->lit->string_val));
             break;
         case STRUCT_LIT:
-            /*printf("(struct _type_vs_%d){", get_struct_type_id(ast->var_type));*/
             printf("(struct _type_vs_%d){", ast->var_type->id);
             if (array_len(ast->lit->compound_val.member_exprs) == 0) {
                 printf("0");
@@ -1083,7 +1051,6 @@ void compile(Scope *scope, Ast *ast) {
             printf(")))");
         } else {
             assert(r->comp == REF);
-            /*printf("(_init_%d(NULL))", get_struct_type_id(r->ref.inner));*/
             printf("(_init_%d(NULL))", r->ref.inner->id);
         }
         if (tmp != NULL) {
@@ -1455,7 +1422,6 @@ void compile(Scope *scope, Ast *ast) {
             if (is_string(t)) {
                 printf("copy_string");
             } else if (t->resolved->comp == STRUCT && is_dynamic(t)) {
-                /*printf("_copy_%d", get_struct_type_id(t));*/
                 printf("_copy_%d", t->id);
             }
             printf("(((");
