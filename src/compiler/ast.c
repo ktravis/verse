@@ -228,6 +228,9 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         break;
     case AST_CONDITIONAL:
         cp->cond = calloc(sizeof(AstConditional), 1);
+        if (ast->cond->initializer) {
+            cp->cond->initializer = copy_ast(scope, ast->cond->initializer);
+        }
         cp->cond->condition = copy_ast(scope, ast->cond->condition);
         cp->cond->if_body = copy_ast_block(scope, ast->cond->if_body);
         if (ast->cond->else_body != NULL) {
@@ -247,6 +250,9 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         break;
     case AST_WHILE:
         cp->while_loop = calloc(sizeof(AstWhile), 1);
+        if (ast->while_loop->initializer) {
+            cp->while_loop->initializer = copy_ast(scope, ast->while_loop->initializer);
+        }
         cp->while_loop->condition = copy_ast(scope, ast->while_loop->condition);
         cp->while_loop->body = copy_ast_block(scope, ast->while_loop->body);
         break;

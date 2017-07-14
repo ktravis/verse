@@ -6,6 +6,7 @@
 Package *new_package(char *path, char *name);
 Package *package_check_semantics(Package *p);
 Package *get_current_package();
+Package *get_main_package();
 Package *init_main_package(char *path);
 void define_global(Var *v);
 Package **all_loaded_packages();

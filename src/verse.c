@@ -161,7 +161,7 @@ int main(int argc, char **argv) {
         printf("    return 0;\n}");
     }
 
-    printf("int main(int argc, char** argv) {\n"
+    printf("\nint main(int argc, char** argv) {\n"
            "    _verse_init_typeinfo();\n"
            "    return _verse_init();\n}\n");
     return 0;

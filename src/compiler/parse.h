@@ -13,7 +13,7 @@ Ast *parse_primary(Tok *t);
 Ast *parse_binop(char op, Ast *left, Ast *right);
 Ast *parse_declaration(Tok *t);
 
-Ast *parse_statement(Tok *t);
+Ast *parse_statement(Tok *t, int eat_semi);
 
 Ast *parse_source_file(char *filename);
 Ast **parse_statement_list();

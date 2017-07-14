@@ -782,15 +782,23 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         ast->index->index = first_pass(scope, ast->index->index);
         break;
     case AST_CONDITIONAL:
-        ast->cond->condition = first_pass(scope, ast->cond->condition);
-        ast->cond->scope = new_scope(scope);
+        ast->cond->initializer_scope = new_scope(scope);
+        if (ast->cond->initializer) {
+            ast->cond->initializer = first_pass(ast->cond->initializer_scope, ast->cond->initializer);
+        }
+        ast->cond->condition = first_pass(ast->cond->initializer_scope, ast->cond->condition);
+        ast->cond->if_scope = new_scope(ast->cond->initializer_scope);
         if (ast->cond->else_body != NULL) {
-            ast->cond->else_scope = new_scope(scope);
+            ast->cond->else_scope = new_scope(ast->cond->initializer_scope);
         }
         break;
     case AST_WHILE:
-        ast->while_loop->condition = first_pass(scope, ast->while_loop->condition);
-        ast->while_loop->scope = new_loop_scope(scope);
+        ast->while_loop->scope = new_scope(scope);
+        if (ast->while_loop->initializer) {
+            ast->while_loop->initializer = first_pass(ast->while_loop->scope, ast->while_loop->initializer);
+        }
+        ast->while_loop->condition = first_pass(ast->while_loop->scope, ast->while_loop->condition);
+        ast->while_loop->inner_scope = new_loop_scope(ast->while_loop->scope);
         break;
     case AST_FOR:
         ast->for_loop->iterable = first_pass(scope, ast->for_loop->iterable);
@@ -1154,6 +1162,7 @@ static Ast *check_use_semantics(Scope *scope, Ast *ast) {
                 error(ast->use->object->line, ast->file,
                     "'use' statement on enum '%s' conflicts with builtin variable named '%s'.", p->name, v->name);
             }
+            // TODO: check against type names also
 
             Var *new_v = make_var(v->name, v->type);
             Ast *dot = make_ast_dot_op(ast->use->object, v->name);
@@ -1161,6 +1170,11 @@ static Ast *check_use_semantics(Scope *scope, Ast *ast) {
             dot->file = ast->file;
             new_v->proxy = dot;
             array_push(scope->vars, new_v);
+        }
+        iter_t iter = hashmap_iter();
+        TypeDef **t;
+        while ((t = hashmap_next(&p->scope->types, iter))) {
+            add_proxy_type(scope, p, *t);
         }
         return ast;
     }
@@ -2174,8 +2188,12 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
         break;
     case AST_CONDITIONAL: {
         AstConditional *c = ast->cond;
-        c->condition = check_semantics(scope, c->condition);
-        c->scope->parent_deferred = c->scope->parent != NULL ? array_len(c->scope->parent->deferred)-1 : -1;
+        if (c->initializer) {
+            c->initializer = check_semantics(c->initializer_scope, c->initializer);
+        }
+        c->condition = check_semantics(c->initializer_scope, c->condition);
+        c->initializer_scope->parent_deferred = c->initializer_scope->parent != NULL ? array_len(c->initializer_scope->parent->deferred)-1 : -1;
+        c->if_scope->parent_deferred = c->if_scope->parent != NULL ? array_len(c->if_scope->parent->deferred)-1 : -1;
 
         // TODO: I don't think typedefs of bool should be allowed here...
         if (!is_bool(c->condition->var_type)) {
@@ -2183,7 +2201,7 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
                 type_to_string(c->condition->var_type));
         }
         
-        c->if_body = check_block_semantics(c->scope, c->if_body, 0);
+        c->if_body = check_block_semantics(c->if_scope, c->if_body, 0);
 
         if (c->else_body != NULL) {
             c->else_body = check_block_semantics(c->else_scope, c->else_body, 0);
@@ -2195,15 +2213,19 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
     }
     case AST_WHILE: {
         AstWhile *lp = ast->while_loop;
-        lp->condition = check_semantics(scope, lp->condition);
+        if (lp->initializer) {
+            lp->initializer = check_semantics(lp->scope, lp->initializer);
+        }
+        lp->condition = check_semantics(lp->scope, lp->condition);
         lp->scope->parent_deferred = lp->scope->parent != NULL ? array_len(lp->scope->parent->deferred)-1 : -1;
+        lp->inner_scope->parent_deferred = lp->inner_scope->parent != NULL ? array_len(lp->inner_scope->parent->deferred)-1 : -1;
 
         if (!is_bool(lp->condition->var_type)) {
             error(ast->line, ast->file, "Non-boolean ('%s') condition for while loop.",
                     type_to_string(lp->condition->var_type));
         }
 
-        lp->body = check_block_semantics(lp->scope, lp->body, 0);
+        lp->body = check_block_semantics(lp->inner_scope, lp->body, 0);
 
         ast->var_type = base_type(VOID_T);
         break;

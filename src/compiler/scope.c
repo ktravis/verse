@@ -7,6 +7,7 @@
 #include "hashmap/hashmap.h"
 #include "scope.h"
 #include "parse.h"
+#include "package.h"
 #include "semantics.h"
 
 static Var **builtin_vars = NULL;
@@ -43,7 +44,8 @@ Type **all_used_types() {
 Scope *new_scope(Scope *parent) {
     Scope *s = calloc(sizeof(Scope), 1);
     s->parent = parent;
-    s->type = parent != NULL ? Simple : Root;
+    s->type = parent ? Simple : Root;
+    s->package = parent ? parent->package : get_current_package();
     hashmap_init(&s->types);
     return s;
 }
@@ -102,6 +104,9 @@ Type *lookup_local_type(Scope *s, char *name) {
         }
     }
     if ((tmp = hashmap_get(&s->types, name))) {
+        if ((*tmp)->proxy) {
+            return lookup_local_type((*tmp)->proxy->scope, name);
+        }
         return (*tmp)->type;
     }
     return NULL;
@@ -255,8 +260,19 @@ Type *define_type(Scope *s, char *name, Type *type, Ast *ast) {
     td->name = name;
     td->type = named;
     td->ast = ast;
+    td->proxy = NULL;
     hashmap_put(&s->types, name, td);
     return named;
+}
+
+Type *add_proxy_type(Scope *s, Package *src, TypeDef *orig) {
+    assert(orig->type->resolved);
+    TypeDef *td = malloc(sizeof(TypeDef));
+    td->name = orig->name;
+    td->type = orig->type;
+    td->proxy = src;
+    hashmap_put(&s->types, td->name, td);
+    return td->type;
 }
 
 int local_type_name_conflict(Scope *scope, char *name) {

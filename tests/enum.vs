@@ -27,8 +27,7 @@ fn main() -> int {
     go();
 
     enum hi:u8 {
-        a = 2
-        b
+        a = 2, b
         c
         d
     };

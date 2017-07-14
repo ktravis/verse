@@ -835,7 +835,7 @@ Type *parse_struct_type(int poly_ok) {
 
 Ast *parse_anon_scope();
 
-Ast *parse_statement(Tok *t) {
+Ast *parse_statement(Tok *t, int eat_semi) {
     Ast *ast = NULL;
     int needs_semi = 1;
 
@@ -923,17 +923,28 @@ Ast *parse_statement(Tok *t) {
         break;
     case TOK_LBRACE:
         return parse_anon_scope();
-    case TOK_WHILE:
+    case TOK_WHILE: {
         ast = ast_alloc(AST_WHILE);
-        ast->while_loop->condition = parse_expression(next_token(), 0);
-        t = next_token();
-        if (t == NULL || t->type != TOK_LBRACE) {
-            error(lineno(), current_file_name(),
-                "Unexpected token '%s' while parsing while loop.",
-                tok_to_string(peek_token()));
+        Ast *condition = parse_statement(next_token(), 0);
+
+        Tok *next = next_token();
+        if (next->type != TOK_LBRACE) {
+            if (next->type != TOK_SEMI) {
+                error(lineno(), current_file_name(), "Unexpected token '%s' while parsing while loop condition, expected semicolon.", tok_to_string(next));
+            }
+            ast->while_loop->initializer = condition;
+            next = next_token();
+            condition = parse_expression(next, 0);
+
+            next = next_token();
+            if (next == NULL || next->type != TOK_LBRACE) {
+                error(lineno(), current_file_name(), "Unexpected token '%s' while parsing while loop condition.", tok_to_string(next));
+            }
         }
+        ast->while_loop->condition = condition;
         ast->while_loop->body = parse_astblock(1);
         return ast;
+    }
     case TOK_FOR:
         ast = ast_alloc(AST_FOR);
         t = next_token();
@@ -992,7 +1003,9 @@ Ast *parse_statement(Tok *t) {
         ast = parse_expression(t, 0);
     }
     if (needs_semi || peek_token()->type == TOK_SEMI) {
-        expect(TOK_SEMI);
+        if (eat_semi) {
+            expect(TOK_SEMI);
+        }
     }
     return ast;
 }
@@ -1158,12 +1171,23 @@ Ast *parse_primary(Tok *t) {
 Ast *parse_conditional() {
     Ast *c = ast_alloc(AST_CONDITIONAL);
 
-    c->cond->condition = parse_expression(next_token(), 0);
+    Ast *condition = parse_statement(next_token(), 0);
 
     Tok *next = next_token();
-    if (next == NULL || next->type != TOK_LBRACE) {
-        error(lineno(), current_file_name(), "Unexpected token '%s' while parsing conditional.", tok_to_string(next));
+    if (next->type != TOK_LBRACE) {
+        if (next->type != TOK_SEMI) {
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing conditional, expected semicolon.", tok_to_string(next));
+        }
+        c->cond->initializer = condition;
+        next = next_token();
+        condition = parse_expression(next, 0);
+
+        next = next_token();
+        if (next == NULL || next->type != TOK_LBRACE) {
+            error(lineno(), current_file_name(), "Unexpected token '%s' while parsing conditional.", tok_to_string(next));
+        }
     }
+    c->cond->condition = condition;
 
     c->cond->if_body = parse_astblock(1);
 
@@ -1202,7 +1226,7 @@ Ast **parse_statement_list() {
         if (t == NULL || t->type == TOK_RBRACE) {
             break;
         }
-        array_push(stmts, parse_statement(t));
+        array_push(stmts, parse_statement(t, 1));
     }
     unget_token(t);
     return stmts;

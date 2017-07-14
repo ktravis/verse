@@ -1383,12 +1383,18 @@ void compile(Scope *scope, Ast *ast) {
         compile_block(scope, ast->block);
         break;
     case AST_CONDITIONAL:
+        emit_scope_start(ast->cond->initializer_scope);
+        if (ast->cond->initializer) {
+            compile(ast->cond->initializer_scope, ast->cond->initializer);
+            printf(";\n");
+            indent();
+        }
         printf("if (");
-        compile(scope, ast->cond->condition);
+        compile(ast->cond->initializer_scope, ast->cond->condition);
         printf(") ");
-        emit_scope_start(ast->cond->scope);
-        compile_block(ast->cond->scope, ast->cond->if_body);
-        emit_scope_end(ast->cond->scope);
+        emit_scope_start(ast->cond->if_scope);
+        compile_block(ast->cond->if_scope, ast->cond->if_body);
+        emit_scope_end(ast->cond->if_scope);
         if (ast->cond->else_body != NULL) {
             indent();
             printf("else ");
@@ -1396,13 +1402,21 @@ void compile(Scope *scope, Ast *ast) {
             compile_block(ast->cond->else_scope, ast->cond->else_body);
             emit_scope_end(ast->cond->else_scope);
         }
+        emit_scope_end(ast->cond->initializer_scope);
         break;
     case AST_WHILE:
-        printf("while (");
-        compile(scope, ast->while_loop->condition);
-        printf(") ");
         emit_scope_start(ast->while_loop->scope);
-        compile_block(ast->while_loop->scope, ast->while_loop->body);
+        if (ast->while_loop->initializer) {
+            compile(ast->while_loop->scope, ast->while_loop->initializer);
+            printf(";\n");
+            indent();
+        }
+        printf("while (");
+        compile(ast->while_loop->inner_scope, ast->while_loop->condition);
+        printf(") ");
+        emit_scope_start(ast->while_loop->inner_scope);
+        compile_block(ast->while_loop->inner_scope, ast->while_loop->body);
+        emit_scope_end(ast->while_loop->inner_scope);
         emit_scope_end(ast->while_loop->scope);
         break;
     case AST_FOR:

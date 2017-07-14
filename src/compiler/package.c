@@ -50,8 +50,14 @@ Package *get_current_package() {
     return current_package;
 }
 
+static Package *main_package = NULL;
+
+Package *get_main_package() {
+    assert(main_package);
+    return main_package;
+}
+
 Package *init_main_package(char *path) {
-    static Package *main_package = NULL;
     assert(main_package == NULL);
     main_package = new_package("<main>", path);
     push_current_package(main_package);

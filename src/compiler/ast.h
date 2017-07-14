@@ -121,8 +121,10 @@ typedef struct AstFnDecl {
 
 typedef struct AstConditional {
     Ast *condition;
-    Scope *scope;
+    Ast *initializer;
+    Scope *if_scope;
     Scope *else_scope;
+    Scope *initializer_scope;
     AstBlock *if_body;
     AstBlock *else_body;
 } AstConditional;
@@ -152,7 +154,9 @@ typedef struct AstReturn {
 
 typedef struct AstWhile {
     Ast *condition;
+    Ast *initializer;
     Scope *scope;
+    Scope *inner_scope;
     AstBlock *body;
 } AstWhile;
 

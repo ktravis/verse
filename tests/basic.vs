@@ -21,6 +21,23 @@ fn to_pass_to(f:fn() -> bool) {
     assert(!f());
 }
 
+fn testInitializers() -> bool {
+    if x := "testing"; x[2] == "e" {
+        assert(false);
+    } else {
+        assert(x == "testing");
+    }
+    fn incr(x: &$T) -> T {
+        old := *x;
+        *x += 1;
+        return old;
+    }
+    while i := 0; incr(&i) < 10 {
+        assert(i > 0);
+    }
+    return true;
+}
+
 fn main() -> int {
     assert(2 == 2);
     assert(1 + 2 == 3);
@@ -99,6 +116,8 @@ fn main() -> int {
     assert((10 as u8) == "\n");
 
     println("Tests passed.");
+
+    assert(testInitializers());
 
     return 0;
 }

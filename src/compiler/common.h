@@ -99,6 +99,7 @@ typedef struct TypeDef {
     char *name;
     Type *type;
     struct Ast  *ast;
+    struct Package *proxy;
     //Type *defined_type;
 } TypeDef;
 
