@@ -682,7 +682,7 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         if (scope->parent != NULL) {
             error(ast->line, ast->file, "All imports must be done at root scope.");
         }
-        ast->import->package = load_package(ast->file, scope, ast->import->path);
+        ast->import->package = load_package(ast->line, ast->file, scope, ast->import->path);
         break;
     case AST_LITERAL:
         if (ast->lit->lit_type == STRUCT_LIT || ast->lit->lit_type == COMPOUND_LIT) {

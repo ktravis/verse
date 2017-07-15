@@ -12,7 +12,7 @@ void define_global(Var *v);
 Package **all_loaded_packages();
 void push_current_package(Package *p);
 Package *pop_current_package();
-Package *load_package(char *current_file, Scope *scope, char *path);
+Package *load_package(int from_line, char *current_file, Scope *scope, char *path);
 Package *lookup_imported_package(Scope *scope, char *name);
 int file_is_verse_source(char *name, int namelen);
 

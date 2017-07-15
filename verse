@@ -3,8 +3,11 @@
 f=$1
 shift
 
+CC=gcc
 C_FLAGS="-g -std=c99"
-CMD="gcc src/*/*.S tmp.c -o tmp.out $C_FLAGS"
+TMPFILE_BASE=$(mktemp /tmp/verse-out-XXXXXX)
+C_TMPFILE=$TMPFILE_BASE.c
+EXE_TMPFILE=$TMPFILE_BASE.out
 
 for i in "$@"; do
     shift
@@ -15,4 +18,18 @@ for i in "$@"; do
 done
 ARGS=$@
 
-./bin/compiler $f > tmp.c && $CMD && ./tmp.out $ARGS
+./bin/compiler -o $C_TMPFILE $f
+if [ $? != 0 ]; then
+    exit $?
+fi
+
+INPUT_FILES="src/*/*.S $C_TMPFILE"
+LINK_FLAGS=""
+$CC $INPUT_FILES -o $EXE_TMPFILE $C_FLAGS $LINK_FLAGS
+if [ $? != 0 ]; then
+    exit $?
+fi
+
+echo "(running $EXE_TMPFILE ...)"
+
+$EXE_TMPFILE $ARGS

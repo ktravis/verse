@@ -3,47 +3,49 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
+#include <assert.h>
 
 #include "util.h"
 
-void print_quoted_string(char *val) {
+void print_quoted_string(FILE *f, char *val) {
     for (char *c = val; *c; c++) {
         switch (*c) {
         case 0x27:
-            printf("\\\'");
+            fprintf(f, "\\\'");
             break;
         case 0x22:
-            printf("\\\"");
+            fprintf(f, "\\\"");
             break;
         case 0x3f:
-            printf("\\?");
+            fprintf(f, "\\?");
             break;
         case 0x5c:
-            printf("\\\\");
+            fprintf(f, "\\\\");
             break;
         case 0x07:
-            printf("\\a");
+            fprintf(f, "\\a");
             break;
         case 0x08:
-            printf("\\b");
+            fprintf(f, "\\b");
             break;
         case 0x0c:
-            printf("\\f");
+            fprintf(f, "\\f");
             break;
         case 0x0a:
-            printf("\\n");
+            fprintf(f, "\\n");
             break;
         case 0x0d:
-            printf("\\r");
+            fprintf(f, "\\r");
             break;
         case 0x09:
-            printf("\\t");
+            fprintf(f, "\\t");
             break;
         case 0x0b:
-            printf("\\v");
+            fprintf(f, "\\v");
             break;
         default:
-            printf("%c", *c);
+            fprintf(f, "%c", *c);
         }
     }
 }
@@ -103,6 +105,18 @@ char *package_name(char *path) {
     return out;
 }
 
+char *strip_vs_ext(char *filename) {
+    char *ext_start = strstr(filename, ".vs");
+    if (!ext_start) {
+        return NULL;
+    }
+    int n = ext_start - filename;
+    char *out = malloc(sizeof(char) * (n + 1));
+    strncpy(out, filename, n);
+    out[n] = '\0';
+    return out;
+}
+
 // TODO: make this better
 // Return including slash?
 char *dir_name(char *fname) {
@@ -149,4 +163,24 @@ char *root_from_binary() {
     char *root_dir = dir_name(bin_dir);
     free(bin_dir);
     return root_dir;
+}
+
+FILE *open_file_or_quit(const char *filename, const char *mode) {
+    char *err;
+    FILE *f = open_file_or_error(filename, mode, &err);
+    if (!f) {
+        fprintf(stderr, "Unable to open file '%s': %s\n", filename, err);
+        exit(1);
+    }
+    return f;
+}
+
+FILE *open_file_or_error(const char *filename, const char *mode, char **err) {
+    assert(err != NULL);
+    FILE *f = fopen(filename, mode);
+    if (!f) {
+        *err = strerror(errno);
+        return NULL;
+    }
+    return f;
 }

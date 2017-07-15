@@ -67,14 +67,16 @@ Type *replace_type_by_name(Type *base, char *from_name, Type *to);
 int get_any_type_id();
 Type *get_any_type();
 int get_typeinfo_type_id();
+int get_basetype_id(TypeComp c);
+int get_numtype_type_id();
+int get_structmember_type_id();
 Type *base_type(PrimitiveType t);
 Type *base_numeric_type(int t, int size);
+
+int size_of_type(Type *t);
 
 int precision_loss_uint(Type *t, unsigned long ival);
 int precision_loss_int(Type *t, long ival);
 int precision_loss_float(Type *t, double ival);
-
-void emit_typeinfo_decl(Scope *scope, Type *t);
-void emit_typeinfo_init(Scope *scope, Type *t);
 
 #endif

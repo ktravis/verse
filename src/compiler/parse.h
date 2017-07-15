@@ -15,7 +15,7 @@ Ast *parse_declaration(Tok *t);
 
 Ast *parse_statement(Tok *t, int eat_semi);
 
-Ast *parse_source_file(char *filename);
+Ast *parse_source_file(int line, char *source_file, char *filename);
 Ast **parse_statement_list();
 
 AstBlock *parse_astblock(int bracketed);

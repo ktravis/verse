@@ -875,8 +875,9 @@ Ast *parse_statement(Tok *t, int eat_semi) {
     case TOK_DIRECTIVE:
         if (!strcmp(t->sval, "include")) {
             t = next_token();
+            int line = lineno();
             if (t->type != TOK_STR || !expect_line_break_or_semicolon()) {
-                error(lineno(), current_file_name(),
+                error(line, current_file_name(),
                     "Unexpected token '%s' while parsing import directive.",
                     tok_to_string(t));
             }
@@ -889,19 +890,21 @@ Ast *parse_statement(Tok *t, int eat_semi) {
                 snprintf(tmp, dirlen + pathlen + 1, "%s%s", dir, path);
                 path = tmp;
             }
-            Ast *ast = parse_source_file(path);
+            Ast *ast = parse_source_file(line, current_file_name(), path);
             pop_file_source();
             return ast;
         }
         if (!strcmp(t->sval, "import")) {
             t = next_token();
+            int line = lineno();
             if (t->type != TOK_STR || !expect_line_break_or_semicolon()) {
-                error(lineno(), current_file_name(),
+                error(line, current_file_name(),
                     "Unexpected token '%s' while parsing load directive.",
                     tok_to_string(t));
             }
             // TODO: pass more context for error 
             Ast *ast = ast_alloc(AST_IMPORT);
+            ast->line = line;
             ast->import->path = t->sval;
             return ast;
         }
@@ -1022,7 +1025,7 @@ Ast *parse_directive(Tok *t) {
 
     Tok *next = next_token();
     if (next == NULL) {
-        error(lineno(), current_file_name(), "Unexpected end of input.");
+        error(dir->line, dir->file, "Unexpected end of input.");
     }
 
     // type
@@ -1031,13 +1034,12 @@ Ast *parse_directive(Tok *t) {
         dir->var_type = parse_type(next, 0);
         return dir;
     } else if (!strcmp(t->sval, "import")) {
-        error(lineno(), current_file_name(), "#import directive must be a statement.");
+        error(dir->line, dir->file, "#import directive must be a statement.");
     }
 
     // typeof
     if (next->type != TOK_LPAREN) {
-        error(lineno(), current_file_name(),
-            "Unexpected token '%s' while parsing directive '%s'",
+        error(dir->line, dir->file, "Unexpected token '%s' while parsing directive '%s'",
             tok_to_string(next), t->sval);
     }
 
@@ -1266,8 +1268,13 @@ Ast *parse_block(int bracketed) {
     return b;
 }
 
-Ast *parse_source_file(char *filename) {
-    push_file_source(filename, fopen(filename, "r"));
+Ast *parse_source_file(int line, char *source_file, char *filename) {
+    char *err;
+    FILE *f = open_file_or_error(filename, "r", &err);
+    if (!f) {
+        error(line, source_file, "Could not open source file '%s': %s", filename, err);
+    }
+    push_file_source(filename, f);
     return parse_block(0);
 }
 

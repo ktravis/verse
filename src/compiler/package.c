@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <dirent.h>
+#include <errno.h>
 
 #include "array/array.h"
 #include "package.h"
@@ -97,7 +98,7 @@ Package *pop_current_package() {
 
 static char *verse_root = NULL;
 
-Package *load_package(char *current_file, Scope *scope, char *path) {
+Package *load_package(int from_line, char *current_file, Scope *scope, char *path) {
     assert(path != NULL);
     // TODO: hardcoded, this should also read env var if available
     if (verse_root == NULL) {
@@ -127,7 +128,7 @@ Package *load_package(char *current_file, Scope *scope, char *path) {
     DIR *d = opendir(path);
     // TODO: better error
     if (d == NULL) {
-        error(lineno(), current_file, "Could not load package with path: '%s'", path);
+        error(lineno(), current_file, "Could not load package with path '%s': %s", path, strerror(errno));
     }
 
     // push package stack
@@ -147,7 +148,7 @@ Package *load_package(char *current_file, Scope *scope, char *path) {
         char *filepath = malloc(sizeof(char) * (len + 2));
         snprintf(filepath, len + 2, "%s/%s", path, ent->d_name);
 
-        Ast *file_ast = parse_source_file(filepath);
+        Ast *file_ast = parse_source_file(from_line, current_file, filepath);
         file_ast = first_pass(p->scope, file_ast);
         package_add_file(p, filepath, file_ast);
     }

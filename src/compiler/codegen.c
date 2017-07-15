@@ -13,9 +13,25 @@
 static int _indent = 0;
 static int _static_array_copy_depth = 0;
 
+static FILE *output;
+
+void codegen_set_output(FILE *f) {
+    output = f;
+}
+
+#define write_fmt(...) fprintf(output, __VA_ARGS__)
+
+int write_bytes(const char *b, ...) {
+    va_list args;
+    va_start(args, b);
+    int ret = vfprintf(output, b, args);
+    va_end(args);
+    return ret;
+}
+
 void indent() {
     for (int i = 0; i < _indent; i++) {
-        printf("    ");
+        write_fmt("    ");
     }
 }
 
@@ -26,55 +42,295 @@ void change_indent(int n) {
     }
 }
 
+void emit_entrypoint() {
+    write_fmt("\nint main(int argc, char** argv) {\n"
+              "    _verse_init_typeinfo();\n"
+              "    return _verse_init();\n}\n");
+}
+
+void emit_init_routine(Package **packages, Scope *root_scope, Ast *root, Var *main_var) {
+    write_fmt("int _verse_init() {\n");
+    change_indent(1);
+
+    for (int i = 0; i < array_len(packages); i++) {
+        Package *p = packages[i];
+        emit_scope_start(p->scope);
+        for (int j = 0; j < array_len(p->files); j++) {
+            compile(p->scope, p->files[j]->root);
+        }
+        emit_init_scope_end(p->scope);
+    }
+
+    emit_scope_start(root_scope);
+    compile(root_scope, root);
+    emit_scope_end(root_scope);
+
+    if (main_var != NULL) {
+        write_fmt("    return _vs_%d();\n}", main_var->id);
+    } else {
+        write_fmt("    return 0;\n}");
+    }
+}
+
+void recursively_declare_types(int *declared_type_ids, Scope *root_scope, Type *t) {
+    if (t->resolved->comp != STRUCT) {
+        return;
+    }
+    for (int i = 0; i < array_len(declared_type_ids); i++) {
+        if (t->id == declared_type_ids[i]) {
+            return;
+        }
+    }
+    array_push(declared_type_ids, t->id);
+
+    if (t->resolved->comp == STRUCT) {
+        for (int i = 0; i < array_len(t->resolved->st.member_types); i++) {
+            recursively_declare_types(declared_type_ids, root_scope, t->resolved->st.member_types[i]);
+        }
+        emit_struct_decl(root_scope, t);
+    }
+}
+
+void emit_typeinfo_init_routine(Scope *root_scope, Type **builtins, Type **used_types) {
+    int *initted_type_ids = NULL;
+    write_fmt("void _verse_init_typeinfo() {\n");
+    change_indent(1);
+    for (int i = 0; i < array_len(builtins); i++) {
+        emit_typeinfo_init(root_scope, builtins[i]);
+    }
+    for (int i = 0; i < array_len(used_types); i++) {
+        char skip = 0;
+        for (int j = 0; j < array_len(initted_type_ids); j++) {
+            if (used_types[i]->id == initted_type_ids[j]) {
+                skip = 1;
+                break;
+            }
+        }
+        if (!skip) {
+            array_push(initted_type_ids, used_types[i]->id);
+            emit_typeinfo_init(root_scope, used_types[i]);
+        }
+    }
+    change_indent(-1);
+    write_fmt("}\n");
+    array_free(initted_type_ids);
+}
+
+void emit_typeinfo_decl(Scope *scope, Type *t) {
+    int id = t->id;
+    int typeinfo_type_id = get_typeinfo_type_id();
+    assert(t->resolved);
+
+    ResolvedType *r = t->resolved;
+    int base_id = get_basetype_id(r->comp);
+
+    switch (r->comp) {
+    case STRUCT:
+        write_fmt("struct _type_vs_%d _type_info%d_members[%d];\n", get_structmember_type_id(), id, array_len(r->st.member_types));
+        break;
+    case FUNC:
+        write_fmt("struct _type_vs_%d *_type_info%d_args[%d];\n", typeinfo_type_id, id, array_len(r->fn.args));
+        break;
+    case ENUM:
+        write_fmt("struct string_type _type_info%d_members[%d] = {\n", id, array_len(r->en.member_values));
+        for (int i = 0; i < array_len(r->en.member_names); i++) {
+            write_fmt("  {%ld, \"%s\"},\n", strlen(r->en.member_names[i]), r->en.member_names[i]);
+        }
+        write_fmt("};\n");
+        write_fmt("int64_t _type_info%d_values[%d] = {\n", id, array_len(r->en.member_values));
+        for (int i = 0; i < array_len(r->en.member_values); i++) {
+            write_fmt(" %ld,\n", r->en.member_values[i]);
+        }
+        write_fmt("};\n");
+        break;
+    case BASIC:
+        switch (r->data->base) {
+        case INT_T:
+        case UINT_T:
+        case FLOAT_T:
+            base_id = get_numtype_type_id();
+            break;
+        case BASEPTR_T:
+        case STRING_T:
+        case BOOL_T:
+            break;
+        }
+    default:
+        break;
+    }
+    write_fmt("struct _type_vs_%d _type_info%d;\n", base_id, id);
+}
+
+void indent();
+
+void emit_string_struct(char *str) {
+    write_fmt("{%ld,\"", strlen(str));
+    print_quoted_string(output, str);
+    write_fmt("\"}");
+}
+
+void emit_typeinfo_init(Scope *scope, Type *t) {
+    int id = t->id;
+    int typeinfo_type_id = get_typeinfo_type_id();
+
+    char *name = type_to_string(t); // eh?
+    ResolvedType *r = t->resolved;
+    int base_id = get_basetype_id(r->comp);
+
+    switch (r->comp) {
+    case ENUM:
+        indent();
+        write_fmt("_type_info%d = (struct _type_vs_%d){%d, 9, ", id, base_id, id);
+        emit_string_struct(name);
+        write_fmt(", (struct _type_vs_%d *)&_type_info%d, ", typeinfo_type_id, r->en.inner->id);
+        write_fmt("{%d, _type_info%d_members}, {%d, _type_info%d_values}};\n",
+                array_len(r->en.member_names), id, array_len(r->en.member_names), id);
+        break;
+    case REF:
+        indent();
+        write_fmt("_type_info%d = (struct _type_vs_%d){%d, 10, ", id, base_id, id);
+        emit_string_struct(name);
+        write_fmt(", %d, (struct _type_vs_%d *)&_type_info%d};\n", r->ref.owned, typeinfo_type_id, r->ref.inner->id);
+        break;
+    case STRUCT: {
+        int offset = 0;
+        for (int i = 0; i < array_len(r->st.member_names); i++) {
+            indent();
+            write_fmt("_type_info%d_members[%d] = (struct _type_vs_%d){", id, i, get_structmember_type_id());
+            emit_string_struct(r->st.member_names[i]);
+            write_fmt(", (struct _type_vs_%d *)&_type_info%d, %d};\n",
+                   typeinfo_type_id, r->st.member_types[i]->id, offset);
+            offset += size_of_type(r->st.member_types[i]);
+        }
+        indent();
+        write_fmt("_type_info%d = (struct _type_vs_%d){%d, 11, ", id, base_id, id);
+        emit_string_struct(name);
+        write_fmt(", {%d, _type_info%d_members}};\n", array_len(r->st.member_names), id);
+        break;
+    }
+    case STATIC_ARRAY:
+        indent();
+        write_fmt("_type_info%d = (struct _type_vs_%d){%d, 7, ", id, base_id, id);
+        emit_string_struct(name);
+        write_fmt(", (struct _type_vs_%d *)&_type_info%d, ", typeinfo_type_id, r->array.inner->id);
+        write_fmt("%ld, %d, %d};\n", r->array.length, 1, 0);
+        break;
+    case ARRAY: // TODO make this not have a name? switch Type to have enum in name slot for base type
+        indent();
+        write_fmt("_type_info%d = (struct _type_vs_%d){%d, 7, ", id, base_id, id);
+        emit_string_struct(name);
+        write_fmt(", (struct _type_vs_%d *)&_type_info%d, %ld, %d, %d};\n",
+                typeinfo_type_id, r->array.inner->id, (long)0, 0, r->array.owned);
+        break;
+    case FUNC: {
+        for (int i = 0; i < array_len(r->fn.args); i++) {
+            indent();
+            write_fmt("_type_info%d_args[%d] = (struct _type_vs_%d *)&_type_info%d;\n",
+                id, i, typeinfo_type_id, r->fn.args[i]->id);
+        }
+        indent();
+        write_fmt("_type_info%d = (struct _type_vs_%d){%d, 8, ", id, base_id, id);
+        emit_string_struct(name);
+        write_fmt(", {%d, (struct _type_vs_%d **)_type_info%d_args}, ", array_len(r->fn.args), typeinfo_type_id, id);
+
+        Type *ret = r->fn.ret;
+        if (ret->resolved->comp == BASIC && ret->resolved->data->base == VOID_T) {
+            write_fmt("NULL, ");
+        } else {
+            write_fmt("(struct _type_vs_%d *)&_type_info%d, ", typeinfo_type_id, r->fn.ret->id);
+        }
+        write_fmt("0};\n");
+        break;
+    }
+    case BASIC: {
+        switch (r->data->base) {
+        case INT_T:
+        case UINT_T:
+            indent();
+            write_fmt("_type_info%d = (struct _type_vs_%d){%d, 1, ", id, get_numtype_type_id(), id);
+            emit_string_struct(name);
+            write_fmt(", %d, %d};\n", r->data->size, r->data->base == INT_T);
+            break;
+        case FLOAT_T:
+            indent();
+            write_fmt("_type_info%d = (struct _type_vs_%d){%d, 3, ", id, get_numtype_type_id(), id);
+            emit_string_struct(name);
+            write_fmt(", %d, 1};\n", r->data->size);
+            break;
+        case BASEPTR_T:
+            indent();
+            write_fmt("_type_info%d = (struct _type_vs_%d){%d, 12, ", id, typeinfo_type_id, id);
+            emit_string_struct(name);
+            write_fmt("};\n");
+            break;
+        case STRING_T:
+            indent();
+            write_fmt("_type_info%d = (struct _type_vs_%d){%d, 6, ", id, typeinfo_type_id, id);
+            emit_string_struct(name);
+            write_fmt("};\n");
+            break;
+        case BOOL_T:
+            indent();
+            write_fmt("_type_info%d = (struct _type_vs_%d){%d, 2, ", id, typeinfo_type_id, id);
+            emit_string_struct(name);
+            write_fmt("};\n");
+            break;
+        }
+    }
+    default:
+        break;
+    }
+}
+
 static Type **struct_types;
 
 void emit_temp_var(Scope *scope, Ast *ast, int ref) {
     Var *v = find_temp_var(scope, ast);
     v->initialized = 1;
-    printf("(_tmp%d = ", v->id);
+    write_fmt("(_tmp%d = ", v->id);
 
     ResolvedType *r = v->type->resolved;
     if (r->comp == REF) {
         Type *inner = r->ref.inner;
         if (inner->resolved->comp == STATIC_ARRAY) {
-            printf("(");
+            write_fmt("(");
             emit_type(inner);
-            printf("*)");
+            write_fmt("*)");
         }
     }
     compile(scope, ast);
-    printf(", %s_tmp%d)", ref ? "&" : "", v->id);
+    write_fmt(", %s_tmp%d)", ref ? "&" : "", v->id);
 }
 
 void emit_string_comparison(Scope *scope, Ast *ast) {
     AstBinaryOp *bin = ast->binary;
     if (bin->op == OP_NEQUALS) {
-        printf("!");
+        write_fmt("!");
     } else if (bin->op != OP_EQUALS) {
         error(ast->line, ast->file, "Comparison of type '%s' is not valid for type 'string'.", op_to_str(bin->op));
     }
     if (bin->left->type == AST_LITERAL && bin->right->type == AST_LITERAL) {
-        printf("%d", strcmp(bin->left->lit->string_val, bin->right->lit->string_val) ? 0 : 1);
+        write_fmt("%d", strcmp(bin->left->lit->string_val, bin->right->lit->string_val) ? 0 : 1);
         return;
     }
     if (bin->left->type == AST_LITERAL) {
-        printf("streq_lit(");
+        write_fmt("streq_lit(");
         compile(scope, bin->right);
-        printf(",\"");
-        print_quoted_string(bin->left->lit->string_val);
-        printf("\",%d)", escaped_strlen(bin->left->lit->string_val));
+        write_fmt(",\"");
+        print_quoted_string(output, bin->left->lit->string_val);
+        write_fmt("\",%d)", escaped_strlen(bin->left->lit->string_val));
     } else if (bin->right->type == AST_LITERAL) {
-        printf("streq_lit(");
+        write_fmt("streq_lit(");
         compile(scope, bin->left);
-        printf(",\"");
-        print_quoted_string(bin->right->lit->string_val);
-        printf("\",%d)", escaped_strlen(bin->right->lit->string_val));
+        write_fmt(",\"");
+        print_quoted_string(output, bin->right->lit->string_val);
+        write_fmt("\",%d)", escaped_strlen(bin->right->lit->string_val));
     } else {
-        printf("streq(");
+        write_fmt("streq(");
         compile(scope, bin->left);
-        printf(",");
+        write_fmt(",");
         compile(scope, bin->right);
-        printf(")");
+        write_fmt(")");
     }
 }
 
@@ -84,11 +340,11 @@ void emit_comparison(Scope *scope, Ast *ast) {
         emit_string_comparison(scope, ast);
         return;
     }
-    printf("(");
+    write_fmt("(");
     compile(scope, ast->binary->left);
-    printf(" %s ", op_to_str(ast->binary->op));
+    write_fmt(" %s ", op_to_str(ast->binary->op));
     compile(scope, ast->binary->right);
-    printf(")");
+    write_fmt(")");
 }
 
 void emit_string_binop(Scope *scope, Ast *ast) {
@@ -100,18 +356,18 @@ void emit_string_binop(Scope *scope, Ast *ast) {
     case AST_SLICE:
     case AST_UOP:
     case AST_BINOP:
-        printf("append_string(");
+        write_fmt("append_string(");
         compile(scope, ast->binary->left);
-        printf(",");
+        write_fmt(",");
         compile(scope, ast->binary->right);
-        printf(")");
+        write_fmt(")");
         break;
     case AST_LITERAL:
-        printf("append_string_lit(");
+        write_fmt("append_string_lit(");
         compile(scope, ast->binary->left);
-        printf(",\"");
-        print_quoted_string(ast->binary->right->lit->string_val);
-        printf("\",%d)", (int) escaped_strlen(ast->binary->right->lit->string_val));
+        write_fmt(",\"");
+        print_quoted_string(output, ast->binary->right->lit->string_val);
+        write_fmt("\",%d)", (int) escaped_strlen(ast->binary->right->lit->string_val));
         break;
     default:
         error(ast->line, ast->file, "<internal> couldn't do the string binop? %d", ast->type);
@@ -124,24 +380,24 @@ void emit_dot_op(Scope *scope, Ast *ast) {
     if (ast->dot->object->type == AST_LITERAL && ast->dot->object->lit->lit_type == ENUM_LIT) {
         // TODO this should probably be a tmpvar
         char *s = t->resolved->en.member_names[ast->dot->object->lit->enum_val.enum_index];
-        printf("init_string(\"");
-        print_quoted_string(s);
-        printf("\", %d)", (int)strlen(s));
+        write_fmt("init_string(\"");
+        print_quoted_string(output, s);
+        write_fmt("\", %d)", (int)strlen(s));
         return;
     }
 
     if (t->resolved->comp == STATIC_ARRAY) {
         if (!strcmp(ast->dot->member_name, "length")) {
-            printf("%ld", t->resolved->array.length);
+            write_fmt("%ld", t->resolved->array.length);
         } else if (!strcmp(ast->dot->member_name, "data")) {
             compile(scope, ast->dot->object);
         }
     } else {
         compile(scope, ast->dot->object);
         if (t->resolved->comp == REF) {
-            printf("->%s", ast->dot->member_name);
+            write_fmt("->%s", ast->dot->member_name);
         } else {
-            printf(".%s", ast->dot->member_name);
+            write_fmt(".%s", ast->dot->member_name);
         }
     }
 }
@@ -149,15 +405,15 @@ void emit_dot_op(Scope *scope, Ast *ast) {
 void emit_uop(Scope *scope, Ast *ast) {
     switch (ast->unary->op) {
     case OP_NOT:
-        printf("!"); break;
+        write_fmt("!"); break;
     case OP_REF:
-        printf("&"); break;
+        write_fmt("&"); break;
     case OP_DEREF:
-        printf("*"); break;
+        write_fmt("*"); break;
     case OP_MINUS:
-        printf("-"); break;
+        write_fmt("-"); break;
     case OP_PLUS:
-        printf("+"); break;
+        write_fmt("+"); break;
     default:
         error(ast->line, ast->file, "Unkown unary operator '%s' (%s).",
             op_to_str(ast->unary->op), ast->unary->op);
@@ -172,35 +428,35 @@ void emit_assignment(Scope *scope, Ast *ast) {
     Type *lt = l->var_type;
 
     if (lt->resolved->comp == STATIC_ARRAY) {
-        printf("{\n");
+        write_fmt("{\n");
         change_indent(1);
         indent();
 
         emit_type(lt);
-        printf("l = ");
+        write_fmt("l = ");
         compile_static_array(scope, l);
-        printf(";\n");
+        write_fmt(";\n");
         indent();
 
         emit_type(lt);
-        printf("r = ");
+        write_fmt("r = ");
         compile_static_array(scope, r);
-        printf(";\n");
+        write_fmt(";\n");
         indent();
 
         emit_static_array_copy(scope, lt, "l", "r");
-        printf(";\n");
+        write_fmt(";\n");
 
         change_indent(-1);
         indent();
-        printf("}");
+        write_fmt("}");
         return;
     }
 
     if (is_dynamic(lt) || r->type == AST_NEW) {
         if (l->type == AST_IDENTIFIER &&
                 !l->ident->var->initialized && !is_owned(lt)) {
-            printf("_vs_%d = ", l->ident->var->id);
+            write_fmt("_vs_%d = ", l->ident->var->id);
             if (is_lvalue(r)) {
                 emit_copy(scope, r);
             } else {
@@ -210,27 +466,27 @@ void emit_assignment(Scope *scope, Ast *ast) {
             l->ident->var->initialized = 1;
         } else {
             Var *temp = find_temp_var(scope, r);
-            printf("_tmp%d = ", temp->id);
+            write_fmt("_tmp%d = ", temp->id);
             temp->initialized = 1;
             if (is_lvalue(r)) {
                 emit_copy(scope, r);
             } else {
                 compile(scope, r);
             }
-            printf(";\n");
+            write_fmt(";\n");
             indent();
-            printf("SWAP(");
+            write_fmt("SWAP(");
 
             if (l->type == AST_DOT || l->type == AST_INDEX || l->type == AST_UOP) {
                 compile(scope, l);
             } else {
-                printf("_vs_%d", l->ident->var->id);
+                write_fmt("_vs_%d", l->ident->var->id);
             }
-            printf(",_tmp%d)", temp->id);
+            write_fmt(",_tmp%d)", temp->id);
         }
     } else {
         compile(scope, l);
-        printf(" = ");
+        write_fmt(" = ");
         if (lt->resolved->comp == ARRAY) {
             compile_unspecified_array(scope, r);
         } else if (lt->resolved->comp == STATIC_ARRAY) {
@@ -252,25 +508,25 @@ void emit_binop(Scope *scope, Ast *ast) {
         emit_string_binop(scope, ast);
         return;
     } else if (ast->binary->op == OP_OR) {
-        printf("(");
+        write_fmt("(");
         compile(scope, ast->binary->left);
-        printf(") || (");
+        write_fmt(") || (");
         compile(scope, ast->binary->right);
-        printf(")");
+        write_fmt(")");
         return;
     } else if (ast->binary->op == OP_AND) {
-        printf("(");
+        write_fmt("(");
         compile(scope, ast->binary->left);
-        printf(") && ("); // does this short-circuit?
+        write_fmt(") && ("); // does this short-circuit?
         compile(scope, ast->binary->right);
-        printf(")");
+        write_fmt(")");
         return;
     }
-    printf("(");
+    write_fmt("(");
     compile(scope, ast->binary->left);
-    printf(" %s ", op_to_str(ast->binary->op));
+    write_fmt(" %s ", op_to_str(ast->binary->op));
     compile(scope, ast->binary->right);
-    printf(")");
+    write_fmt(")");
 }
 
 void emit_copy(Scope *scope, Ast *ast) {
@@ -286,13 +542,13 @@ void emit_copy(Scope *scope, Ast *ast) {
     }
 
     if (is_string(t)) {
-        printf("copy_string(");
+        write_fmt("copy_string(");
         compile(scope, ast);
-        printf(")");
+        write_fmt(")");
     } else if (t->resolved->comp == STRUCT) {
-        printf("_copy_%d(", t->id);
+        write_fmt("_copy_%d(", t->id);
         compile(scope, ast);
-        printf(")");
+        write_fmt(")");
     /*} else if (t->comp == STATIC_ARRAY) {*/
         /*emit_static_array_copy(scope, ast->decl->var->type, dname, "_0");*/
     /*} else if (t->comp == ARRAY) {*/
@@ -309,49 +565,49 @@ void emit_type(Type *type) {
     case BASIC:
         switch (r->data->base) {
         case UINT_T:
-            printf("u");
+            write_fmt("u");
         case INT_T:
-            printf("int%d_t ", r->data->size * 8);
+            write_fmt("int%d_t ", r->data->size * 8);
             break;
         case FLOAT_T:
             if (r->data->size == 4) { // TODO double-check these are always the right size
-                printf("float ");
+                write_fmt("float ");
             } else if (r->data->size == 8) {
-                printf("double ");
+                write_fmt("double ");
             } else {
                 error(-1, "internal", "Cannot compile floating-point type of size %d.", r->data->size);
             }
             break;
         case BOOL_T:
-            printf("unsigned char ");
+            write_fmt("unsigned char ");
             break;
         case STRING_T:
-            printf("struct string_type ");
+            write_fmt("struct string_type ");
             break;
         case VOID_T:
-            printf("void ");
+            write_fmt("void ");
             break;
         case BASEPTR_T:
-            printf("ptr_type ");
+            write_fmt("ptr_type ");
             break;
         }
         break;
     case FUNC:
-        printf("fn_type ");
+        write_fmt("fn_type ");
         break;
     case REF:
         emit_type(r->ref.inner);
-        printf("*");
+        write_fmt("*");
         break;
     case ARRAY:
-        printf("struct array_type ");
+        write_fmt("struct array_type ");
         break;
     case STATIC_ARRAY:
         emit_type(r->array.inner);
-        printf("*");
+        write_fmt("*");
         break;
     case STRUCT:
-        printf("struct _type_vs_%d ", type->id);
+        write_fmt("struct _type_vs_%d ", type->id);
         break;
     case ENUM:
         emit_type(r->en.inner);
@@ -363,18 +619,18 @@ void emit_type(Type *type) {
 
 void compile_unspecified_array(Scope *scope, Ast *ast) {
     if (is_string(ast->var_type)) {
-        printf("string_as_array(");
+        write_fmt("string_as_array(");
         compile(scope, ast);
-        printf(")");
+        write_fmt(")");
         return;
     }
     TypeComp c = ast->var_type->resolved->comp;
     if (c == ARRAY) {
         compile(scope, ast);
     } else if (c == STATIC_ARRAY) {
-        printf("(struct array_type){.data=");
+        write_fmt("(struct array_type){.data=");
         compile(scope, ast);
-        printf(",.length=%ld}", ast->var_type->resolved->array.length);
+        write_fmt(",.length=%ld}", ast->var_type->resolved->array.length);
     } else {
         error(ast->line, ast->file, "Was expecting an array of some kind here, man.");
     }
@@ -384,9 +640,9 @@ void compile_static_array(Scope *scope, Ast *ast) {
     if (ast->var_type->resolved->comp == STATIC_ARRAY) {
         compile(scope, ast);
     } else if (ast->var_type->resolved->comp == ARRAY) {
-        printf("(");
+        write_fmt("(");
         compile(scope, ast);
-        printf(").data");
+        write_fmt(").data");
     } else {
         error(ast->line, ast->file, "Was expecting a static array here, man.");
     }
@@ -399,11 +655,11 @@ void emit_static_array_decl(Scope *scope, Ast *ast) {
     free(membername);
 
     if (ast->decl->init == NULL) {
-        printf(" = {0}");
+        write_fmt(" = {0}");
     } else if (ast->decl->init->type == AST_LITERAL) {
         assert(ast->decl->init->lit->lit_type == ARRAY_LIT);
 
-        printf(" = {");
+        write_fmt(" = {");
         ResolvedType *r = ast->decl->var->type->resolved;
         for (int i = 0; i < r->array.length; i++) {
             Ast *expr = ast->decl->init->lit->compound_val.member_exprs[i];
@@ -416,32 +672,32 @@ void emit_static_array_decl(Scope *scope, Ast *ast) {
                 compile(scope, expr);
             }
             if (i < r->array.length - 1) {
-                printf(",");
+                write_fmt(",");
             }
         }
-        printf("}");
+        write_fmt("}");
     } else {
-        printf(";\n");
+        write_fmt(";\n");
         indent();
-        printf("{\n");
+        write_fmt("{\n");
         change_indent(1);
         indent();
         emit_type(ast->decl->var->type);
-        printf("_0 = ");
+        write_fmt("_0 = ");
         compile_static_array(scope, ast->decl->init);
-        printf(";\n");
+        write_fmt(";\n");
         indent();
 
         char *dname = malloc(sizeof(char) * (snprintf(NULL, 0, "_vs_%d", ast->decl->var->id) + 1));
         sprintf(dname, "_vs_%d", ast->decl->var->id);
         dname[strlen(ast->decl->var->name) + 5] = 0;
         emit_static_array_copy(scope, ast->decl->var->type, dname, "_0");
-        printf(";\n");
+        write_fmt(";\n");
         free(dname);
 
         change_indent(-1);
         indent();
-        printf("}");
+        write_fmt("}");
     }
     ast->decl->var->initialized = 1;
 }
@@ -454,30 +710,30 @@ void emit_decl(Scope *scope, Ast *ast) {
     }
     emit_type(t);
     TypeComp c = t->resolved->comp;
-    printf("_vs_%d", ast->decl->var->id);
+    write_fmt("_vs_%d", ast->decl->var->id);
     if (ast->decl->init == NULL) {
         if (c == BASIC) {
             int b = t->resolved->data->base;
             if (b == STRING_T) {
-                printf(" = (struct string_type){0}");
+                write_fmt(" = (struct string_type){0}");
                 ast->decl->var->initialized = 1;
             } else if (b == INT_T || b == UINT_T || b == FLOAT_T) {
-                printf(" = 0");
+                write_fmt(" = 0");
             } else if (b == BASEPTR_T) {
-                printf(" = NULL");
+                write_fmt(" = NULL");
             }
         } else if (c == STRUCT) {
-            printf(";\n");
+            write_fmt(";\n");
             indent();
-            printf("_init_%d(&_vs_%d)", t->id, ast->decl->var->id);
+            write_fmt("_init_%d(&_vs_%d)", t->id, ast->decl->var->id);
             ast->decl->var->initialized = 1;
         } else if (c == REF)  {
-            printf(" = NULL");
+            write_fmt(" = NULL");
         } else if (c == ARRAY) {
-            printf(" = {0}");
+            write_fmt(" = {0}");
         }
     } else {
-        printf(" = ");
+        write_fmt(" = ");
         if (c == ARRAY) {
             compile_unspecified_array(scope, ast->decl->init);
         } else if (is_any(t) && !is_any(ast->decl->init->var_type)) {
@@ -499,30 +755,30 @@ void emit_func_decl(Scope *scope, Ast *fn) {
         return;
     }
     if (fn->fn_decl->polymorph_of) {
-        printf("/* polymorph %s of %s */\n", type_to_string(fn->fn_decl->var->type), fn->fn_decl->polymorph_of->var->name);
+        write_fmt("/* polymorph %s of %s */\n", type_to_string(fn->fn_decl->var->type), fn->fn_decl->polymorph_of->var->name);
     } else {
-        printf("/* %s */\n", fn->fn_decl->var->name);
+        write_fmt("/* %s */\n", fn->fn_decl->var->name);
     }
     indent();
     emit_type(r->fn.ret);
 
     assert(!fn->fn_decl->var->ext);
-    printf("_vs_%d(", fn->fn_decl->var->id);
+    write_fmt("_vs_%d(", fn->fn_decl->var->id);
 
     Var **args = fn->fn_decl->args;
     int nargs = array_len(args);
     for (int i = 0; i < nargs; i++) {
         if (i > 0) {
-            printf(",");
+            write_fmt(",");
         }
         if (r->fn.variadic && i == (nargs - 1)) {
-            printf("struct array_type ");
+            write_fmt("struct array_type ");
         } else {
             emit_type(args[i]->type);
         }
-        printf("_vs_%d", args[i]->id);
+        write_fmt("_vs_%d", args[i]->id);
     }
-    printf(") ");
+    write_fmt(") ");
 
     emit_scope_start(fn->fn_decl->scope);
     compile_block(fn->fn_decl->scope, fn->fn_decl->body);
@@ -537,35 +793,35 @@ void emit_structmember(Scope *scope, char *name, Type *st) {
             length += st->resolved->array.length;
             st = st->resolved->array.inner;
         }
-        printf("[%ld]", length);
+        write_fmt("[%ld]", length);
     } else {
         emit_type(st);
-        printf("%s", name);
+        write_fmt("%s", name);
     }
 }
 
 void emit_static_array_copy(Scope *scope, Type *t, char *dest, char *src) {
     Type *inner = t->resolved->array.inner;
     if (!is_dynamic(t)) {
-        printf("memcpy(%s, %s, sizeof(", dest, src);
+        write_fmt("memcpy(%s, %s, sizeof(", dest, src);
         emit_type(inner);
-        printf(") * %ld)", t->resolved->array.length);
+        write_fmt(") * %ld)", t->resolved->array.length);
         return;
     }
 
     int d = _static_array_copy_depth++;
-    printf("{\n");
+    write_fmt("{\n");
     change_indent(1);
     indent();
 
     emit_type(inner);
-    printf("d%d;\n", d);
+    write_fmt("d%d;\n", d);
     indent();
     emit_type(inner);
-    printf("s%d;\n", d);
+    write_fmt("s%d;\n", d);
     indent();
 
-    printf("for (int i = 0; i < %ld; i++) {\n", t->resolved->array.length);
+    write_fmt("for (int i = 0; i < %ld; i++) {\n", t->resolved->array.length);
     change_indent(1);
     indent();
 
@@ -580,27 +836,27 @@ void emit_static_array_copy(Scope *scope, Type *t, char *dest, char *src) {
         sprintf(sname, "s%d", d);
         sname[depth_len+2] = 0;
 
-        printf("%s = %s[i], %s = %s[i];\n", dname, dest, sname, src);
+        write_fmt("%s = %s[i], %s = %s[i];\n", dname, dest, sname, src);
         emit_static_array_copy(scope, t->resolved->array.inner, dname, sname);
 
         free(dname);
         free(sname);
     } else if (inner->resolved->comp == STRUCT) {
-        printf("%s[i] = _copy_%d(%s[i])", dest, inner->id, src);
+        write_fmt("%s[i] = _copy_%d(%s[i])", dest, inner->id, src);
     } else if (is_string(inner)) {
-        printf("%s[i] = copy_string(%s[i])", dest, src);
+        write_fmt("%s[i] = copy_string(%s[i])", dest, src);
     } else {
-        printf("%s[i] = %s[i]", dest, src);
+        write_fmt("%s[i] = %s[i]", dest, src);
     }
-    printf(";\n"); // TODO move this?
+    write_fmt(";\n"); // TODO move this?
 
     change_indent(-1);
     indent();
-    printf("}\n");
+    write_fmt("}\n");
 
     change_indent(-1);
     indent();
-    printf("}\n");
+    write_fmt("}\n");
     _static_array_copy_depth--;
 }
 
@@ -616,67 +872,67 @@ void emit_struct_decl(Scope *scope, Type *st) {
     array_push(struct_types, st);
 
     emit_type(st);
-    printf("{\n");
+    write_fmt("{\n");
 
     change_indent(1);
     for (int i = 0; i < array_len(r->st.member_names); i++) {
         indent();
         emit_structmember(scope, r->st.member_names[i], r->st.member_types[i]);
-        printf(";\n");
+        write_fmt(";\n");
     }
 
     change_indent(-1);
     indent();
-    printf("};\n");
+    write_fmt("};\n");
 
     emit_type(st);
-    printf("*_init_%d(", st->id);
+    write_fmt("*_init_%d(", st->id);
 
     emit_type(st);
-    printf("*x) {\n");
+    write_fmt("*x) {\n");
 
     change_indent(1);
     indent();
 
-    printf("if (x == NULL) {\n");
+    write_fmt("if (x == NULL) {\n");
 
     change_indent(1);
     indent();
 
-    printf("x = malloc(sizeof(");
+    write_fmt("x = malloc(sizeof(");
     emit_type(st);
-    printf("));\n");
+    write_fmt("));\n");
 
     change_indent(-1);
     indent();
-    printf("}\n");
+    write_fmt("}\n");
 
     indent();
-    printf("memset(x, 0, sizeof(");
+    write_fmt("memset(x, 0, sizeof(");
     emit_type(st);
-    printf("));\n");
+    write_fmt("));\n");
 
     /*for (int i = 0; i < r->st.nmembers; i++) {*/
         /*Type *t = r->st.member_types[i];*/
         /*if (t->comp == REF && t->ref.owned) {*/
             /*indent();*/
-            /*printf("x->%s = calloc(sizeof(", r->st.member_names[i]);*/
+            /*write_fmt("x->%s = calloc(sizeof(", r->st.member_names[i]);*/
             /*emit_type(t->ref.inner);*/
-            /*printf("), 1);\n");*/
+            /*write_fmt("), 1);\n");*/
         /*}*/
     /*}*/
 
     indent();
-    printf("return x;\n");
+    write_fmt("return x;\n");
     change_indent(-1);
     indent();
-    printf("}\n");
+    write_fmt("}\n");
 
     emit_type(st);
-    printf("_copy_%d(", st->id);
+    write_fmt("_copy_%d(", st->id);
 
     emit_type(st);
-    printf("x) {\n");
+    write_fmt("x) {\n");
 
     change_indent(1);
     for (int i = 0; i < array_len(r->st.member_names); i++) {
@@ -689,45 +945,45 @@ void emit_struct_decl(Scope *scope, Type *st) {
             char *member = malloc(sizeof(char) * (strlen(member_name) + 3));
             sprintf(member, "x.%s", member_name);
             emit_static_array_copy(scope, member_type, member, member);
-            printf(";\n");
+            write_fmt(";\n");
             free(member);
         } else if (is_string(member_type)) {
             indent();
-            printf("x.%s = copy_string(x.%s);\n", member_name, member_name);
+            write_fmt("x.%s = copy_string(x.%s);\n", member_name, member_name);
         } else if (rm->comp == STRUCT) {
             indent();
-            printf("x.%s = _copy_%d(x.%s);\n", member_name,
+            write_fmt("x.%s = _copy_%d(x.%s);\n", member_name,
                     member_type->id, member_name);
         } else if (rm->comp == REF && rm->ref.owned) {
             indent();
             emit_type(rm->ref.inner);
             if (is_string(rm->ref.inner)) {
-                printf("tmp%d = copy_string(*x.%s);\n", i, member_name);
+                write_fmt("tmp%d = copy_string(*x.%s);\n", i, member_name);
             } else if (rm->ref.inner->resolved->comp == STRUCT) {
-                printf("tmp%d = _copy_%d(*x.%s);\n", i, rm->ref.inner->id, member_name);
+                write_fmt("tmp%d = _copy_%d(*x.%s);\n", i, rm->ref.inner->id, member_name);
             } else {
-                printf("tmp%d = *x.%s;\n", i, member_name);
+                write_fmt("tmp%d = *x.%s;\n", i, member_name);
             }
             indent();
-            printf("x.%s = malloc(sizeof(", member_name);
+            write_fmt("x.%s = malloc(sizeof(", member_name);
             emit_type(r->st.member_types[i]);
-            printf("));\n");
+            write_fmt("));\n");
             indent();
-            printf("*x.%s = tmp%d;\n", member_name, i);
+            write_fmt("*x.%s = tmp%d;\n", member_name, i);
         }
     }
     indent();
-    printf("return x;\n");
+    write_fmt("return x;\n");
 
     change_indent(-1);
     indent();
-    printf("}\n");
+    write_fmt("}\n");
 }
 
 void compile_ref(Scope *scope, Ast *ast) {
     assert(is_lvalue(ast));
 
-    printf("&");
+    write_fmt("&");
     compile(scope, ast);
 }
 
@@ -744,7 +1000,7 @@ void compile_block(Scope *scope, AstBlock *block) {
         indent();
         if (needs_temp_var(stmt)) {
             Var *v = find_temp_var(scope, stmt);
-            printf("_tmp%d = ", v->id);
+            write_fmt("_tmp%d = ", v->id);
         }
         compile(scope, stmt);
 
@@ -752,19 +1008,19 @@ void compile_block(Scope *scope, AstBlock *block) {
             stmt->type != AST_FOR && stmt->type != AST_BLOCK &&
             stmt->type != AST_ANON_SCOPE && stmt->type != AST_IMPORT &&
             stmt->type != AST_TYPE_DECL && stmt->type != AST_ENUM_DECL) {
-            printf(";\n");
+            write_fmt(";\n");
         }
     }
 }
 
 void emit_any_wrapper(Scope *scope, Ast *ast) {
-    printf("(struct _type_vs_%d){.value_pointer=", get_any_type_id());
+    write_fmt("(struct _type_vs_%d){.value_pointer=", get_any_type_id());
     if (is_lvalue(ast)) {
         compile_ref(scope, ast);
     } else {
         emit_temp_var(scope, ast, 1);
     }
-    printf(",.type=(struct _type_vs_%d *)&_type_info%d}", get_typeinfo_type_id(), ast->var_type->id);
+    write_fmt(",.type=(struct _type_vs_%d *)&_type_info%d}", get_typeinfo_type_id(), ast->var_type->id);
 }
 
 void compile_call_arg(Scope *scope, Ast *ast, int arr) {
@@ -792,20 +1048,20 @@ void compile_fn_call(Scope *scope, Ast *ast) {
     Type **argtypes = r->fn.args;
 
     if (needs_wrapper) {
-        printf("((");
+        write_fmt("((");
         emit_type(r->fn.ret);
-        printf("(*)(");
+        write_fmt("(*)(");
         if (array_len(r->fn.args) == 0) {
-            printf("void");
+            write_fmt("void");
         } else {
             for (int i = 0; i < array_len(argtypes); i++) {
                 if (i > 0) {
-                    printf(",");
+                    write_fmt(",");
                 }
                 emit_type(argtypes[i]);
             }
         }
-        printf("))(");
+        write_fmt("))(");
     }
 
     if (needs_temp_var(ast->call->fn)) {
@@ -815,16 +1071,16 @@ void compile_fn_call(Scope *scope, Ast *ast) {
     }
 
     if (needs_wrapper) {
-        printf("))");
+        write_fmt("))");
     }
 
-    printf("(");
+    write_fmt("(");
 
     TempVar *vt = ast->call->variadic_tempvar;
     int type_index = 0;
     for (int i = 0; i < array_len(ast->call->args); i++) {
         if (i > 0) {
-            printf(",");
+            write_fmt(",");
         }
 
         if (!r->fn.variadic || i < array_len(argtypes) - 1) {
@@ -843,22 +1099,22 @@ void compile_fn_call(Scope *scope, Ast *ast) {
                 }
             } else {
                 if (i == array_len(r->fn.args) - 1) {
-                    printf("(");
+                    write_fmt("(");
                 }
                 if (i >= array_len(r->fn.args) - 1) {
-                    printf("_tmp%d[%d] = ", vt->var->id, i - (array_len(r->fn.args) - 1));
+                    write_fmt("_tmp%d[%d] = ", vt->var->id, i - (array_len(r->fn.args) - 1));
                 }
             }
         }
 
         if (is_any(defined_arg_type) && !is_any(arg_ast->var_type)) {
-            printf("(struct _type_vs_%d){.value_pointer=", get_any_type_id());
+            write_fmt("(struct _type_vs_%d){.value_pointer=", get_any_type_id());
             if (needs_temp_var(arg_ast)) {
                 emit_temp_var(scope, arg_ast, 1);
             } else {
                 compile_ref(scope, arg_ast);
             }
-            printf(",.type=(struct _type_vs_%d *)&_type_info%d}", get_typeinfo_type_id(), arg_ast->var_type->id);
+            write_fmt(",.type=(struct _type_vs_%d *)&_type_info%d}", get_typeinfo_type_id(), arg_ast->var_type->id);
         } else {
             compile_call_arg(scope, arg_ast, defined_arg_type->resolved->comp == ARRAY);
         }
@@ -866,45 +1122,45 @@ void compile_fn_call(Scope *scope, Ast *ast) {
 
     if (r->fn.variadic && !ast->call->has_spread) {
         if (array_len(ast->call->args) - array_len(r->fn.args) < 0) {
-            printf(", (struct array_type){0, NULL}");
+            write_fmt(", (struct array_type){0, NULL}");
         } else if (array_len(ast->call->args) > array_len(r->fn.args) - 1) {
-            printf(", (struct array_type){%ld, _tmp%d})",
+            write_fmt(", (struct array_type){%ld, _tmp%d})",
                 vt->var->type->resolved->array.length, vt->var->id); // this assumes we have set vt correctly
         }
     }
-    printf(")");
+    write_fmt(")");
 }
 
 void emit_scope_start(Scope *scope) {
-    printf("{\n");
+    write_fmt("{\n");
     change_indent(1);
     for (int i = 0; i < array_len(scope->temp_vars); i++) {
         Type *t = scope->temp_vars[i]->var->type;
         indent();
         if (t->resolved->comp == STATIC_ARRAY) {
             emit_type(t->resolved->array.inner);
-            printf("_tmp%d[%ld]", scope->temp_vars[i]->var->id, t->resolved->array.length);
+            write_fmt("_tmp%d[%ld]", scope->temp_vars[i]->var->id, t->resolved->array.length);
         } else {
             emit_type(t);
-            printf("_tmp%d", scope->temp_vars[i]->var->id);
+            write_fmt("_tmp%d", scope->temp_vars[i]->var->id);
             if (t->resolved->comp == STRUCT || is_string(t)) {
-                printf(" = {0}");
+                write_fmt(" = {0}");
             }
         }
-        printf(";\n");
+        write_fmt(";\n");
     }
 }
 
 void open_block() {
     indent();
-    printf("{\n");
+    write_fmt("{\n");
     change_indent(1);
 }
 
 void close_block() {
     change_indent(-1);
     indent();
-    printf("}\n");
+    write_fmt("}\n");
 }
 
 void emit_free_struct(Scope *scope, char *name, Type *st, int is_ref) {
@@ -920,7 +1176,7 @@ void emit_free_struct(Scope *scope, char *name, Type *st, int is_ref) {
 
         if (is_string(member_type)) {
             indent();
-            printf("free(%s.bytes);\n", memname);
+            write_fmt("free(%s.bytes);\n", memname);
         } else if (member_res->comp == STRUCT) {
             int ref = (member_res->comp == REF || (member_res->comp == BASIC && member_res->data->base == BASEPTR_T));
             emit_free_struct(scope, memname, r->st.member_types[i], ref);
@@ -930,10 +1186,10 @@ void emit_free_struct(Scope *scope, char *name, Type *st, int is_ref) {
 
                 indent();
                 emit_type(member_res->array.inner);
-                printf("*_0 = %s.data;\n", memname);
+                write_fmt("*_0 = %s.data;\n", memname);
 
                 indent();
-                printf("for (int i = 0; i < %s.length; i++) {\n", memname);
+                write_fmt("for (int i = 0; i < %s.length; i++) {\n", memname);
 
                 change_indent(1);
                 indent();
@@ -941,7 +1197,7 @@ void emit_free_struct(Scope *scope, char *name, Type *st, int is_ref) {
 
                 Var *v = make_var("<i>", member_res->array.inner);
                 v->initialized = 1;
-                printf("_vs_%d = _0[i];\n", v->id);
+                write_fmt("_vs_%d = _0[i];\n", v->id);
 
                 emit_free(scope, v);
                 free(v);
@@ -950,7 +1206,7 @@ void emit_free_struct(Scope *scope, char *name, Type *st, int is_ref) {
                 close_block();
             }
             indent();
-            printf("free(%s.data);\n", memname);
+            write_fmt("free(%s.data);\n", memname);
         } else if (member_res->comp == REF && member_res->ref.owned) {
             Type *inner = member_res->ref.inner;
 
@@ -958,11 +1214,11 @@ void emit_free_struct(Scope *scope, char *name, Type *st, int is_ref) {
                 emit_free_struct(scope, memname, inner, 1);
             } else if (is_string(inner)) { // TODO should this behave this way?
                 indent();
-                printf("free(%s->bytes);\n", memname);
+                write_fmt("free(%s->bytes);\n", memname);
             }
 
             indent();
-            printf("free(%s);\n", memname);
+            write_fmt("free(%s);\n", memname);
         }
         free(memname);
     }
@@ -981,14 +1237,14 @@ void emit_free(Scope *scope, Var *var) {
                 emit_free_struct(scope, name, inner, 1);
                 free(name);
                 indent();
-                printf("free(");
-                printf(name_fmt, var->id);
-                printf(");\n");
+                write_fmt("free(");
+                write_fmt(name_fmt, var->id);
+                write_fmt(");\n");
             } else if (is_string(inner)) { // TODO should this behave this way?
                 indent();
-                printf("free(");
-                printf(name_fmt, var->id);
-                printf("->bytes);\n");
+                write_fmt("free(");
+                write_fmt(name_fmt, var->id);
+                write_fmt("->bytes);\n");
             }
         }
     } else if (r->comp == STATIC_ARRAY) {
@@ -997,12 +1253,12 @@ void emit_free(Scope *scope, Var *var) {
 
             indent();
             emit_type(r->array.inner);
-            printf("*_0 = ");
-            printf(name_fmt, var->id);
-            printf(";\n");
+            write_fmt("*_0 = ");
+            write_fmt(name_fmt, var->id);
+            write_fmt(";\n");
 
             indent();
-            printf("for (int i = 0; i < %ld; i++) {\n", r->array.length);
+            write_fmt("for (int i = 0; i < %ld; i++) {\n", r->array.length);
 
             change_indent(1);
             indent();
@@ -1010,7 +1266,7 @@ void emit_free(Scope *scope, Var *var) {
 
             Var *v = make_var("<i>", r->array.inner);
             v->initialized = 1;
-            printf("_vs_%d = _0[i];\n", v->id);
+            write_fmt("_vs_%d = _0[i];\n", v->id);
 
             emit_free(scope, v);
             free(v);
@@ -1025,14 +1281,14 @@ void emit_free(Scope *scope, Var *var) {
 
                 indent();
                 emit_type(r->array.inner);
-                printf("*_0 = ");
-                printf(name_fmt, var->id);
-                printf(".data;\n");
+                write_fmt("*_0 = ");
+                write_fmt(name_fmt, var->id);
+                write_fmt(".data;\n");
 
                 indent();
-                printf("for (int i = 0; i < ");
-                printf(name_fmt, var->id);
-                printf(".length; i++) {\n");
+                write_fmt("for (int i = 0; i < ");
+                write_fmt(name_fmt, var->id);
+                write_fmt(".length; i++) {\n");
 
                 change_indent(1);
                 indent();
@@ -1040,7 +1296,7 @@ void emit_free(Scope *scope, Var *var) {
 
                 Var *v = make_var("<i>", r->array.inner);
                 v->initialized = 1;
-                printf("_vs_%d = _0[i];\n", v->id);
+                write_fmt("_vs_%d = _0[i];\n", v->id);
 
                 emit_free(scope, v);
                 free(v);
@@ -1048,9 +1304,9 @@ void emit_free(Scope *scope, Var *var) {
                 close_block();
                 close_block();
             }
-            printf("free(");
-            printf(name_fmt, var->id);
-            printf(".data);\n");
+            write_fmt("free(");
+            write_fmt(name_fmt, var->id);
+            write_fmt(".data);\n");
         }
     } else if (r->comp == STRUCT) {
         char *name;
@@ -1061,9 +1317,9 @@ void emit_free(Scope *scope, Var *var) {
     } else if (r->comp == BASIC) {
         if (r->data->base == STRING_T) {
             indent();
-            printf("free(");
-            printf(name_fmt, var->id);
-            printf(".bytes);\n");
+            write_fmt("free(");
+            write_fmt(name_fmt, var->id);
+            write_fmt(".bytes);\n");
         }
     }
 }
@@ -1114,7 +1370,7 @@ void emit_init_scope_end(Scope *scope) {
     emit_free_temp(scope);
     change_indent(-1);
     indent();
-    printf("}\n");
+    write_fmt("}\n");
 }
 
 void emit_scope_end(Scope *scope) {
@@ -1124,7 +1380,7 @@ void emit_scope_end(Scope *scope) {
     }
     change_indent(-1);
     indent();
-    printf("}\n");
+    write_fmt("}\n");
 }
 
 void emit_deferred(Scope *scope) {
@@ -1133,37 +1389,37 @@ void emit_deferred(Scope *scope) {
         indent();
         if (needs_temp_var(d)) {
             Var *v = find_temp_var(scope, d);
-            printf("_tmp%d = ", v->id);
+            write_fmt("_tmp%d = ", v->id);
         }
         compile(scope, d);
-        printf(";\n");
+        write_fmt(";\n");
     }
 }
 
 void emit_extern_fn_decl(Scope *scope, Var *v) {
-    printf("extern ");
+    write_fmt("extern ");
 
     ResolvedType *r = v->type->resolved;
     emit_type(r->fn.ret);
-    printf("%s(", v->name);
+    write_fmt("%s(", v->name);
     for (int i = 0; i < array_len(r->fn.args); i++) {
         if (i > 0) {
-            printf(",");
+            write_fmt(",");
         }
         emit_type(r->fn.args[i]);
     }
-    printf(");\n");
+    write_fmt(");\n");
 
     emit_type(r->fn.ret);
-    printf("(*_vs_%s)(", v->name);
+    write_fmt("(*_vs_%s)(", v->name);
 
     for (int i = 0; i < array_len(r->fn.args); i++) {
         if (i > 0) {
-            printf(",");
+            write_fmt(",");
         }
         emit_type(r->fn.args[i]);
     }
-    printf(") = %s;\n", v->name);
+    write_fmt(") = %s;\n", v->name);
 }
 
 void emit_var_decl(Scope *scope, Var *v) {
@@ -1175,28 +1431,28 @@ void emit_var_decl(Scope *scope, Var *v) {
     ResolvedType *r = v->type->resolved;
     if (r->comp == FUNC) {
         emit_type(r->fn.ret);
-        printf("(*");
+        write_fmt("(*");
     } else if (r->comp == STATIC_ARRAY) {
         emit_type(r->array.inner);
-        printf("_vs_%d[%ld] = {0};\n", v->id, r->array.length);
+        write_fmt("_vs_%d[%ld] = {0};\n", v->id, r->array.length);
         return;
     } else {
         emit_type(v->type);
     }
 
-    printf("_vs_%d", v->id);
+    write_fmt("_vs_%d", v->id);
     if (r->comp == FUNC) {
-        printf(")(");
+        write_fmt(")(");
         for (int i = 0; i < array_len(r->fn.args); i++) {
             if (i > 0) {
-                printf(",");
+                write_fmt(",");
             }
             emit_type(r->fn.args[i]);
-            printf("a%d", i);
+            write_fmt("a%d", i);
         }
-        printf(")");
+        write_fmt(")");
     }
-    printf(";\n");
+    write_fmt(";\n");
 }
 
 void emit_forward_decl(Scope *scope, AstFnDecl *decl) {
@@ -1206,30 +1462,30 @@ void emit_forward_decl(Scope *scope, AstFnDecl *decl) {
         return;
     }
     if (decl->polymorph_of) {
-        printf("/* polymorph %s of %s */\n", type_to_string(decl->var->type), decl->polymorph_of->var->name);
+        write_fmt("/* polymorph %s of %s */\n", type_to_string(decl->var->type), decl->polymorph_of->var->name);
     } else {
-        printf("/* %s */\n", decl->var->name);
+        write_fmt("/* %s */\n", decl->var->name);
     }
     if (decl->var->ext) {
-        printf("extern ");
+        write_fmt("extern ");
     }
     assert(r->comp == FUNC);
     emit_type(r->fn.ret);
 
-    printf("_vs_%d(", decl->var->id);
+    write_fmt("_vs_%d(", decl->var->id);
 
     for (int i = 0; i < array_len(r->fn.args); i++) {
         if (i > 0) {
-            printf(",");
+            write_fmt(",");
         }
         if (r->fn.variadic && i == (array_len(r->fn.args) - 1)) {
-            printf("struct array_type ");
+            write_fmt("struct array_type ");
         } else {
             emit_type(r->fn.args[i]);
         }
-        printf("a%d", i);
+        write_fmt("a%d", i);
     }
-    printf(");\n");
+    write_fmt(");\n");
 }
 
 void emit_slice(Scope *scope, Ast *ast) {
@@ -1237,29 +1493,29 @@ void emit_slice(Scope *scope, Ast *ast) {
     ResolvedType *r = obj_type->resolved;
 
     if (is_string(obj_type)) {
-        printf("string_slice(");
+        write_fmt("string_slice(");
         compile(scope, ast->slice->object);
-        printf(",");
+        write_fmt(",");
         if (ast->slice->offset != NULL) {
             compile(scope, ast->slice->offset);
         } else {
-            printf("0");
+            write_fmt("0");
         }
-        printf(",");
+        write_fmt(",");
         if (ast->slice->length != NULL) {
             compile(scope, ast->slice->length);
         } else {
-            printf("-1");
+            write_fmt("-1");
         }
-        printf(")");
+        write_fmt(")");
         return;
     }
 
     if (r->comp == STATIC_ARRAY) {
-        printf("(struct array_type){.data=");
+        write_fmt("(struct array_type){.data=");
 
         if (ast->slice->offset != NULL) {
-            printf("((char *)");
+            write_fmt("((char *)");
         }
 
         if (needs_temp_var(ast->slice->object)) {
@@ -1269,46 +1525,46 @@ void emit_slice(Scope *scope, Ast *ast) {
         }
 
         if (ast->slice->offset != NULL) {
-            printf(")+(");
+            write_fmt(")+(");
             compile(scope, ast->slice->offset);
-            printf("*sizeof(");
+            write_fmt("*sizeof(");
             emit_type(r->array.inner);
-            printf("))");
+            write_fmt("))");
         }
 
-        printf(",.length=");
+        write_fmt(",.length=");
         if (ast->slice->length != NULL) {
             compile(scope, ast->slice->length);
         } else {
-            printf("%ld", r->array.length);
+            write_fmt("%ld", r->array.length);
         }
 
         if (ast->slice->offset != NULL) {
-            printf("-");
+            write_fmt("-");
             compile(scope, ast->slice->offset);
         }
-        printf("}");
+        write_fmt("}");
     } else { // ARRAY
-        printf("array_slice(");
+        write_fmt("array_slice(");
 
         compile_unspecified_array(scope, ast->slice->object);
 
-        printf(",");
+        write_fmt(",");
         if (ast->slice->offset != NULL) {
             compile(scope, ast->slice->offset);
-            printf(",sizeof(");
+            write_fmt(",sizeof(");
             emit_type(r->array.inner);
-            printf("),");
+            write_fmt("),");
         } else {
-            printf("0,0,");
+            write_fmt("0,0,");
         }
 
         if (ast->slice->length != NULL) {
             compile(scope, ast->slice->length);
         } else {
-            printf("-1");
+            write_fmt("-1");
         }
-        printf(")");
+        write_fmt(")");
     }
 }
 
@@ -1316,7 +1572,7 @@ void emit_return(Scope *scope, Ast *ast) {
     Var *ret = NULL;
     if (ast->ret->expr != NULL) {
         emit_type(ast->ret->expr->var_type);
-        printf("_ret = ");
+        write_fmt("_ret = ");
         // TODO: if this doesn't actually need to be copied, we have to make
         // sure it isn't cleaned up on return
         if (is_lvalue(ast->ret->expr)) {
@@ -1324,7 +1580,7 @@ void emit_return(Scope *scope, Ast *ast) {
         } else {
             compile(scope, ast->ret->expr);
         }
-        printf(";");
+        write_fmt(";");
 
         // TODO: check the type, only do this for owned?
         if (ast->ret->expr->type == AST_IDENTIFIER) {
@@ -1336,7 +1592,7 @@ void emit_return(Scope *scope, Ast *ast) {
             ret = find_temp_var(scope, ast->ret->expr);
         }
     }
-    printf("\n");
+    write_fmt("\n");
     emit_deferred(scope);
 
     // emit parent defers
@@ -1353,70 +1609,70 @@ void emit_return(Scope *scope, Ast *ast) {
             indent();
             if (needs_temp_var(d)) {
                 Var *v = find_temp_var(s, d);
-                printf("_tmp%d = ", v->id);
+                write_fmt("_tmp%d = ", v->id);
             }
             compile(s, d);
-            printf(";\n");
+            write_fmt(";\n");
         }
         s = s->parent;
     }
 
     indent();
-    printf("return");
+    write_fmt("return");
     if (ast->ret->expr != NULL) {
-        printf(" _ret");
+        write_fmt(" _ret");
     }
 }
 
 void emit_for_loop(Scope *scope, Ast *ast) {
     // TODO: loop depth should change iter var name?
-    printf("{\n");
+    write_fmt("{\n");
     change_indent(1);
     indent();
 
-    printf("struct array_type _iter = ");
+    write_fmt("struct array_type _iter = ");
     compile_unspecified_array(scope, ast->for_loop->iterable);
-    printf(";\n");
+    write_fmt(";\n");
 
     if (ast->for_loop->index != NULL) {
         indent();
         emit_type(ast->for_loop->index->type);
-        printf("_vs_%d;\n", ast->for_loop->index->id);
+        write_fmt("_vs_%d;\n", ast->for_loop->index->id);
     }
 
     indent();
-    printf("for (long _i = 0; _i < _iter.length; _i++) {\n");
+    write_fmt("for (long _i = 0; _i < _iter.length; _i++) {\n");
 
     change_indent(1);
     indent();
 
     if (ast->for_loop->by_reference) {
         emit_type(ast->for_loop->itervar->type);
-        printf("_vs_%d = ", ast->for_loop->itervar->id);
-        printf("&");
-        printf("((");
+        write_fmt("_vs_%d = ", ast->for_loop->itervar->id);
+        write_fmt("&");
+        write_fmt("((");
         emit_type(ast->for_loop->itervar->type);
-        printf(")_iter.data)[_i];\n");
+        write_fmt(")_iter.data)[_i];\n");
     } else {
         Type *t = ast->for_loop->itervar->type;
         emit_type(t);
-        printf("_vs_%d = ", ast->for_loop->itervar->id);
+        write_fmt("_vs_%d = ", ast->for_loop->itervar->id);
         if (is_string(t)) {
-            printf("copy_string");
+            write_fmt("copy_string");
         } else if (t->resolved->comp == STRUCT && is_dynamic(t)) {
-            printf("_copy_%d", t->id);
+            write_fmt("_copy_%d", t->id);
         }
-        printf("(((");
+        write_fmt("(((");
         emit_type(t);
-        printf("*)_iter.data)[_i]);\n");
+        write_fmt("*)_iter.data)[_i]);\n");
     }
 
     if (ast->for_loop->index != NULL) {
         indent();
         emit_type(ast->for_loop->index->type);
-        printf("_vs_%d = (", ast->for_loop->index->id);
+        write_fmt("_vs_%d = (", ast->for_loop->index->id);
         emit_type(ast->for_loop->index->type);
-        printf(")_i;\n");
+        write_fmt(")_i;\n");
     }
 
     indent();
@@ -1427,30 +1683,30 @@ void emit_for_loop(Scope *scope, Ast *ast) {
 
     change_indent(-1);
     indent();
-    printf("}\n");
+    write_fmt("}\n");
 
     change_indent(-1);
     indent();
-    printf("}\n");
+    write_fmt("}\n");
 }
 
 void emit_integer_literal(Scope *scope, Ast *ast) {
     ResolvedType *res = ast->var_type->resolved;
-    printf("%lld", ast->lit->int_val);
+    write_fmt("%lld", ast->lit->int_val);
     // This may break somehow but I'm pissed and don't want to make it
     // right
     switch (res->data->size) {
         case 8:
             if (res->data->base == UINT_T) {
-                printf("U");
+                write_fmt("U");
             }
-            printf("LL");
+            write_fmt("LL");
             break;
         case 4:
             if (res->data->base == UINT_T) {
-                printf("U");
+                write_fmt("U");
             }
-            printf("L");
+            write_fmt("L");
             break;
         default:
             break;
@@ -1458,14 +1714,14 @@ void emit_integer_literal(Scope *scope, Ast *ast) {
 }
 
 void emit_struct_literal(Scope *scope, Ast *ast) {
-    printf("(struct _type_vs_%d){", ast->var_type->id);
+    write_fmt("(struct _type_vs_%d){", ast->var_type->id);
     if (array_len(ast->lit->compound_val.member_exprs) == 0) {
-        printf("0");
+        write_fmt("0");
     } else {
         StructType st = ast->var_type->resolved->st;
         for (int i = 0; i < array_len(ast->lit->compound_val.member_exprs); i++) {
             Ast *expr = ast->lit->compound_val.member_exprs[i];
-            printf(".%s = ", ast->lit->compound_val.member_names[i]);
+            write_fmt(".%s = ", ast->lit->compound_val.member_names[i]);
 
             if (is_any(st.member_types[i]) && !is_any(expr->var_type)) {
                 emit_any_wrapper(scope, expr);
@@ -1476,21 +1732,21 @@ void emit_struct_literal(Scope *scope, Ast *ast) {
             }
 
             if (i != array_len(st.member_names) - 1) {
-                printf(", ");
+                write_fmt(", ");
             }
         }
     }
-    printf("}");
+    write_fmt("}");
 }
 
 void emit_array_literal(Scope *scope, Ast *ast) {
     TempVar *tmp = ast->lit->compound_val.array_tempvar;
     long n = array_len(ast->lit->compound_val.member_exprs);
 
-    printf("(");
+    write_fmt("(");
     for (int i = 0; i < n; i++) {
         Ast *expr = ast->lit->compound_val.member_exprs[i];
-        printf("_tmp%d[%d] = ", tmp->var->id, i);
+        write_fmt("_tmp%d[%d] = ", tmp->var->id, i);
 
         if (is_any(tmp->var->type->resolved->array.inner) && !is_any(expr->var_type)) {
             emit_any_wrapper(scope, expr);
@@ -1500,12 +1756,12 @@ void emit_array_literal(Scope *scope, Ast *ast) {
             compile(scope, expr);
         }
 
-        printf(",");
+        write_fmt(",");
     }
     if (ast->var_type->resolved->comp == STATIC_ARRAY) {
-        printf("_tmp%d)", tmp->var->id);
+        write_fmt("_tmp%d)", tmp->var->id);
     } else {
-        printf("(struct array_type){%ld, _tmp%d})", n, tmp->var->id);
+        write_fmt("(struct array_type){%ld, _tmp%d})", n, tmp->var->id);
     }
 }
 
@@ -1515,18 +1771,18 @@ void emit_literal(Scope *scope, Ast *ast) {
         emit_integer_literal(scope, ast);
         break;
     case FLOAT: // TODO this is truncated
-        printf("%F", ast->lit->float_val);
+        write_fmt("%F", ast->lit->float_val);
         break;
     case CHAR:
-        printf("'%c'", (unsigned char)ast->lit->int_val);
+        write_fmt("'%c'", (unsigned char)ast->lit->int_val);
         break;
     case BOOL:
-        printf("%d", (unsigned char)ast->lit->int_val);
+        write_fmt("%d", (unsigned char)ast->lit->int_val);
         break;
     case STRING:
-        printf("init_string(\"");
-        print_quoted_string(ast->lit->string_val);
-        printf("\", %d)", (int)strlen(ast->lit->string_val));
+        write_fmt("init_string(\"");
+        print_quoted_string(output, ast->lit->string_val);
+        write_fmt("\", %d)", (int)strlen(ast->lit->string_val));
         break;
     case STRUCT_LIT:
         emit_struct_literal(scope, ast);
@@ -1535,7 +1791,7 @@ void emit_literal(Scope *scope, Ast *ast) {
         emit_array_literal(scope, ast);
         break;
     case ENUM_LIT:
-        printf("%ld", enum_type_val(ast->lit->enum_val.enum_type, ast->lit->enum_val.enum_index));
+        write_fmt("%ld", enum_type_val(ast->lit->enum_val.enum_type, ast->lit->enum_val.enum_index));
         break;
     case COMPOUND_LIT:
         error(ast->line, ast->file, "<internal> literal type should be determined at this point");
@@ -1545,11 +1801,11 @@ void emit_literal(Scope *scope, Ast *ast) {
 
 void emit_array_index(Scope *scope, Ast *ast) {
     Type *lt = ast->index->object->var_type;
-    printf("(");
+    write_fmt("(");
     if (lt->resolved->comp == ARRAY) {
-        printf("(");
+        write_fmt("(");
         emit_type(lt->resolved->array.inner);
-        printf("*)");
+        write_fmt("*)");
     }
 
     if (needs_temp_var(ast->index->object)) {
@@ -1558,7 +1814,7 @@ void emit_array_index(Scope *scope, Ast *ast) {
         compile_static_array(scope, ast->index->object);
     }
 
-    printf(")[");
+    write_fmt(")[");
 
     if (needs_temp_var(ast->index->index)) {
         emit_temp_var(scope, ast->index->index, 0);
@@ -1566,11 +1822,11 @@ void emit_array_index(Scope *scope, Ast *ast) {
         compile(scope, ast->index->index);
     }
 
-    printf("]");
+    write_fmt("]");
 }
 
 void emit_string_index(Scope *scope, Ast *ast) {
-    printf("((uint8_t*)");
+    write_fmt("((uint8_t*)");
     if (needs_temp_var(ast->index->object)) {
         emit_temp_var(scope, ast->index->object, 0);
     } else {
@@ -1578,7 +1834,7 @@ void emit_string_index(Scope *scope, Ast *ast) {
         compile(scope, ast->index->object);
     }
 
-    printf(".bytes)[");
+    write_fmt(".bytes)[");
 
     if (needs_temp_var(ast->index->index)) {
         emit_temp_var(scope, ast->index->index, 0);
@@ -1586,7 +1842,7 @@ void emit_string_index(Scope *scope, Ast *ast) {
         compile(scope, ast->index->index);
     }
 
-    printf("]");
+    write_fmt("]");
 }
 
 void emit_index(Scope *scope, Ast *ast) {
@@ -1598,6 +1854,52 @@ void emit_index(Scope *scope, Ast *ast) {
     } else {
         error(ast->line, ast->file, "<internal> bad type %s for index", type_to_string(lt));
     }
+}
+
+void emit_parent_defers_recursively(Scope *scope) {
+    for (Scope *s = scope; s->parent != NULL; s = s->parent) {
+        emit_free_locals(s);
+        if (s->type == Loop) {
+            break;
+        }
+        // TODO: I don't think this will work if there are multiple scopes
+        // nested and defers are added after a break
+        for (int i = s->parent_deferred; i >= 0; --i) {
+            Ast *d = s->parent->deferred[i];
+            indent();
+            if (needs_temp_var(d)) {
+                Var *v = find_temp_var(s, d);
+                write_fmt("_tmp%d = ", v->id);
+            }
+            compile(s, d);
+            write_fmt(";\n");
+        }
+    }
+}
+
+void emit_cast(Scope *scope, Ast *ast) {
+    if (is_any(ast->cast->cast_type)) {
+        emit_any_wrapper(scope, ast->cast->object);
+        return;
+    }
+    ResolvedType *r = ast->cast->cast_type->resolved;
+    if (r->comp == STRUCT) {
+        write_fmt("*");
+    }
+
+    write_fmt("((");
+    emit_type(ast->cast->cast_type);
+    if (r->comp == STRUCT) {
+        write_fmt("*");
+    }
+
+    write_fmt(")");
+    if (r->comp == STRUCT) {
+        write_fmt("&");
+    }
+
+    compile(scope, ast->cast->object);
+    write_fmt(")");
 }
 
 void compile(Scope *scope, Ast *ast) {
@@ -1621,114 +1923,52 @@ void compile(Scope *scope, Ast *ast) {
         Var *tmp = find_temp_var(scope, ast);
         // no temp var in case of declaration
         if (tmp) {
-            printf("(_tmp%d = ", tmp->id);
+            write_fmt("(_tmp%d = ", tmp->id);
         }
 
         ResolvedType *r = ast->var_type->resolved;
         if (r->comp == ARRAY) {
-            printf("(allocate_array(");
+            write_fmt("(allocate_array(");
             compile(scope, ast->new->count);
-            printf(",sizeof(");
+            write_fmt(",sizeof(");
             emit_type(r->array.inner);
-            printf(")))");
+            write_fmt(")))");
         } else {
             assert(r->comp == REF);
-            printf("(_init_%d(NULL))", r->ref.inner->id);
+            write_fmt("(_init_%d(NULL))", r->ref.inner->id);
         }
         if (tmp) {
-            printf(")");
+            write_fmt(")");
         }
         break;
     }
-    case AST_CAST: {
-        if (is_any(ast->cast->cast_type)) {
-            emit_any_wrapper(scope, ast->cast->object);
-            break;
-        }
-        ResolvedType *r = ast->cast->cast_type->resolved;
-        if (r->comp == STRUCT) {
-            printf("*");
-        }
-
-        printf("((");
-        emit_type(ast->cast->cast_type);
-        if (r->comp == STRUCT) {
-            printf("*");
-        }
-
-        printf(")");
-        if (r->comp == STRUCT) {
-            printf("&");
-        }
-
-        compile(scope, ast->cast->object);
-        printf(")");
+    case AST_CAST:
+        emit_cast(scope, ast);
         break;
-    }
     case AST_SLICE:
         emit_slice(scope, ast);
         break;
     case AST_IDENTIFIER:
         assert(!ast->ident->var->proxy);
         if (ast->ident->var->ext) {
-            printf("_vs_%s", ast->ident->var->name);
+            write_fmt("_vs_%s", ast->ident->var->name);
         } else {
-            printf("_vs_%d", ast->ident->var->id);
+            write_fmt("_vs_%d", ast->ident->var->id);
         }
         break;
     case AST_RETURN:
         emit_return(scope, ast);
         break;
-    case AST_BREAK: {
+    case AST_BREAK:
         emit_deferred(scope);
-        Scope *s = scope;
-        while (s->parent != NULL) {
-            emit_free_locals(s);
-            if (s->type == Loop) {
-                break;
-            }
-            // TODO: I don't think this will work if there are multiple scopes
-            // nested and defers are added after a break
-            for (int i = s->parent_deferred; i >= 0; --i) {
-                Ast *d = s->parent->deferred[i];
-                indent();
-                if (needs_temp_var(d)) {
-                    Var *v = find_temp_var(s, d);
-                    printf("_tmp%d = ", v->id);
-                }
-                compile(s, d);
-                printf(";\n");
-            }
-            s = s->parent;
-        }
-        printf("break");
+        emit_parent_defers_recursively(scope);
+        write_fmt("break");
         break;
-    }
-    case AST_CONTINUE: {
+    case AST_CONTINUE:
         emit_deferred(scope);
-        Scope *s = scope;
-        while (s->parent != NULL) {
-            emit_free_locals(s);
-            if (s->type == Loop) {
-                break;
-            }
-            // TODO: I don't think this will work if there are multiple scopes
-            // nested and defers are added after a break
-            for (int i = s->parent_deferred; i >= 0; --i) {
-                Ast *d = s->parent->deferred[i];
-                indent();
-                if (needs_temp_var(d)) {
-                    Var *v = find_temp_var(s, d);
-                    printf("_tmp%d = ", v->id);
-                }
-                compile(s, d);
-                printf(";\n");
-            }
-            s = s->parent;
-        }
-        printf("continue");
+        emit_parent_defers_recursively(scope);
+        write_fmt("continue");
         break;
-    }
     case AST_DECL:
         emit_decl(scope, ast);
         break;
@@ -1736,7 +1976,7 @@ void compile(Scope *scope, Ast *ast) {
     case AST_EXTERN_FUNC_DECL:
         break;
     case AST_ANON_FUNC_DECL:
-        printf("_vs_%d", ast->fn_decl->var->id);
+        write_fmt("_vs_%d", ast->fn_decl->var->id);
         break;
     case AST_CALL:
         compile_fn_call(scope, ast);
@@ -1756,18 +1996,18 @@ void compile(Scope *scope, Ast *ast) {
         emit_scope_start(ast->cond->initializer_scope);
         if (ast->cond->initializer) {
             compile(ast->cond->initializer_scope, ast->cond->initializer);
-            printf(";\n");
+            write_fmt(";\n");
             indent();
         }
-        printf("if (");
+        write_fmt("if (");
         compile(ast->cond->initializer_scope, ast->cond->condition);
-        printf(") ");
+        write_fmt(") ");
         emit_scope_start(ast->cond->if_scope);
         compile_block(ast->cond->if_scope, ast->cond->if_body);
         emit_scope_end(ast->cond->if_scope);
         if (ast->cond->else_body != NULL) {
             indent();
-            printf("else ");
+            write_fmt("else ");
             emit_scope_start(ast->cond->else_scope);
             compile_block(ast->cond->else_scope, ast->cond->else_body);
             emit_scope_end(ast->cond->else_scope);
@@ -1778,12 +2018,12 @@ void compile(Scope *scope, Ast *ast) {
         emit_scope_start(ast->while_loop->scope);
         if (ast->while_loop->initializer) {
             compile(ast->while_loop->scope, ast->while_loop->initializer);
-            printf(";\n");
+            write_fmt(";\n");
             indent();
         }
-        printf("while (");
+        write_fmt("while (");
         compile(ast->while_loop->inner_scope, ast->while_loop->condition);
-        printf(") ");
+        write_fmt(") ");
         emit_scope_start(ast->while_loop->inner_scope);
         compile_block(ast->while_loop->inner_scope, ast->while_loop->body);
         emit_scope_end(ast->while_loop->inner_scope);
@@ -1793,7 +2033,7 @@ void compile(Scope *scope, Ast *ast) {
         emit_for_loop(scope, ast);
         break;
     case AST_TYPEINFO:
-        printf("((struct _type_vs_%d *)&_type_info%d)",
+        write_fmt("((struct _type_vs_%d *)&_type_info%d)",
             get_typeinfo_type_id(),
             ast->typeinfo->typeinfo_target->id);
         break;
