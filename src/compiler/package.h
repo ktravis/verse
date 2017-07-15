@@ -13,6 +13,8 @@ Package **all_loaded_packages();
 void push_current_package(Package *p);
 Package *pop_current_package();
 Package *load_package(int from_line, char *current_file, Scope *scope, char *path);
+char *package_path_from_import_string(char *imp);
+char **package_source_files(int from_line, char *from_file, char *package_path);
 Package *lookup_imported_package(Scope *scope, char *name);
 int file_is_verse_source(char *name, int namelen);
 

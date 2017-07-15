@@ -878,7 +878,7 @@ Ast *parse_statement(Tok *t, int eat_semi) {
             int line = lineno();
             if (t->type != TOK_STR || !expect_line_break_or_semicolon()) {
                 error(line, current_file_name(),
-                    "Unexpected token '%s' while parsing import directive.",
+                    "Unexpected token '%s' while parsing include directive.",
                     tok_to_string(t));
             }
             char *path = t->sval;
@@ -899,7 +899,7 @@ Ast *parse_statement(Tok *t, int eat_semi) {
             int line = lineno();
             if (t->type != TOK_STR || !expect_line_break_or_semicolon()) {
                 error(line, current_file_name(),
-                    "Unexpected token '%s' while parsing load directive.",
+                    "Unexpected token '%s' while parsing import directive.",
                     tok_to_string(t));
             }
             // TODO: pass more context for error 
@@ -907,6 +907,20 @@ Ast *parse_statement(Tok *t, int eat_semi) {
             ast->line = line;
             ast->import->path = t->sval;
             return ast;
+        }
+        if (!strcmp(t->sval, "lib")) {
+            t = next_token();
+            int line = lineno();
+            if (t->type != TOK_STR || !expect_line_break_or_semicolon()) {
+                error(line, current_file_name(),
+                    "Unexpected token '%s' while parsing lib directive.",
+                    tok_to_string(t));
+            }
+            // TODO: do something with this
+            /*Ast *ast = ast_alloc(AST_DIRECTIVE);*/
+            /*ast->line = line;*/
+            /*ast->directive->name = "lib";*/
+            return NULL;
         }
 
         if (!strcmp(t->sval, "autocast")) {
@@ -1035,6 +1049,8 @@ Ast *parse_directive(Tok *t) {
         return dir;
     } else if (!strcmp(t->sval, "import")) {
         error(dir->line, dir->file, "#import directive must be a statement.");
+    } else if (!strcmp(t->sval, "lib")) {
+        error(dir->line, dir->file, "#lib directive must be a statement.");
     }
 
     // typeof
@@ -1228,7 +1244,10 @@ Ast **parse_statement_list() {
         if (t == NULL || t->type == TOK_RBRACE) {
             break;
         }
-        array_push(stmts, parse_statement(t, 1));
+        Ast *stmt = parse_statement(t, 1);
+        if (stmt) {
+            array_push(stmts, stmt);
+        }
     }
     unget_token(t);
     return stmts;

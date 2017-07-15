@@ -7,6 +7,7 @@
 #include "compiler/array/array.h"
 #include "compiler/ast.h"
 #include "compiler/codegen.h"
+#include "compiler/find_libs.h"
 #include "compiler/parse.h"
 #include "compiler/package.h"
 #include "compiler/semantics.h"
@@ -30,8 +31,9 @@ struct flag_set {
         struct {
             struct flag help_flag;
             struct flag output_flag;
+            struct flag libs_flag;
         };
-        struct flag set[2];
+        struct flag set[3];
     };
 };
 
@@ -47,11 +49,9 @@ void print_usage(struct flag_set *flags, char *bin_name) {
             }
             fprintf(stderr, "-%s", f.long_name);
             if (f.expects_value) {
-                fprintf(stderr, " <value>\t");
-            } else {
-                fprintf(stderr, "\t\t");
+                fprintf(stderr, " <value>");
             }
-            fprintf(stderr, "%s\n", f.help);
+            fprintf(stderr, "\n\t%s\n", f.help);
         }
     }
 }
@@ -73,7 +73,8 @@ char **parse_flags_get_args(struct flag_set *flags, int argc, char **argv) {
             int found = 0;
             for (int j = 0; j < num_flags; j++) {
                 struct flag *f = &flags->set[j];
-                if (!strcmp(arg+1, f->long_name) || !strcmp(arg+1, f->short_name)) {
+                if ((f->long_name && !strcmp(arg+1, f->long_name))
+                 || (f->short_name && !strcmp(arg+1, f->short_name))) {
                     found = 1;
                     f->set = 1;
                     if (f->expects_value) {
@@ -104,6 +105,7 @@ int main(int argc, char **argv) {
     struct flag_set flags = {
         .help_flag   = {"h", "help", "print usage and exit", 0, 0, ""},
         .output_flag = {"o", "output", "specify output file, defaults to [input-base].c", 0, 1, ""},
+        .libs_flag   = {NULL, "libs", "output required gcc linker flags from #lib directives", 0, 0, ""},
     };
 
     char **args = parse_flags_get_args(&flags, argc, argv);
@@ -119,6 +121,23 @@ int main(int argc, char **argv) {
     } else {
         push_file_source(args[0], open_file_or_quit(args[0], "r"));
         base_name = strip_vs_ext(package_name(args[0]));
+    }
+
+    if (flags.libs_flag.set) {
+        LibEntry *libs = find_libs(current_file_name());
+        pop_file_source();
+        for (int i = 0; i < array_len(libs); i++) {
+            if (i > 0) {
+                printf(" ");
+            }
+            printf("-l%s", libs[i].name);
+            /*errlog("lib %s required by:", libs[i].name);*/
+            /*for (int j = 0; j < array_len(libs[i].required_by); j++) {*/
+                /*errlog("\t%s", libs[i].required_by[j]);*/
+            /*}*/
+        }
+        printf("\n");
+        exit(0);
     }
     
     Package *main_package = init_main_package(current_file_name());

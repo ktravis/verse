@@ -24,7 +24,7 @@ if [ $? != 0 ]; then
 fi
 
 INPUT_FILES="src/*/*.S $C_TMPFILE"
-LINK_FLAGS=""
+LINK_FLAGS=$(./bin/compiler -libs $f)
 $CC $INPUT_FILES -o $EXE_TMPFILE $C_FLAGS $LINK_FLAGS
 if [ $? != 0 ]; then
     exit $?

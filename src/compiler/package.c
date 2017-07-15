@@ -98,21 +98,26 @@ Package *pop_current_package() {
 
 static char *verse_root = NULL;
 
-Package *load_package(int from_line, char *current_file, Scope *scope, char *path) {
-    assert(path != NULL);
-    // TODO: hardcoded, this should also read env var if available
-    if (verse_root == NULL) {
-        // if env var is set, use that
-        // else:
-        verse_root = root_from_binary();
-    }
-    if (path[0] != '/') {
+char *package_path_from_import_string(char *imp) {
+    assert(imp != NULL);
+    if (imp[0] != '/') {
+        // TODO: hardcoded, this should also read env var if available
+        if (verse_root == NULL) {
+            // if env var is set, use that
+            // else:
+            verse_root = root_from_binary();
+        }
         int dirlen = strlen(verse_root) + 4; // + "src/"
-        int pathlen = strlen(path);
+        int pathlen = strlen(imp);
         char *tmp = malloc(sizeof(char) * (dirlen + pathlen + 1));
-        snprintf(tmp, dirlen + pathlen + 1, "%ssrc/%s", verse_root, path);
-        path = tmp;
+        snprintf(tmp, dirlen + pathlen + 1, "%ssrc/%s", verse_root, imp);
+        return tmp;
     }
+    return imp;
+}
+
+Package *load_package(int from_line, char *current_file, Scope *scope, char *path) {
+    path = package_path_from_import_string(path);
     Package *p = package_previously_loaded(path);
     if (p) {
         for (int i = 0; i < array_len(scope->imported_packages); i++) {
@@ -125,15 +130,30 @@ Package *load_package(int from_line, char *current_file, Scope *scope, char *pat
     }
     p = new_package(package_name(path), path);
 
-    DIR *d = opendir(path);
-    // TODO: better error
-    if (d == NULL) {
-        error(lineno(), current_file, "Could not load package with path '%s': %s", path, strerror(errno));
+    char **filenames = package_source_files(lineno(), current_file, path);
+    if (!filenames) {
+        error(lineno(), current_file, "No verse source files found in package '%s' ('%s').", p->name, p->path);
     }
 
-    // push package stack
     push_current_package(p);
+    for (int i = 0; i < array_len(filenames); i++) {
+        Ast *file_ast = parse_source_file(from_line, current_file, filenames[i]);
+        file_ast = first_pass(p->scope, file_ast);
+        package_add_file(p, filenames[i], file_ast);
+    }
+    pop_current_package();
 
+    array_push(all_packages, p);
+    array_push(scope->imported_packages, p);
+    return p;
+}
+
+char **package_source_files(int from_line, char *from_file, char *package_path) {
+    DIR *d = opendir(package_path);
+    if (!d) {
+        error(from_line, from_file, "Could not load package with path '%s': %s", package_path, strerror(errno));
+    }
+    char **out = NULL;
     struct dirent *ent = NULL;
     while ((ent = readdir(d)) != NULL) {
         if (ent->d_type != DT_REG) {
@@ -143,25 +163,13 @@ Package *load_package(int from_line, char *current_file, Scope *scope, char *pat
         if (!file_is_verse_source(ent->d_name, namelen)) {
             continue;
         }
-
-        int len = strlen(path) + namelen;
+        int len = strlen(package_path) + namelen;
         char *filepath = malloc(sizeof(char) * (len + 2));
-        snprintf(filepath, len + 2, "%s/%s", path, ent->d_name);
-
-        Ast *file_ast = parse_source_file(from_line, current_file, filepath);
-        file_ast = first_pass(p->scope, file_ast);
-        package_add_file(p, filepath, file_ast);
+        snprintf(filepath, len + 2, "%s/%s", package_path, ent->d_name);
+        array_push(out, filepath);
     }
     closedir(d);
-    if (p->files == NULL) {
-        error(lineno(), current_file, "No verse source files found in package '%s' ('%s').", p->name, p->path);
-    }
-
-    pop_current_package();
-
-    array_push(all_packages, p);
-    array_push(scope->imported_packages, p);
-    return p;
+    return out;
 }
 
 Package *lookup_imported_package(Scope *scope, char *name) {
