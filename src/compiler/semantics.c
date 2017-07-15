@@ -135,7 +135,8 @@ void check_for_undefined(Ast *ast, Type *t) {
 
 // TODO: make reify_struct deduplicate reifications?
 Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
-    t = copy_type(t->scope, t);
+    /*t = copy_type(t->scope, t);*/
+    t = copy_type(scope, t);
 
     ResolvedType *r = t->resolved;
     switch (r->comp) {
@@ -1655,6 +1656,8 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
             if (arg_type->resolved->comp == STATIC_ARRAY) {
                 expected_type = make_array_type(arg_type->resolved->array.inner);
             }
+        } else if (contains_generic_struct(expected_type)) {
+            expected_type = reify_struct(match->scope, ast, expected_type);
         }
 
         array_push(defined_arg_types, expected_type);
@@ -1844,21 +1847,21 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
     {
         Type *fn_type = ast->fn_decl->var->type;
         Type **fn_args = fn_type->resolved->fn.args;
-        for (int i = 0; i < array_len(fn_args); i++) {
-            Type *a = fn_args[i];
-            // TODO: what if the polydef isn't the generic struct? i.e. fn
-            // type, is this okay?
-            if (!is_polydef(a) && contains_generic_struct(a)) {
-                a = reify_struct(ast->fn_decl->scope, ast, a);
-                if (fn_type->resolved->fn.variadic && i == array_len(fn_args) - 1) {
-                    ast->fn_decl->args[i]->type = make_array_type(a);
-                } else {
-                    ast->fn_decl->args[i]->type = a;
+        if (!poly) {
+            for (int i = 0; i < array_len(fn_args); i++) {
+                Type *a = fn_args[i];
+                // TODO: what if the polydef isn't the generic struct? i.e. fn
+                // type, is this okay?
+                /*if (!is_polydef(a) && contains_generic_struct(a)) {*/
+                if (contains_generic_struct(a)) {
+                    a = reify_struct(type_check_scope, ast, a);
+                    if (fn_type->resolved->fn.variadic && i == array_len(fn_args) - 1) {
+                        ast->fn_decl->args[i]->type = make_array_type(a);
+                    } else {
+                        ast->fn_decl->args[i]->type = a;
+                    }
+                    fn_args[i] = a;
                 }
-                fn_args[i] = a;
-                /*ast->fn_decl->args[i]->type = a;*/
-            }
-            if (!poly) {
                 array_push(ast->fn_decl->scope->vars, ast->fn_decl->args[i]);
             }
         }

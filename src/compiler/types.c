@@ -258,6 +258,15 @@ Type *make_enum_type(Type *inner, char **member_names, long *member_values) {
     return type;
 }
 
+long enum_type_val(Type *t, int index) {
+    assert(t != NULL);
+    assert(t->resolved != NULL);
+    assert(t->resolved->comp == ENUM);
+    assert(index >= 0);
+    assert(index < array_len(t->resolved->en.member_values));
+    return t->resolved->en.member_values[index];
+}
+
 Type *make_struct_type(char **member_names, Type **member_types) {
     Type *s = calloc(sizeof(Type), 1);
     s->id = last_type_id++;

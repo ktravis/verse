@@ -56,6 +56,8 @@ Type *make_external_type(char *pkg, char *name);
 
 Type *find_type_or_polymorph(Type *type);
 
+long enum_type_val(Type *type, int index);
+
 Type *resolve_polymorph_recursively(Type *type);
 Type *resolve_external(Type *type);
 Type *resolve_type(Type *type);

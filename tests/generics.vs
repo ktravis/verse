@@ -34,11 +34,9 @@ type Wrapper: struct(T){
     inner: T;
 };
 
-// TODO: return type doesn't seem to work correctly for poly
-/*fn var_add(args: Wrapper($T)...) -> T {*/
-fn var_add(args: Wrapper(int)...) -> int {
-    out: int;
-    for a in args {
+fn var_add(first: Wrapper($T), rest: Wrapper(T)...) -> T {
+    out: T = first.inner;
+    for a in rest {
         out += a.inner;
     }
     return out;
