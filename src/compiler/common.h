@@ -10,6 +10,7 @@ typedef struct Package {
     struct Var **globals;
     struct PkgFile **files;
     int semantics_checked;
+    char **top_level_comments;
 } Package;
 
 typedef struct PkgFile {
@@ -19,7 +20,6 @@ typedef struct PkgFile {
 
 typedef enum TypeComp {
     BASIC,
-    //ALIAS,
     POLYDEF,
     PARAMS,
     STATIC_ARRAY,
@@ -195,6 +195,7 @@ typedef enum AstType {
     AST_METHOD,
     AST_TYPE_IDENT,
     AST_PACKAGE,
+    AST_COMMENT,
 } AstType;
 
 typedef struct Ast {
@@ -237,6 +238,7 @@ typedef struct Ast {
         struct AstMethod        *method;
         struct AstTypeIdent     *type_ident;
         struct AstPackage       *pkg;
+        struct AstComment       *comment;
     };
 } Ast;
 

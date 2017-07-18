@@ -222,7 +222,9 @@ typedef struct AstPackage {
     char    *pkg_name;
 } AstPackage;
 
-// TODO: make AstPackage, AstType, AstMethod
+typedef struct AstComment {
+    char *text;
+} AstComment;
 
 Ast *ast_alloc(AstType type);
 Ast *deep_copy(Ast *ast);

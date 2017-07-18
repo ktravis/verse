@@ -684,6 +684,13 @@ Ast *first_pass(Scope *scope, Ast *ast) {
         }
         ast->import->package = load_package(ast->line, ast->file, scope, ast->import->path);
         break;
+    case AST_COMMENT:
+        if (scope->type == Root) {
+            Package *p = get_current_package();
+            array_push(p->top_level_comments, ast->comment->text);
+        }
+        // TODO: add comments to other structures
+        break;
     case AST_LITERAL:
         if (ast->lit->lit_type == STRUCT_LIT || ast->lit->lit_type == COMPOUND_LIT) {
             first_pass_type(scope, ast->lit->compound_val.type);
@@ -1705,8 +1712,6 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
 
     match->ret = ret; // this is used in the body, must be done before check_block_semantics
     generated_ast = check_semantics(match->scope, generated_ast);
-    /*match->body = check_block_semantics(match->scope, match->body, 1);*/
-
 
     Ast *id = ast_alloc(AST_IDENTIFIER);
     id->line = ast->call->fn->line;
@@ -2345,6 +2350,8 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
     case AST_ENUM_DECL:
         return check_enum_decl_semantics(scope, ast);
     case AST_TYPEINFO:
+        break;
+    case AST_COMMENT:
         break;
     case AST_IMPORT:
         if (!ast->import->package->semantics_checked) {

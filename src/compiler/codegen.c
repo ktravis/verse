@@ -2043,6 +2043,8 @@ void compile(Scope *scope, Ast *ast) {
         break;
     case AST_IMPORT:
         break;
+    case AST_COMMENT:
+        break;
     default:
         error(ast->line, ast->file, "No idea how to deal with this.");
     }

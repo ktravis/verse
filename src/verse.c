@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <sys/time.h>
 
 #include "compiler/array/array.h"
 #include "compiler/ast.h"
@@ -122,31 +123,36 @@ int main(int argc, char **argv) {
         push_file_source(args[0], open_file_or_quit(args[0], "r"));
         base_name = strip_vs_ext(package_name(args[0]));
     }
-
-    if (flags.libs_flag.set) {
-        LibEntry *libs = find_libs(current_file_name());
-        pop_file_source();
-        for (int i = 0; i < array_len(libs); i++) {
-            if (i > 0) {
-                printf(" ");
-            }
-            printf("-l%s", libs[i].name);
-            /*errlog("lib %s required by:", libs[i].name);*/
-            /*for (int j = 0; j < array_len(libs[i].required_by); j++) {*/
-                /*errlog("\t%s", libs[i].required_by[j]);*/
-            /*}*/
-        }
-        printf("\n");
-        exit(0);
-    }
     
     Package *main_package = init_main_package(current_file_name());
     Scope *root_scope = main_package->scope;
     init_builtin_types();
     init_builtins();
 
+    struct timeval start_time;
+    struct timeval parse_done_time;
+
+    gettimeofday(&start_time, NULL);
     Ast *root = parse_block(0);
+    gettimeofday(&parse_done_time, NULL);
+
+    /*fprintf(stderr, "parse: %ld secs, %ld microseconds\n",*/
+            /*parse_done_time.tv_sec - start_time.tv_sec,*/
+            /*parse_done_time.tv_usec - start_time.tv_usec);*/
+
     root = check_semantics(root_scope, root);
+
+    if (flags.libs_flag.set) {
+        LibEntry *libs = find_libs(all_loaded_packages());
+        for (int i = 0; i < array_len(libs); i++) {
+            if (i > 0) {
+                printf(" ");
+            }
+            printf("-l%s", libs[i].name);
+        }
+        printf("\n");
+        exit(0);
+    }
 
     // determine output file name, and open it
     FILE *output_file = stdout;

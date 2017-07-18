@@ -48,7 +48,8 @@ typedef enum {
     TOK_USE,
     TOK_NEW,
     TOK_DEFER,
-    TOK_IMPL
+    TOK_IMPL,
+    TOK_COMMENT
 } TokType;
 
 typedef enum {
@@ -96,6 +97,7 @@ int is_id_char(char c);
 Tok *make_token(int t);
 Tok *next_token();
 Tok *next_token_or_newline();
+Tok *next_token_or_comment();
 Tok *peek_token();
 Tok *try_eat_token(TokType t);
 

@@ -30,6 +30,5 @@ if [ $? != 0 ]; then
     exit $?
 fi
 
-echo "(running $EXE_TMPFILE ...)"
-
+#echo "(running $EXE_TMPFILE ...)"
 $EXE_TMPFILE $ARGS

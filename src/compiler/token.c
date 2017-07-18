@@ -41,12 +41,25 @@ void unget_char(char c) {
     ungetc(c, source_stack->handle);
 }
 
-void read_block_comment() {
+char *read_block_comment(int store) {
+    int alloc = 8;
+    int len = 0;
     int count = 1;
     char c;
     int start = source_stack->line;
+    char *buf = NULL;
+    if (store) {
+        buf = malloc(alloc);
+    }
     while ((c = get_char()) != EOF) {
         if (c == '/') {
+            if (store) {
+                buf[len++] = c;
+                if (len == alloc - 1) {
+                    alloc *= 2;
+                    buf = realloc(buf, alloc);
+                }
+            }
             c = get_char();
             if (c == '*') {
                 count++;
@@ -56,39 +69,63 @@ void read_block_comment() {
             if (c == '/') {
                 count--;
                 if (count == 0) {
-                    return;
+                    if (store) {
+                        buf[len] = '\0';
+                    }
+                    return buf;
                 }
             }
         }
         if (c == '\n') {
             source_stack->line++;
         }
+        if (store) {
+            buf[len++] = c;
+            if (len == alloc - 1) {
+                alloc *= 2;
+                buf = realloc(buf, alloc);
+            }
+        }
     }
     error(start, current_file_name(), "Incompleted block comment");
+    return NULL;
+}
+
+char *read_line_comment(int store) {
+    int alloc = 8;
+    int len = 0;
+    char c;
+    char *buf = NULL;
+    if (store) {
+        buf = malloc(alloc);
+    }
+    while ((c = get_char()) != EOF) {
+        if (c == '\n') {
+            source_stack->line++;
+            break;
+        }
+        if (store) {
+            buf[len++] = c;
+            if (len == alloc - 1) {
+                alloc *= 2;
+                buf = realloc(buf, alloc);
+            }
+        }
+    }
+    if (store) {
+        buf[len] = '\0';
+    }
+    return buf;
 }
 
 char read_non_space() {
-    char c, d;
+    char c;
     while ((c = get_char()) != EOF) {
-        if (c == '/') {
-            d = get_char();
-            if (d == '/') {
-                while (c != '\n') {
-                    c = get_char();
-                }
-            } else if (d == '*') {
-                read_block_comment();
-                c = get_char();
-            } else {
-                unget_char(d);
-                break;
-            }
-        }
-        if (!(c == ' ' || c == '\t' || c == '\n' || c == '\r')) {
-            break;
-        } else if (c == '\n') {
+        if (c == '\n') {
             source_stack->line++;
-            return c;
+        }
+        if (!(c == ' ' || c == '\t' || c == '\r')) {
+            break;
         }
     }
     return c;
@@ -137,26 +174,55 @@ int expect_line_break_or_semicolon() {
     return expect_line_break_or(';');
 }
 
-Tok *_next_token(int nl_ok) {
+Tok *_next_token(int comment_ok) {
     if (_last_token != NULL) {
         Tok *t = _last_token;
         _last_token = NULL;
         return t;
     }
     char c = read_non_space();
-    Tok *t = NULL;
-
-    if (c == '\n') {
-        if (nl_ok) {
-            t = make_token(TOK_NL);
-        } else {
-            while (c == '\n') {
-                c = read_non_space();
+    int start_line = lineno();
+    if (c == '/') {
+        char d = get_char();
+        if (d == '/') {
+            char *comm = read_line_comment(comment_ok);
+            if (comment_ok) {
+                Tok *t = make_token(TOK_COMMENT);
+                t->sval = comm;
+                t->line = start_line;
+                return t;
+            } else {
+                return _next_token(0);
             }
+        } else if (d == '*') {
+            char *comm = read_block_comment(comment_ok);
+            if (comment_ok) {
+                /*errlog("block comment: %s", comm);*/
+                Tok *t = make_token(TOK_COMMENT);
+                t->sval = comm;
+                t->line = start_line;
+                return t;
+            } else {
+                return _next_token(0);
+            }
+        } else {
+            unget_char(d);
         }
     }
+    Tok *t = NULL;
+
+    while (c == '\n') {
+        if (t == NULL) {
+            t = make_token(TOK_NL);
+        }
+        c = read_non_space();
+    }
     if (c == EOF) {
-        return NULL;
+        return t;
+    }
+    if (t) {
+        unget_char(c);
+        return t;
     }
 
     if (isdigit(c)) {
@@ -382,9 +448,17 @@ Tok *_next_token(int nl_ok) {
     return t;
 }
 Tok *next_token() {
-    return _next_token(0);
+    Tok *t = _next_token(0);
+    while (t && t->type == TOK_NL) {
+        t = _next_token(0);
+    }
+    return t;
 }
 Tok *next_token_or_newline() {
+    return _next_token(0);
+}
+
+Tok *next_token_or_comment() {
     return _next_token(1);
 }
 
@@ -918,11 +992,10 @@ const char *op_to_str(int op) {
 }
 
 Tok *expect(int type) {
-    int nl_ok = 0;
-    if (type == TOK_NL) {
-        nl_ok = 1;
+    Tok *t = _next_token(0);
+    if (type != TOK_NL && t->type == TOK_NL) {
+        t = _next_token(0);
     }
-    Tok *t = _next_token(nl_ok);
     if (t == NULL || t->type != type) {
         error(lineno(), current_file_name(), "Expected token '%s', got '%s'.", token_type(type), tok_to_string(t));
     }

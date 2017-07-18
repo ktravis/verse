@@ -123,6 +123,9 @@ Ast *ast_alloc(AstType type) {
     case AST_PACKAGE:
         ast->pkg = calloc(sizeof(AstPackage), 1);
         break;
+    case AST_COMMENT:
+        ast->comment = calloc(sizeof(AstComment), 1);
+        break;
     }
     return ast;
 }
@@ -338,6 +341,7 @@ Ast *copy_ast(Scope *scope, Ast *ast) {
         cp->type_ident = calloc(sizeof(AstTypeIdent), 1);
         cp->type_ident->type = copy_type(scope, ast->type_ident->type);
         break;
+    case AST_COMMENT:
     case AST_PACKAGE:
         /*ast->pkg = calloc(sizeof(AstPackage), 1);*/
         break;
