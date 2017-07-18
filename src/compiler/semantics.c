@@ -916,22 +916,26 @@ AstBlock *check_block_semantics(Scope *scope, AstBlock *block, int fn_body) {
     }
 
     int mainline_return_reached = 0;
+    int last_real_statement = -1;
     for (int i = 0; i < array_len(block->statements); i++) {
         Ast *stmt = block->statements[i];
-        if (i > 0) {
-            switch (block->statements[i-1]->type) {
-            case AST_RETURN:
-                error(stmt->line, stmt->file, "Unreachable statements following return.");
-                break;
-            case AST_BREAK:
-                error(stmt->line, stmt->file, "Unreachable statements following break.");
-                break;
-            case AST_CONTINUE:
-                error(stmt->line, stmt->file, "Unreachable statements following continue.");
-                break;
-            default:
-                break;
+        if (stmt->type != AST_COMMENT) {
+            if (i > 0 && last_real_statement != -1) {
+                switch (block->statements[last_real_statement]->type) {
+                case AST_RETURN:
+                    error(stmt->line, stmt->file, "Unreachable statements following return.");
+                    break;
+                case AST_BREAK:
+                    error(stmt->line, stmt->file, "Unreachable statements following break.");
+                    break;
+                case AST_CONTINUE:
+                    error(stmt->line, stmt->file, "Unreachable statements following continue.");
+                    break;
+                default:
+                    break;
+                }
             }
+            last_real_statement = i;
         }
         stmt = check_semantics(scope, stmt);
         if (needs_temp_var(stmt)) {
