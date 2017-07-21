@@ -13,7 +13,7 @@ Scope *new_fn_scope(Scope *parent);
 Scope *new_loop_scope(Scope *parent);
 Scope *closest_loop_scope(Scope *scope);
 Scope *closest_fn_scope(Scope *scope);
-Type *fn_scope_return_type(Scope *scope);
+Type **fn_scope_return_type(Scope *scope);
 
 Type *lookup_polymorph(Scope *s, char *name);
 Type *lookup_type(Scope *s, char *name);

@@ -45,7 +45,7 @@ Type *make_type(Scope *scope, char *name);
 Type *make_polydef(Scope *scope, char *name);
 Type *make_poly(Scope *scope, char *name, int id);
 Type *make_ref_type(Type *inner);
-Type *make_fn_type(Type **args, Type *ret, int variadic);
+Type *make_fn_type(Type **args, Type **ret, int variadic);
 Type *make_static_array_type(Type *inner, long length);
 Type *make_array_type(Type *inner);
 Type *make_enum_type(Type *inner, char **member_names, long *member_values);

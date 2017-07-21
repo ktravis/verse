@@ -37,8 +37,8 @@ void check_for_undefined_with_scope(Ast *ast, Type *t, Scope *scope) {
         for (int i = 0; i < array_len(t->resolved->fn.args); i++) {
             check_for_undefined_with_scope(ast, t->resolved->fn.args[i], scope);
         }
-        if (t->resolved->fn.ret) {
-            check_for_undefined_with_scope(ast, t->resolved->fn.ret, scope);
+        for (int i = 0; i < array_len(t->resolved->fn.ret); i++) {
+            check_for_undefined_with_scope(ast, t->resolved->fn.ret[i], scope);
         }
         break;
     case STRUCT: {
@@ -90,8 +90,8 @@ void _check_for_undefined_with_ignore(Ast *ast, Type *t, char **ignore, int top)
         for (int i = 0; i < array_len(t->resolved->fn.args); i++) {
             _check_for_undefined_with_ignore(ast, t->resolved->fn.args[i], ignore, 0);
         }
-        if (t->resolved->fn.ret) {
-            _check_for_undefined_with_ignore(ast, t->resolved->fn.ret, ignore, 0);
+        for (int i = 0; i < array_len(t->resolved->fn.ret); i++) {
+            _check_for_undefined_with_ignore(ast, t->resolved->fn.ret[i], ignore, 0);
         }
         break;
     case STRUCT: {
@@ -146,8 +146,10 @@ Type *reify_struct(Scope *scope, Ast *ast, Type *t) {
                 r->fn.args[i] = reify_struct(scope, ast, r->fn.args[i]);
             }
         }
-        if (r->fn.ret != NULL && contains_generic_struct(r->fn.ret)) {
-            r->fn.ret = reify_struct(scope, ast, r->fn.ret);
+        for (int i = 0; i < array_len(r->fn.ret); i++) {
+            if (contains_generic_struct(r->fn.ret[i])) {
+                r->fn.ret[i] = reify_struct(scope, ast, r->fn.ret[i]);
+            }
         }
         return t;
     case STRUCT: {
@@ -649,7 +651,9 @@ void first_pass_type(Scope *scope, Type *t) {
         for (int i = 0; i < array_len(r->fn.args); i++) {
             first_pass_type(scope, r->fn.args[i]);
         }
-        first_pass_type(scope, r->fn.ret);
+        for (int i = 0; i < array_len(r->fn.ret); i++) {
+            first_pass_type(scope, r->fn.ret[i]);
+        }
         break;
     case STRUCT:
         // TODO: owned references need to check for circular type declarations
@@ -949,8 +953,8 @@ AstBlock *check_block_semantics(Scope *scope, AstBlock *block, int fn_body) {
 
     // if it's a function that needs return and return wasn't reached, break
     if (!mainline_return_reached && fn_body) {
-        Type *rt = fn_scope_return_type(scope);
-        if (rt && !is_void(rt)) {
+        Type **rt = fn_scope_return_type(scope);
+        if (rt && !is_void(rt[0])) {
             error(block->endline, block->file,
                 "Control reaches end of function '%s' without a return statement.",
                 closest_fn_scope(scope)->fn_var->name);
@@ -1606,7 +1610,7 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
     AstFnDecl *decl = get_fn_decl(ast);
 
     Polymorph *match = check_for_existing_polymorph(decl, call_arg_types);
-    if (match != NULL) {
+    if (match) {
         // made a match to existing polymorph
         ast->call->polymorph = match;
 
@@ -1617,7 +1621,7 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
         id->ident->varname = "";
         id->var_type = id->ident->var->type;
         ast->call->fn = id;
-        ast->var_type = resolve_polymorph_recursively(match->ret);
+        ast->var_type = resolve_polymorph_recursively(match->ret[0]);
         return ast;
     } else {
         match = create_polymorph(decl, call_arg_types);
@@ -1685,19 +1689,26 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
 
     verify_arg_types(scope, ast, defined_arg_types, ast->call->args, r->fn.variadic);
 
-    if (contains_generic_struct(r->fn.ret)) {
-        r->fn.ret = reify_struct(match->scope, ast, r->fn.ret);
+    for (int i = 0; i < array_len(r->fn.ret); i++) {
+        if (contains_generic_struct(r->fn.ret[i])) {
+            r->fn.ret[i] = reify_struct(match->scope, ast, r->fn.ret[i]);
+        }
     }
 
-    Type *ret = copy_type(match->scope, r->fn.ret);
-    if (ret != NULL) {
+    Type **ret = NULL;
+    for (int i = 0; i < array_len(r->fn.ret); i++) {
+        array_push(ret, copy_type(match->scope, r->fn.ret[i]));
+    }
+    if (ret) {
         // TODO: check_for_undefined here?
-        ret = resolve_type(ret);
-        if (contains_generic_struct(ret)) {
-            ret = reify_struct(match->scope, ast, ret);
+        for (int i = 0; i < array_len(ret); i++) {
+            ret[i] = resolve_type(ret[i]);
+            if (contains_generic_struct(ret[i])) {
+                ret[i] = reify_struct(match->scope, ast, ret[i]);
+            }
         }
     } else {
-        ret = base_type(VOID_T);
+        array_push(ret, base_type(VOID_T));
     }
 
     match->var = make_var("", make_fn_type(fn_arg_types, ret, r->fn.variadic));
@@ -1725,7 +1736,7 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
     id->var_type = generated_ast->fn_decl->var->type;
 
     ast->call->fn = id;
-    ast->var_type = ret;
+    ast->var_type = ret[0];
 
     return ast;
 }
@@ -1823,7 +1834,7 @@ static Ast *check_call_semantics(Scope *scope, Ast *ast) {
     // check types and allocate tempvars for "Any"
     verify_arg_types(scope, ast, r->fn.args, ast->call->args, r->fn.variadic);
 
-    ast->var_type = resolve_polymorph_recursively(r->fn.ret);
+    ast->var_type = resolve_polymorph_recursively(r->fn.ret[0]);
 
     return ast;
 }
@@ -1875,9 +1886,13 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
             }
         }
 
-        Type *ret = ast->fn_decl->var->type->resolved->fn.ret;
-        if (ret != NULL && !is_polydef(ast->fn_decl->var->type) && contains_generic_struct(ret)) {
-            ast->fn_decl->var->type->resolved->fn.ret = reify_struct(ast->fn_decl->scope, ast, ret);
+        Type **ret = ast->fn_decl->var->type->resolved->fn.ret;
+        if (ret && !is_polydef(ast->fn_decl->var->type)) {
+            for (int i = 0; i < array_len(ret); i++) {
+                if (contains_generic_struct(ret[i])) {
+                    ret[i] = reify_struct(ast->fn_decl->scope, ast, ret[i]);
+                }
+            }
         }
     }
 
@@ -1935,10 +1950,14 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
         }
     }
 
-    check_for_undefined_with_scope(ast, r->fn.ret, type_check_scope);
+    for (int i = 0; i < array_len(r->fn.ret); i++) {
+        check_for_undefined_with_scope(ast, r->fn.ret[i], type_check_scope);
+    }
 
     if (!poly) {
-        resolve_type(r->fn.ret);
+        for (int i = 0; i < array_len(r->fn.ret); i++) {
+            resolve_type(r->fn.ret[i]);
+        }
         ast->fn_decl->body = check_block_semantics(ast->fn_decl->scope, ast->fn_decl->body, 1);
     }
 
@@ -2156,9 +2175,12 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
                         type_to_string(t), ast->fn_decl->var->name);
             }
         }
-        if (!resolve_type(ast->fn_decl->var->type->resolved->fn.ret)) {
-            error(ast->line, ast->file, "Unknown type '%s' in declaration of extern function '%s'",
-                    type_to_string(ast->fn_decl->var->type->resolved->fn.ret), ast->fn_decl->var->name);
+        for (int i = 0; i < array_len(ast->fn_decl->var->type->resolved->fn.ret); i++) {
+            Type *t = ast->fn_decl->var->type->resolved->fn.ret[i];
+            if (!resolve_type(t)) {
+                error(ast->line, ast->file, "Unknown type '%s' in declaration of extern function '%s'",
+                        type_to_string(ast->fn_decl->var->type->resolved->fn.ret[i]), ast->fn_decl->var->name);
+            }
         }
 
         array_push(scope->vars, ast->fn_decl->var);
@@ -2305,14 +2327,14 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
 
         fn_scope->has_return = 1;
 
-        Type *fn_ret_t = fn_scope->fn_var->type->resolved->fn.ret;
+        Type **fn_ret_t = fn_scope->fn_var->type->resolved->fn.ret;
         Type *ret_t = base_type(VOID_T);
 
-        if (fn_scope->polymorph != NULL) {
+        if (fn_scope->polymorph) {
             fn_ret_t = fn_scope->polymorph->ret;
         }
 
-        if (ast->ret->expr != NULL) {
+        if (ast->ret->expr) {
             ast->ret->expr = check_semantics(scope, ast->ret->expr);
             ret_t = resolve_polymorph_recursively(ast->ret->expr->var_type);
             resolve_type(ret_t);
@@ -2322,12 +2344,12 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
             error(ast->line, ast->file, "Cannot return a static array from a function.");
         }
 
-        if (!check_type(fn_ret_t, ret_t)) {
-            ast->ret->expr = coerce_type(scope, fn_ret_t, ast->ret->expr, 1);
+        if (!check_type(fn_ret_t[0], ret_t)) {
+            ast->ret->expr = coerce_type(scope, fn_ret_t[0], ast->ret->expr, 1);
             if (!ast->ret->expr) {
                 error(ast->line, ast->file,
                     "Return statement type '%s' does not match enclosing function's return type '%s'.",
-                    type_to_string(ret_t), type_to_string(fn_ret_t));
+                    type_to_string(ret_t), type_to_string(fn_ret_t[0]));
             }
         }
 

@@ -326,7 +326,10 @@ Type *parse_fn_type(int poly_ok) {
         unget_token(t);
     }
 
-    return make_fn_type(args, ret, variadic);
+    Type **ret_types = NULL;
+    array_push(ret_types, ret);
+
+    return make_fn_type(args, ret_types, variadic);
 }
 
 Type **parse_type_params(int in_fn) {
@@ -553,7 +556,10 @@ Ast *parse_extern_func_decl() {
         unget_token(t);
     }
 
-    Type *fn_type = make_fn_type(arg_types, ret, 0);
+    Type **ret_types = NULL;
+    array_push(ret_types, ret);
+
+    Type *fn_type = make_fn_type(arg_types, ret_types, 0);
     Var *fn_decl_var = make_var(fname, fn_type);
     fn_decl_var->ext = 1;
     fn_decl_var->constant = 1;
@@ -663,7 +669,10 @@ Ast *parse_func_decl(int anonymous) {
         error(lineno(), current_file_name(), "Unexpected token '%s' in function signature.", tok_to_string(t));
     }
 
-    Type *fn_type = make_fn_type(arg_types, ret, variadic);
+    Type **ret_types = NULL;
+    array_push(ret_types, ret);
+
+    Type *fn_type = make_fn_type(arg_types, ret_types, variadic);
     expect(TOK_LBRACE);
 
     Var *fn_decl_var = make_var(fname, fn_type);
@@ -1293,7 +1302,9 @@ void init_builtins() {
     {
         Type **arg_types = NULL;
         array_push(arg_types, base_type(BOOL_T));
-        Var *v = make_var("assert", make_fn_type(arg_types, base_type(VOID_T), 0));
+        Type **ret_types = NULL;
+        array_push(ret_types, base_type(VOID_T));
+        Var *v = make_var("assert", make_fn_type(arg_types, ret_types, 0));
         v->ext = 1;
         v->constant = 1;
         define_builtin(v);
@@ -1302,7 +1313,9 @@ void init_builtins() {
     {
         Type **arg_types = NULL;
         array_push(arg_types, base_type(STRING_T));
-        Var *v = make_var("print_str", make_fn_type(arg_types, base_type(VOID_T), 0));
+        Type **ret_types = NULL;
+        array_push(ret_types, base_type(VOID_T));
+        Var *v = make_var("print_str", make_fn_type(arg_types, ret_types, 0));
         v->ext = 1;
         v->constant = 1;
         define_builtin(v);
@@ -1311,7 +1324,9 @@ void init_builtins() {
     {
         Type **arg_types = NULL;
         array_push(arg_types, make_ref_type(base_numeric_type(UINT_T, 8)));
-        Var *v = make_var("print_buf", make_fn_type(arg_types, base_type(VOID_T), 0));
+        Type **ret_types = NULL;
+        array_push(ret_types, base_type(VOID_T));
+        Var *v = make_var("print_buf", make_fn_type(arg_types, ret_types, 0));
         v->ext = 1;
         v->constant = 1;
         define_builtin(v);
@@ -1320,7 +1335,9 @@ void init_builtins() {
     {
         Type **arg_types = NULL;
         array_push(arg_types, base_type(STRING_T));
-        Var *v = make_var("println", make_fn_type(arg_types, base_type(VOID_T), 0));
+        Type **ret_types = NULL;
+        array_push(ret_types, base_type(VOID_T));
+        Var *v = make_var("println", make_fn_type(arg_types, ret_types, 0));
         v->ext = 1;
         v->constant = 1;
         define_builtin(v);
@@ -1329,7 +1346,9 @@ void init_builtins() {
     {
         Type **arg_types = NULL;
         array_push(arg_types, base_type(INT_T));
-        Var *v = make_var("itoa", make_fn_type(arg_types, base_type(STRING_T), 0));
+        Type **ret_types = NULL;
+        array_push(ret_types, base_type(STRING_T));
+        Var *v = make_var("itoa", make_fn_type(arg_types, ret_types, 0));
         v->ext = 1;
         v->constant = 1;
         define_builtin(v);
@@ -1338,7 +1357,9 @@ void init_builtins() {
     {
         Type **arg_types = NULL;
         array_push(arg_types, base_type(UINT_T));
-        Var *v = make_var("utoa", make_fn_type(arg_types, base_type(STRING_T), 0));
+        Type **ret_types = NULL;
+        array_push(ret_types, base_type(STRING_T));
+        Var *v = make_var("utoa", make_fn_type(arg_types, ret_types, 0));
         v->ext = 1;
         v->constant = 1;
         define_builtin(v);
@@ -1347,7 +1368,9 @@ void init_builtins() {
     {
         Type **arg_types = NULL;
         array_push(arg_types, base_type(BASEPTR_T));
-        Var *v = make_var("validptr", make_fn_type(arg_types, base_type(BOOL_T), 0));
+        Type **ret_types = NULL;
+        array_push(ret_types, base_type(BOOL_T));
+        Var *v = make_var("validptr", make_fn_type(arg_types, ret_types, 0));
         v->ext = 1;
         v->constant = 1;
         define_builtin(v);

@@ -109,7 +109,12 @@ int check_type(Type *a, Type *b) {
                 return 0;
             }
         }
-        return check_type(ar->fn.ret, br->fn.ret);
+        for (int i = 0; i < array_len(ar->fn.ret); i++) {
+            if (!check_type(ar->fn.ret[i], br->fn.ret[i])) {
+                return 0;
+            }
+        }
+        return 1;
     default:
         error(-1, "internal", "typechecking unhandled case");
     }
@@ -145,10 +150,12 @@ int can_cast(Type *from, Type *to) {
                 return 0;
             }
         }
-        if (fr->fn.ret == tr->fn.ret) {
-            return 1;
+        for (int i = 0; i < array_len(fr->fn.ret); i++) {
+            if (fr->fn.ret != tr->fn.ret && !check_type(fr->fn.ret[i], tr->fn.ret[i])) {
+                return 0;
+            }
         }
-        return check_type(fr->fn.ret, tr->fn.ret);
+        return 1;
     case STRUCT:
         if (array_len(fr->st.member_types) != array_len(tr->st.member_types)) {
             return 0;
@@ -261,7 +268,12 @@ int match_polymorph(Scope *scope, Type *expected, Type *got) {
                 return 0;
             }
         }
-        return check_type(er->fn.ret, gr->fn.ret);
+        for (int i = 0; i < array_len(er->fn.ret); i++) {
+            if (!check_type(er->fn.ret[i], gr->fn.ret[i])) {
+                return 0;
+            }
+        }
+        return 1;
     case PARAMS: {
         if (!check_type(er->params.inner, gr->params.inner)) {
             return 0;

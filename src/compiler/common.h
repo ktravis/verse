@@ -44,7 +44,7 @@ typedef struct ArrayType {
 
 typedef struct FnType {
     struct Type **args;
-    struct Type *ret;
+    struct Type **ret;
     int variadic;
 } FnType;
 
@@ -129,7 +129,7 @@ typedef struct Polymorph {
     hashmap_t(TypeDef*)  defs;
     struct Scope     *scope;
     struct AstBlock  *body;
-    Type             *ret;
+    Type            **ret;
     Var              *var;
 } Polymorph;
 

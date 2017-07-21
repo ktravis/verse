@@ -76,7 +76,7 @@ Scope *closest_fn_scope(Scope *scope) {
     return scope;
 }
 
-Type *fn_scope_return_type(Scope *scope) {
+Type **fn_scope_return_type(Scope *scope) {
     scope = closest_fn_scope(scope);
     if (scope == NULL) {
         return NULL;
@@ -169,7 +169,9 @@ void register_type(Type *t) {
         for (int i = 0; i < array_len(resolved->fn.args); i++) {
             register_type(resolved->fn.args[i]);
         }
-        register_type(resolved->fn.ret);
+        for (int i = 0; i < array_len(resolved->fn.ret); i++) {
+            register_type(resolved->fn.ret[i]);
+        }
         break;
     case PARAMS:
         for (int i = 0; i < array_len(resolved->params.args); i++) {
@@ -224,8 +226,10 @@ int define_polydef_alias(Scope *scope, Type *t, Ast *ast) {
                 count += define_polydef_alias(scope, r->fn.args[i], ast);
             }
         }
-        if (is_polydef(r->fn.ret)) {
-            count += define_polydef_alias(scope, r->fn.ret, ast);
+        for (int i = 0; i < array_len(r->fn.ret); i++) {
+            if (is_polydef(r->fn.ret[i])) {
+                count += define_polydef_alias(scope, r->fn.ret[i], ast);
+            }
         }
         break;
     case PARAMS:

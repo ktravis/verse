@@ -233,11 +233,11 @@ void emit_typeinfo_init(Scope *scope, Type *t) {
         emit_string_struct(name);
         write_fmt(", {%d, (struct _type_vs_%d **)_type_info%d_args}, ", array_len(r->fn.args), typeinfo_type_id, id);
 
-        Type *ret = r->fn.ret;
+        Type *ret = r->fn.ret[0];
         if (ret->resolved->comp == BASIC && ret->resolved->data->base == VOID_T) {
             write_fmt("NULL, ");
         } else {
-            write_fmt("(struct _type_vs_%d *)&_type_info%d, ", typeinfo_type_id, r->fn.ret->id);
+            write_fmt("(struct _type_vs_%d *)&_type_info%d, ", typeinfo_type_id, ret->id);
         }
         write_fmt("0};\n");
         break;
@@ -760,7 +760,7 @@ void emit_func_decl(Scope *scope, Ast *fn) {
         write_fmt("/* %s */\n", fn->fn_decl->var->name);
     }
     indent();
-    emit_type(r->fn.ret);
+    emit_type(r->fn.ret[0]);
 
     assert(!fn->fn_decl->var->ext);
     write_fmt("_vs_%d(", fn->fn_decl->var->id);
@@ -1049,7 +1049,7 @@ void compile_fn_call(Scope *scope, Ast *ast) {
 
     if (needs_wrapper) {
         write_fmt("((");
-        emit_type(r->fn.ret);
+        emit_type(r->fn.ret[0]);
         write_fmt("(*)(");
         if (array_len(r->fn.args) == 0) {
             write_fmt("void");
@@ -1400,7 +1400,7 @@ void emit_extern_fn_decl(Scope *scope, Var *v) {
     write_fmt("extern ");
 
     ResolvedType *r = v->type->resolved;
-    emit_type(r->fn.ret);
+    emit_type(r->fn.ret[0]);
     write_fmt("%s(", v->name);
     for (int i = 0; i < array_len(r->fn.args); i++) {
         if (i > 0) {
@@ -1410,7 +1410,7 @@ void emit_extern_fn_decl(Scope *scope, Var *v) {
     }
     write_fmt(");\n");
 
-    emit_type(r->fn.ret);
+    emit_type(r->fn.ret[0]);
     write_fmt("(*_vs_%s)(", v->name);
 
     for (int i = 0; i < array_len(r->fn.args); i++) {
@@ -1430,7 +1430,7 @@ void emit_var_decl(Scope *scope, Var *v) {
 
     ResolvedType *r = v->type->resolved;
     if (r->comp == FUNC) {
-        emit_type(r->fn.ret);
+        emit_type(r->fn.ret[0]);
         write_fmt("(*");
     } else if (r->comp == STATIC_ARRAY) {
         emit_type(r->array.inner);
@@ -1470,7 +1470,7 @@ void emit_forward_decl(Scope *scope, AstFnDecl *decl) {
         write_fmt("extern ");
     }
     assert(r->comp == FUNC);
-    emit_type(r->fn.ret);
+    emit_type(r->fn.ret[0]);
 
     write_fmt("_vs_%d(", decl->var->id);
 

@@ -162,7 +162,9 @@ Type *copy_type(Scope *scope, Type *t) {
         for (int i = 0; i < array_len(cr->fn.args); i++) {
             r->fn.args[i] = copy_type(scope, cr->fn.args[i]);
         }
-        r->fn.ret = copy_type(scope, cr->fn.ret);
+        for (int i = 0; i < array_len(cr->fn.ret); i++) {
+            r->fn.ret[i] = copy_type(scope, cr->fn.ret[i]);
+        }
         break;
     case STRUCT:
         r->st.member_types = array_copy(cr->st.member_types);
@@ -220,7 +222,7 @@ Type *make_ref_type(Type *inner) {
     return type;
 }
 
-Type *make_fn_type(Type **args, Type *ret, int variadic) {
+Type *make_fn_type(Type **args, Type **ret, int variadic) {
     Type *type = calloc(sizeof(Type), 1);
     type->id = last_type_id++;
     type->resolved = make_resolved(FUNC);
@@ -397,10 +399,10 @@ Type *resolve_polymorph_recursively(Type *type) {
                 type->resolved->fn.args[i] = p;
             }
         }
-        if (type->resolved->fn.ret) {
-            p = resolve_polymorph_recursively(type->resolved->fn.ret);;
+        for (int i = 0; i < array_len(type->resolved->fn.ret); i++) {
+            p = resolve_polymorph_recursively(type->resolved->fn.ret[i]);
             if (p) {
-                type->resolved->fn.ret = p; 
+                type->resolved->fn.ret[i] = p;
             }
         }
         break;
@@ -497,7 +499,12 @@ Type *resolve_type(Type *type) {
                 type->resolved->fn.args[i] = r;
             }
         }
-        type->resolved->fn.ret = resolve_type(type->resolved->fn.ret);
+        for (int i = 0; i < array_len(type->resolved->fn.ret); i++) {
+            Type *r = resolve_type(type->resolved->fn.ret[i]);
+            if (r) {
+                type->resolved->fn.ret[i] = r;
+            }
+        }
         break;
     case STRUCT:
         /*type->resolved->st.generic_base = resolve_type(type->resolved->st.generic_base);*/
@@ -811,10 +818,12 @@ Type *replace_type_by_name(Type *base, char *from_name, Type *to) {
                 changed = 1;
             }
         }
-        old = r->fn.ret;
-        r->fn.ret = replace_type_by_name(r->fn.ret, from_name, to);
-        if (old != r->fn.ret) {
-            changed = 1;
+        for (int i = 0; i < array_len(r->fn.ret); i++) {
+            old = r->fn.ret[i];
+            r->fn.ret[i] = replace_type_by_name(r->fn.ret[i], from_name, to);
+            if (old != r->fn.ret[i]) {
+                changed = 1;
+            }
         }
         break;
     default:
@@ -999,10 +1008,16 @@ char *type_to_string(Type *t) {
         if (array_len(args) > 1) {
             len += array_len(args) - 1;
         }
-        char *ret = NULL;
-        if (r->fn.ret != void_type) {
-            ret = type_to_string(r->fn.ret);
-            len += 2 + strlen(ret);
+        char **ret = NULL;
+        for (int i = 0; i < array_len(r->fn.ret); i++) {
+            if (r->fn.ret[i] != void_type) {
+                if (i == 0) {
+                    len += 2;
+                }
+                char *name = type_to_string(r->fn.ret[i]);
+                len += strlen(name);
+                array_push(ret, name);
+            }
         }
         char *dest = malloc(sizeof(char) * len);
         dest[0] = '\0';
@@ -1021,8 +1036,14 @@ char *type_to_string(Type *t) {
         strcat(dest, ")");
         if (ret != NULL) {
             strcat(dest, "->");
-            strcat(dest, ret);
-            free(ret);
+            for (int i = 0; i < array_len(ret); i++) {
+                if (i > 0) {
+                    strcat(dest, ",");
+                }
+                strcat(dest, ret[i]);
+                free(ret[i]);
+            }
+            array_free(ret);
         }
         return dest;
     }
