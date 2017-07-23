@@ -32,7 +32,7 @@ impl Guy {
     }
 
     fn greet(g: Guy, x: $X) -> string {
-        return fmt.sprintf("% greets you, %!", g.name, x);
+        return fmt.sprintf("%v greets you, %v!", g.name, x);
     }
 }
 
@@ -48,7 +48,7 @@ type Thing: struct(T) {
 
 impl Thing {
     fn string(t: Thing($T)) -> string {
-        return fmt.sprintf("thing(%, %)", t.name, t.stuff);
+        return fmt.sprintf("thing(%v, %v)", t.name, t.stuff);
     }
     fn test(t: Thing($T)) -> bool {
         return true;
@@ -99,11 +99,11 @@ fn main() -> int {
 
     assert(g.name == g.say_hi());
 
-    fmt.printf("%: % (len %)\n", g.name, g.pos, g.pos.length());
+    fmt.printf("%v: %v (len %v)\n", g.name, g.pos, g.pos.length());
     assert(g.pos.length() == 14);
 
     g.pos.reset();
-    fmt.printf("%: % (len %)\n", g.name, g.pos, g.pos.length());
+    fmt.printf("%v: %v (len %v)\n", g.name, g.pos, g.pos.length());
     {
         use g.pos;
         assert(x == 0);
@@ -112,7 +112,7 @@ fn main() -> int {
     }
 
     g.move(10, 5, 0);
-    fmt.printf("%: % (len %)\n", g.name, g.pos, g.pos.length());
+    fmt.printf("%v: %v (len %v)\n", g.name, g.pos, g.pos.length());
     {
         use g;
         assert(pos.length() == 125);
@@ -130,7 +130,7 @@ fn main() -> int {
     u: Thing(Guy);
     t: Thing(int);
 
-    fmt.printf("test: %\n", u.test());
+    fmt.printf("test: %v\n", u.test());
     assert(u.test());
     assert(!t.test());
 

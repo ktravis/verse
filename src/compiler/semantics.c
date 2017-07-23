@@ -1897,9 +1897,6 @@ static Ast *check_func_decl_semantics(Scope *scope, Ast *ast) {
         if (!poly) {
             for (int i = 0; i < array_len(fn_args); i++) {
                 Type *a = fn_args[i];
-                // TODO: what if the polydef isn't the generic struct? i.e. fn
-                // type, is this okay?
-                /*if (!is_polydef(a) && contains_generic_struct(a)) {*/
                 if (contains_generic_struct(a)) {
                     a = reify_struct(type_check_scope, ast, a);
                     if (fn_type->resolved->fn.variadic && i == array_len(fn_args) - 1) {

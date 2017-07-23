@@ -41,38 +41,18 @@ fn formatArgs(c:u8, val: Any) {
 
 fn numFormatArgs(fmt: string) -> int {
     count: int;
-    last: u8;
+    mod_last: bool;
     for c in fmt {
-        if c == "%" {
-            if last == "%" {
-                last = 0;
-                count -= 1;
-                continue;
-            } else {
+        if c == "v" {
+            if mod_last {
                 count += 1;
             }
+            mod_last = false;
+        } else if c == "%" {
+            mod_last = !mod_last;
         }
-        last = c;
     }
     return count;
-}
-
-fn checkArgs(fmt:string, len:int) -> bool {
-    i := 0;
-    j := 0;
-    while i < fmt.length {
-        if fmt[i] == "%" {
-            j += 1;
-        }
-        if j > len {
-            break;
-        }
-        i += 1;
-    }
-    if j != len {
-        return true;
-    }
-    return false;
 }
 
 fn uint_to_binary(x: uint, digits: uint) -> string {
@@ -347,17 +327,20 @@ fn sprintf(fmt: string, args: Any...) -> string {
     i := 0;
     n := 0;
 
+    mod_last: bool;
     while i < fmt.length {
         c := fmt[i];
-        if c == "%" {
-            if i + 1 < fmt.length && fmt[i+1] == "%" {
-                out += "%";
-                i += 2;
-                continue;
-            } else {
+        if c == "v" {
+            if mod_last {
                 out += any_to_string(args[n]);
                 n += 1;
             }
+            mod_last = false;
+        } else if c == "%" {
+            if mod_last {
+                out += "%";
+            }
+            mod_last = !mod_last;
         } else {
             out += fmt[i:1];
         }
