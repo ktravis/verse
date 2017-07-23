@@ -61,6 +61,36 @@ impl Thing(int) {
     }
 }
 
+fn test_static_methods() {
+    type TestGuy : struct {
+        x: int;
+        name: string;
+    }
+
+    impl TestGuy {
+        fn test_static() -> int {
+            return 43;
+        }
+        fn test_static_with_args(x: int) -> int {
+            return x * 2;
+        }
+        fn test_non_static(g: &TestGuy) -> int {
+            return g.x * 2;
+        }
+    }
+
+    g := TestGuy::{1, "tim"};
+
+    assert(TestGuy.test_static() == 43);
+    assert(TestGuy.test_static_with_args(38) == 76);
+    assert(TestGuy.test_non_static(&g) == g.test_non_static());
+
+    doot := fn (f: fn() -> int, d: string) {
+        assert(d == itoa(f()));
+    };
+    doot(TestGuy.test_static, "43");
+}
+
 fn main() -> int {
     g := Guy::{
         name = "alf",
@@ -103,6 +133,8 @@ fn main() -> int {
     fmt.printf("test: %\n", u.test());
     assert(u.test());
     assert(!t.test());
+
+    test_static_methods();
 
     return 0;
 }

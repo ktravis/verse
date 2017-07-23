@@ -211,6 +211,7 @@ typedef struct AstMethod {
     Ast       *recv;
     char      *name;
     AstFnDecl *decl;
+    char       is_static;
 } AstMethod;
 
 typedef struct AstTypeIdent {

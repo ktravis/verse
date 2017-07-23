@@ -105,7 +105,6 @@ fn float64_to_string(f: float64) -> string {
         s += "-";
     }
 
-    printf("exp %\n", exp);
     whole := (1 << exp) | (m >> (52 - exp));
     s += utoa(whole as uint);
 
