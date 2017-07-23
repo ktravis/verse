@@ -362,7 +362,7 @@ static Ast *check_dot_op_semantics(Scope *scope, Ast *ast) {
                     ast->dot->member_name, type_to_string(tp->type));
         } else {
             Ast *decl = find_method(tp->type, ast->dot->member_name);
-            if (!decl && tp->type->resolved->comp == STRUCT && tp->type->resolved->st.generic_base != NULL) {
+            if (!decl && tp->type->resolved->comp == STRUCT && tp->type->resolved->st.generic_base) {
                 decl = find_method(tp->type->resolved->st.generic_base->resolved->params.inner, ast->dot->member_name);
             }
             if (decl) {
@@ -420,7 +420,7 @@ static Ast *check_dot_op_semantics(Scope *scope, Ast *ast) {
 
     Ast *decl = find_method(t, ast->dot->member_name);
     // TODO: this could be nicer
-    if (!decl && orig->resolved->comp == STRUCT && orig->resolved->st.generic_base != NULL) {
+    if (!decl && orig->resolved->comp == STRUCT && orig->resolved->st.generic_base) {
         decl = find_method(orig->resolved->st.generic_base->resolved->params.inner, ast->dot->member_name);
     }
     if (decl) {

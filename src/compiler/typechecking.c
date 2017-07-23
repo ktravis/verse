@@ -96,6 +96,18 @@ int check_type(Type *a, Type *b) {
                 return 0;
             }
         }
+        if (ar->st.generic_base && br->st.generic_base) {
+            Type **a_params = ar->st.generic_base->resolved->params.args;
+            Type **b_params = br->st.generic_base->resolved->params.args;
+            if (array_len(a_params) != array_len(b_params)) {
+                return 0;
+            }
+            for (int i = 0; i < array_len(a_params); i++) {
+                if (!check_type(a_params[i], b_params[i])) {
+                    return 0;
+                }
+            }
+        }
         return 1;
     case FUNC:
         if (ar->fn.variadic != br->fn.variadic) {

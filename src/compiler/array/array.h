@@ -16,7 +16,7 @@
 #define array_maybe_grow(arr, n) (array_available(arr) < (n) ? array_grow((arr), (n)) : 0)
 #define array_grow(arr, n) ((arr) = __array_grow((arr), (n), sizeof(*(arr))))
 
-#define array_copy(arr) _array_copy(arr, sizeof(arr[0]))
+#define array_copy(arr) ((arr) ? (_array_copy(arr, sizeof(arr[0]))) : NULL);
 
 void *__array_grow(void *arr, int inc, int elem_size);
 void *_array_copy(void *arr, int elem_size);
