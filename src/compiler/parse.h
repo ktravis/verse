@@ -8,6 +8,8 @@
 Type *parse_type(Tok *t, int poly_ok);
 Ast *parse_directive(Tok *t);
 Ast *parse_expression(Tok *t, int priority);
+Type *can_be_type_object(Ast *ast);
+Type *can_be_type_object_with_scope(Scope *scope, Ast *ast);
 Ast *parse_arg_list(Ast *left);
 Ast *parse_primary(Tok *t);
 Ast *parse_binop(char op, Ast *left, Ast *right);

@@ -13,12 +13,16 @@
 static int last_tmp_fn_id = 0;
 
 Type *can_be_type_object(Ast *ast) {
+    return can_be_type_object_with_scope(NULL, ast);
+}
+
+Type *can_be_type_object_with_scope(Scope *scope, Ast *ast) {
     switch (ast->type) {
     // AST_TYPEINFO?
     case AST_IDENTIFIER:
-        return make_type(NULL, ast->ident->varname);
+        return make_type(scope, ast->ident->varname);
     case AST_DOT: {
-        Type *lt = can_be_type_object(ast->dot->object);
+        Type *lt = can_be_type_object_with_scope(scope, ast->dot->object);
         if (lt == NULL) {
             return NULL;
         }
@@ -29,13 +33,13 @@ Type *can_be_type_object(Ast *ast) {
         return make_external_type(lt->name, ast->dot->member_name);
     }
     case AST_CALL: {
-        Type *lt = can_be_type_object(ast->dot->object);
+        Type *lt = can_be_type_object_with_scope(scope, ast->call->fn);
         if (lt == NULL) {
             return NULL;
         }
         Type **params = NULL;
         for (int i = 0; i < array_len(ast->call->args); i++) {
-            Type *t = can_be_type_object(ast->call->args[i]);
+            Type *t = can_be_type_object_with_scope(scope, ast->call->args[i]);
             if (!t) {
                 return NULL;
             }
@@ -45,6 +49,8 @@ Type *can_be_type_object(Ast *ast) {
     }
     case AST_TYPE_OBJ:
         return ast->type_obj->t;
+    case AST_TYPE_IDENT:
+        return ast->type_ident->type;
     default:
         break;
     }

@@ -57,7 +57,12 @@ void check_for_undefined_with_scope(Ast *ast, Type *t, Scope *scope) {
         break;
     case BASIC:
     case POLYDEF:
+        break;
     case PARAMS:
+        for (int i = 0; i < array_len(t->resolved->params.args); i++) {
+            check_for_undefined_with_scope(ast, t->resolved->params.args[i], scope);
+        }
+        break;
     case EXTERNAL:
     case ENUM:
         break;
@@ -122,7 +127,12 @@ void _check_for_undefined_with_ignore(Ast *ast, Type *t, char **ignore, int top)
         break;
     case BASIC:
     case POLYDEF:
+        break;
     case PARAMS:
+        for (int i = 0; i < array_len(t->resolved->params.args); i++) {
+            _check_for_undefined_with_ignore(ast, t->resolved->params.args[i], ignore, 0);
+        }
+        break;
     case EXTERNAL:
     case ENUM:
         break;
@@ -1758,7 +1768,37 @@ static Ast *check_poly_call_semantics(Scope *scope, Ast *ast, Type *fn_type) {
 }
 
 static Ast *check_call_semantics(Scope *scope, Ast *ast) {
-    ast->call->fn = check_semantics(scope, ast->call->fn);
+    if (ast->call->fn->type == AST_IDENTIFIER) {
+        ast->call->fn = check_ident_semantics(scope, ast->call->fn);
+
+        if (ast->call->fn->type == AST_PACKAGE) {
+            error(ast->line, ast->file, "Unexpected call on package name %s", ast->call->fn->pkg->pkg_name);
+        } else if (ast->call->fn->type == AST_TYPE_IDENT) {
+            Type *base = ast->call->fn->type_ident->type;
+            if (!(base->resolved->comp == STRUCT && base->resolved->st.generic)) {
+                error(ast->line, ast->file, "Type %s does not accept parameters", type_to_string(base));
+            }
+            int expected_count = array_len(base->resolved->st.arg_params);
+            int given_count = array_len(ast->call->args);
+            if (given_count != expected_count) {
+                error(ast->line, ast->file, "Type %s expected %d parameter%s, but received %d", type_to_string(base), expected_count, expected_count != 1 ? "s" : "", given_count);
+            }
+
+            Type *t = can_be_type_object_with_scope(scope, ast);
+            if (!t) {
+                error(ast->line, ast->file, "Invalid parameterization of type %s", type_to_string(ast->call->fn->type_ident->type));
+            }
+            Ast *tp = ast_alloc(AST_TYPE_IDENT);
+            tp->line = ast->line;
+            tp->file = ast->file;
+            check_for_undefined(ast, t);
+            tp->type_ident->type = reify_struct(scope, ast, t);
+            tp->var_type = typeinfo_ref();
+            return tp;
+        }
+    } else {
+        ast->call->fn = check_semantics(scope, ast->call->fn);
+    }
 
     Type *called_fn_type = ast->call->fn->var_type;
     if (called_fn_type->resolved->comp != FUNC) {
@@ -2218,9 +2258,8 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
     case AST_INDEX: 
         return check_index_semantics(scope, ast);
     case AST_IMPL:
-        if (!resolve_type(ast->impl->type)) {
-            check_for_undefined(ast, ast->impl->type);
-        }
+        check_for_undefined(ast, ast->impl->type);
+        resolve_type(ast->impl->type);
         if (contains_generic_struct(ast->impl->type)) {
             ast->impl->type = reify_struct(scope, ast, ast->impl->type);
         }

@@ -4,7 +4,7 @@ BIN_DIR   = bin
 SRC_DIR   = src
 BUILD_DIR = $(BIN_DIR)
 
-CFLAGS  = -Wall -std=gnu99 -g -Werror -Wno-error=unused-variable
+CFLAGS  = -Wall -std=gnu99 -g -fPIC -Werror -Wno-error=unused-variable
 OBJECTS = $(SRC_DIR)/verse.o $(patsubst %.c, %.o, $(shell find $(SRC_DIR)/compiler -name '*.c'))
 HEADERS = $(wildcard $(SRC_DIR)/*.h)
 
