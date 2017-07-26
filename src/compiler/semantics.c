@@ -945,10 +945,29 @@ AstBlock *check_block_semantics(Scope *scope, AstBlock *block, int fn_body) {
         block->statements[i] = first_pass(scope, block->statements[i]);
     }
 
+    if (scope->type == Root) {
+        for (int i = 0; i < array_len(block->statements); i++) {
+            if (block->statements[i]->type == AST_IMPORT ) {
+                block->statements[i] = check_semantics(scope, block->statements[i]);
+            }
+        }
+
+        // Handle package-level declarations before function body checks, to
+        // prevent the need for forward-declaration.
+        for (int i = 0; i < array_len(block->statements); i++) {
+            if (block->statements[i]->type == AST_DECL) {
+                block->statements[i] = check_semantics(scope, block->statements[i]);
+            }
+        }
+    }
+
     int mainline_return_reached = 0;
     int last_real_statement = -1;
     for (int i = 0; i < array_len(block->statements); i++) {
         Ast *stmt = block->statements[i];
+        if (scope->type == Root && (stmt->type == AST_DECL || stmt->type == AST_IMPORT)) {
+            continue;
+        }
         if (stmt->type != AST_COMMENT) {
             if (i > 0 && last_real_statement != -1) {
                 switch (block->statements[last_real_statement]->type) {
@@ -1191,7 +1210,7 @@ static Ast *check_use_semantics(Scope *scope, Ast *ast) {
         Package *p = ast->use->object->pkg->package;
         for (int i = 0; i < array_len(p->scope->vars); i++) {
             Var *v = p->scope->vars[i];
-            if (v->proxy) {
+            if (v->proxy || v->temp) {
                 // skip use aliases
                 continue;
             }
