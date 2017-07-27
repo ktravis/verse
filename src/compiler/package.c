@@ -20,10 +20,12 @@ Package *new_package(char *name, char *path) {
     p->path = path;
     p->name = name;
     p->scope = new_scope(NULL);
+    p->root = calloc(sizeof(AstBlock), 1);
     return p;
 }
 
 Ast *check_semantics(Scope *scope, Ast *ast);
+Ast *check_block_semantics(Scope *scope, AstBlock *block, int fn_body);
 Ast *first_pass(Scope *scope, Ast *ast);
 
 Package *package_check_semantics(Package *p) {
@@ -32,19 +34,12 @@ Package *package_check_semantics(Package *p) {
     }
     p->semantics_checked = 1;
     push_current_package(p);
-    for (int i = 0; i < array_len(p->files); i++) {
-        p->files[i]->root = check_semantics(p->scope, p->files[i]->root);
-    }
+    check_block_semantics(p->scope, p->root, 0);
+    /*for (int i = 0; i < array_len(p->statements); i++) {*/
+        /*p->statements[i] = check_semantics(p->scope, p->statements[i]);*/
+    /*}*/
     pop_current_package();
     return p;
-}
-
-static PkgFile *package_add_file(Package *p, char *path, Ast *file_ast) {
-    PkgFile *f = malloc(sizeof(PkgFile));
-    f->name = path;
-    f->root = file_ast;
-    array_push(p->files, f);
-    return f;
 }
 
 Package *get_current_package() {
@@ -138,8 +133,14 @@ Package *load_package(int from_line, char *current_file, Scope *scope, char *pat
     push_current_package(p);
     for (int i = 0; i < array_len(filenames); i++) {
         Ast *file_ast = parse_source_file(from_line, current_file, filenames[i]);
-        file_ast = first_pass(p->scope, file_ast);
-        package_add_file(p, filenames[i], file_ast);
+        PkgFile *f = malloc(sizeof(PkgFile));
+        f->name = path;
+        f->start_index = array_len(p->root->statements);
+        for (int i = 0; i < array_len(file_ast->block->statements); i++) {
+            array_push(p->root->statements, file_ast->block->statements[i]);
+        }
+        f->end_index = array_len(p->root->statements);
+        array_push(p->files, f);
     }
     pop_current_package();
 

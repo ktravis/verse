@@ -2464,16 +2464,7 @@ Ast *check_semantics(Scope *scope, Ast *ast) {
     case AST_COMMENT:
         break;
     case AST_IMPORT:
-        if (!ast->import->package->semantics_checked) {
-            Package *p = ast->import->package;
-            p->semantics_checked = 1;
-            push_current_package(p);
-            /*p->pkg_name = package_name(p->path);*/
-            for (int i = 0; i < array_len(p->files); i++) {
-                p->files[i]->root = check_semantics(p->scope, p->files[i]->root);
-            }
-            pop_current_package();
-        }
+        package_check_semantics(ast->import->package);
         break;
     case AST_SPREAD:
         error(ast->line, ast->file, "Spread is not valid outside of function call.");

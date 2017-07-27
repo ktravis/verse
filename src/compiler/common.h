@@ -9,13 +9,17 @@ typedef struct Package {
     struct Scope *scope;
     struct Var **globals;
     struct PkgFile **files;
+    struct AstBlock *root;
+    //struct Ast **statements;
     int semantics_checked;
     char **top_level_comments;
 } Package;
 
 typedef struct PkgFile {
+    Package *package;
     char *name;
-    struct Ast *root;
+    int start_index;
+    int end_index;
 } PkgFile;
 
 typedef enum TypeComp {
