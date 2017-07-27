@@ -55,9 +55,6 @@ void emit_init_routine(Package **packages, Scope *root_scope, Ast *root, Var *ma
     for (int i = 0; i < array_len(packages); i++) {
         Package *p = packages[i];
         emit_scope_start(p->scope);
-        /*for (int i = 0; i < array_len(p->statements); i++) {*/
-            /*compile(p->scope, p->statements[i]);*/
-        /*}*/
         compile_block(p->scope, p->root);
         emit_init_scope_end(p->scope);
     }

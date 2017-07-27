@@ -7,8 +7,10 @@
 
 #include "array/array.h"
 #include "ast.h"
-#include "types.h"
+#include "polymorph.h"
+#include "semantics.h"
 #include "typechecking.h"
+#include "types.h"
 #include "util.h"
 
 static int last_type_id = 0;
@@ -27,13 +29,36 @@ MethodList *all_methods = NULL;
 // weird dependency
 Type *reify_struct(Scope *scope, Ast *ast, Type *type);
 
+static void _define_method(Scope *impl_scope, Type *t, Ast *decl) {
+    MethodList *last = all_methods;
+    all_methods = calloc(sizeof(MethodList), 1);
+    all_methods->type = t;
+    all_methods->name = decl->fn_decl->var->name;
+    all_methods->scope = impl_scope;
+    all_methods->decl = decl;
+    all_methods->next = last;
+}
+
 Ast *find_method(Type *t, char *name) {
     Ast *possible = NULL;
-    // TODO: NEED TO ALLOW FOR list->type to be an alias (Array) and t be struct
-    // (reified Array(string)
+    MethodList *found_poly = NULL;
+    Type *matched_against = NULL;
     for (MethodList *list = all_methods; list != NULL; list = list->next) {
         if (!strcmp(list->name, name)) {
             resolve_type(list->type);
+            if (is_polydef(list->type)) {
+                Type *match_against = t;
+                if (t->resolved->comp == STRUCT && t->resolved->st.generic_base) {
+                    match_against = t->resolved->st.generic_base;
+                    resolve_type(match_against);
+                }
+                // TODO: this won't handle static methods on things like []$T
+                if (match_against->resolved->comp == PARAMS && match_polymorph(NULL, list->type, match_against)) {
+                    found_poly = list;
+                    matched_against = match_against;
+                    continue;
+                }
+            }
             if (contains_generic_struct(list->type)) {
                 list->type = reify_struct(list->scope, list->decl, list->type);
             }
@@ -49,6 +74,34 @@ Ast *find_method(Type *t, char *name) {
             }
         }
     }
+    if (found_poly) {
+        if (contains_generic_struct(matched_against)) {
+            matched_against = reify_struct(found_poly->scope, found_poly->decl, matched_against);
+        }
+        Type **arg_types = NULL;
+        array_push(arg_types, t);
+        Polymorph *match = create_polymorph(found_poly->decl->fn_decl, arg_types);
+        match_polymorph(match->scope, found_poly->type, matched_against);
+
+        match->var = make_var("", found_poly->decl->fn_decl->var->type);
+
+        Ast *generated_ast = ast_alloc(AST_FUNC_DECL);
+        generated_ast->line = found_poly->decl->line; // just use call site info for now
+        generated_ast->file = found_poly->decl->file;
+        generated_ast->fn_decl->var = match->var;
+        generated_ast->fn_decl->args = found_poly->decl->fn_decl->args;
+        generated_ast->fn_decl->scope = match->scope;
+        generated_ast->fn_decl->polymorph_of = found_poly->decl->fn_decl;
+        generated_ast->fn_decl->body = match->body;
+        add_global_fn_decl(generated_ast);
+
+        match->ret = match->var->type->resolved->fn.ret;
+
+        generated_ast = check_semantics(match->scope, generated_ast);
+
+        _define_method(found_poly->scope, t, generated_ast);
+        return generated_ast;
+    }
     return possible;
 }
 
@@ -61,13 +114,7 @@ Ast *define_method(Scope *impl_scope, Type *t, Ast *decl) {
             }
         }
     }
-    MethodList *last = all_methods;
-    all_methods = calloc(sizeof(MethodList), 1);
-    all_methods->type = t;
-    all_methods->name = decl->fn_decl->var->name;
-    all_methods->scope = impl_scope;
-    all_methods->decl = decl;
-    all_methods->next = last;
+    _define_method(impl_scope, t, decl);
     return NULL;
 }
 
@@ -715,50 +762,6 @@ int contains_generic_struct(Type *t) {
     }
     return 0;
 }
-
-/*Type *replace_type(Type *base, Type *from, Type *to) {*/
-    /*if (base == from || base->id == from->id) {*/
-        /*return to;*/
-    /*}*/
-
-    /*if (base->name && !base->resolved) {*/
-        /*if (from->name && from->scope == base->scope && !strcmp(from->name, base->name)) {*/
-            /*return to;*/
-        /*}*/
-        /*return base;*/
-    /*}*/
-
-    /*ResolvedType *r = base->resolved;*/
-    /*switch (r->comp) {*/
-    /*case PARAMS:*/
-        /*for (int i = 0; i < array_len(r->params.args); i++) {*/
-            /*r->params.args[i] = replace_type(r->params.args[i], from, to);*/
-        /*}*/
-        /*r->params.inner = replace_type(r->params.inner, from, to);*/
-        /*break;*/
-    /*case REF:*/
-        /*r->ref.inner = replace_type(r->ref.inner, from, to);*/
-        /*break;*/
-    /*case ARRAY:*/
-    /*case STATIC_ARRAY:*/
-        /*r->array.inner = replace_type(r->array.inner, from, to);*/
-        /*break;*/
-    /*case STRUCT:*/
-        /*for (int i = 0; i < array_len(r->st.member_types); i++) {*/
-            /*r->st.member_types[i] = replace_type(r->st.member_types[i], from, to);*/
-        /*}*/
-        /*break;*/
-    /*case FUNC:*/
-        /*for (int i = 0; i < array_len(r->fn.args); i++) {*/
-            /*r->fn.args[i] = replace_type(r->fn.args[i], from, to);*/
-        /*}*/
-        /*r->fn.ret = replace_type(r->fn.ret, from, to);*/
-        /*break;*/
-    /*default:*/
-        /*break;*/
-    /*}*/
-    /*return base;*/
-/*}*/
 
 Type *replace_type_by_name(Type *base, char *from_name, Type *to) {
     if (base->name && !strcmp(from_name, base->name)) {

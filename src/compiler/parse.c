@@ -881,7 +881,7 @@ Ast *parse_statement(Tok *t, int eat_semi) {
         break;
     case TOK_IMPL:
         ast = ast_alloc(AST_IMPL);
-        ast->impl->type = parse_type(next_token(), 0);
+        ast->impl->type = parse_type(next_token(), 1);
         expect(TOK_LBRACE);
         ast->impl->methods = parse_statement_list();
         expect(TOK_RBRACE);
